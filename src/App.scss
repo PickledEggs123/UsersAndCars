@@ -1,0 +1,31 @@
+.users {
+  margin: 15px;
+  padding: 15px;
+
+  .user {
+    margin: 15px;
+    padding: 15px;
+    background-color: bisque;
+    .row {
+      margin: 10px;
+    }
+  }
+}
+
+.delete {
+  background-color: maroon;
+  color: white;
+  font-weight: bold;
+  margin: 10px;
+  padding: 10px;
+}
+
+.create {
+  background-color: lightseagreen;
+  margin: 10px;
+  padding: 10px;
+  &.disabled {
+    background-color: lightgrey;
+    color: grey;
+  }
+}
