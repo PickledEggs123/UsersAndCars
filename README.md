@@ -1,3 +1,5 @@
+[Live Demo, Click here to run the code.](https://tyler-truong-demos.firebaseapp.com/)
+
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
 ## Available Scripts
