@@ -4,13 +4,26 @@ import axios from "axios";
 
 interface IPersonsProps {}
 
-interface IPerson {
-    id: string;
+interface IObject {
     x: number;
     y: number;
+}
+
+interface IPerson extends IObject {
+    id: string;
     shirtColor: string;
     pantColor: string;
     lastUpdate: string;
+}
+
+enum EDrawableType {
+    PERSON = "PERSON",
+    OBJECT = "OBJECT"
+}
+
+interface IDrawable extends IObject {
+    draw(this: IDrawable): void;
+    type: EDrawableType;
 }
 
 interface IKeyDownHandler {
@@ -20,6 +33,8 @@ interface IKeyDownHandler {
 
 interface IPersonsState {
     persons: IPerson[];
+    chairs: IObject[];
+    tables: IObject[];
     currentPersonId: string;
     lastUpdate: string;
 }
@@ -39,6 +54,15 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
 
     state = {
         persons: [],
+        chairs: [
+            {x: 200, y: 50},
+            {x: 300, y: 50},
+            {x: 200, y: 250},
+            {x: 300, y: 250}
+        ],
+        tables: [
+            {x: 250, y: 150}
+        ],
         currentPersonId: this.randomPersonId(),
         lastUpdate: new Date().toISOString()
     } as IPersonsState;
@@ -337,17 +361,19 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         );
     };
 
-    drawTable = (x: number, y: number) => {
+    drawTable = (drawable: IObject, index: number) => {
+        const {x, y} = drawable;
         return (
-            <g transform={`translate(${x - 100},${y - 50})`}>
+            <g key={`table-${index}`} transform={`translate(${x - 100},${y - 50})`}>
                 <polygon fill="brown" points="0,100 200,100 200,0 0,0"/>
             </g>
         );
     };
 
-    drawChair = (x: number, y: number) => {
+    drawChair = (drawable: IObject, index: number) => {
+        const {x, y} = drawable;
         return (
-            <g transform={`translate(${x - 50},${y - 50})`}>
+            <g key={`chair-${index}`} transform={`translate(${x - 50},${y - 50})`}>
                 <polygon fill="brown" points="10,90 20,90 20,10 10,10"/>
                 <polygon fill="brown" points="80,90 90,90 90,10 80,10"/>
                 <polygon fill="brown" points="40,90 60,90 60,10 40,10"/>
@@ -357,22 +383,57 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         );
     };
 
+    sortDrawables = () => {
+        const component = this;
+        const drawables = [
+            ...this.state.persons.map(person => ({
+                draw(this: IDrawable) {
+                    return component.drawPerson(this as unknown as IPerson);
+                },
+                type: EDrawableType.PERSON,
+                ...person
+            }) as IDrawable),
+            ...this.state.chairs.map((chair, index) => ({
+                draw(this: IObject) {
+                    return component.drawChair(this, index);
+                },
+                type: EDrawableType.OBJECT,
+                ...chair
+            }) as IDrawable),
+            ...this.state.tables.map((table, index) => ({
+                draw(this: IObject) {
+                    return component.drawTable(this, index);
+                },
+                type: EDrawableType.OBJECT,
+                ...table
+            }) as IDrawable)
+        ];
+
+        // sort drawable objects from bottom to top
+        return drawables.sort((a, b) => {
+            const heightDifference = a.y - b.y;
+
+            if (a.type === EDrawableType.PERSON && b.type !== EDrawableType.PERSON && heightDifference > 30) {
+                return 1;
+            } else if (b.type === EDrawableType.PERSON && a.type !== EDrawableType.PERSON && heightDifference < 30) {
+                return -1;
+            } else {
+                return heightDifference;
+            }
+        });
+    };
+
     render() {
         return (
             <div className="persons">
                 <h1>Multiplayer Room</h1>
                 <p>Use the left and right arrow keys or WASD keys to move the player left and right within the room.</p>
                 <svg className="game" width={500} height={300} style={{border: "1px solid black"}}>
-                    {this.drawChair(200, 50)}
-                    {this.drawChair(300, 50)}
-                    {this.drawChair(200, 250)}
-                    {this.drawChair(300, 250)}
                     {
-                        this.state.persons.map(person => {
-                            return this.drawPerson(person);
+                        this.sortDrawables().map(drawable => {
+                            return drawable.draw();
                         })
                     }
-                    {this.drawTable(250, 150)}
                 </svg>
                 <div>
                     <p>Select a custom shirt color for your character.</p>
