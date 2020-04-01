@@ -108,7 +108,7 @@ export class Users extends React.Component<IUsersProps, IUsersState> {
                     {
                         this.state.users.map(user => {
                             return (
-                                <div className="user" key={user.id}>
+                                <div className="item" key={user.id}>
                                     <div className="row">UserID: {user.id}</div>
                                     <div className="row">First Name: {user.firstName}</div>
                                     <div className="row">Last Name: {user.lastName}</div>

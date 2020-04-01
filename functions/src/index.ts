@@ -142,6 +142,7 @@ interface IPerson {
     y: number;
     shirtColor: string;
     pantColor: string;
+    lastUpdate: string;
 }
 
 const personsApp = express();
@@ -178,7 +179,8 @@ personsApp.post("/:id", (req: { params: { id: any; }; }, res: any, next: (arg0: 
             x: 50,
             y: 150,
             pantColor: "blue",
-            shirtColor: "grey"
+            shirtColor: "grey",
+            lastUpdate: new Date().toISOString()
         };
         await admin.firestore().collection("persons").doc(id).set(person);
         res.sendStatus(200);

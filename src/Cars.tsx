@@ -76,7 +76,7 @@ export class Cars extends React.Component<ICarsProps, ICarsState> {
 
     render() {
         return (
-            <div className="users">
+            <div className="cars">
                 <h1>Cars</h1>
                 <div>
                     <h2>Create Car</h2>
@@ -102,7 +102,7 @@ export class Cars extends React.Component<ICarsProps, ICarsState> {
                     {
                         this.state.cars.map(car => {
                             return (
-                                <div className="user" key={car.id}>
+                                <div className="item" key={car.id}>
                                     <div className="row">CarID: {car.id}</div>
                                     <div className="row">Make: {car.make}</div>
                                     <div className="row">Model: {car.model}</div>

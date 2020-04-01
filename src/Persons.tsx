@@ -10,6 +10,7 @@ interface IPerson {
     y: number;
     shirtColor: string;
     pantColor: string;
+    lastUpdate: string;
 }
 
 interface IKeyDownHandler {
@@ -20,7 +21,7 @@ interface IKeyDownHandler {
 interface IPersonsState {
     persons: IPerson[];
     currentPersonId: string;
-    update: boolean;
+    lastUpdate: string;
 }
 
 export class Persons extends React.Component<IPersonsProps, IPersonsState> {
@@ -39,7 +40,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     state = {
         persons: [],
         currentPersonId: this.randomPersonId(),
-        update: false
+        lastUpdate: new Date().toISOString()
     } as IPersonsState;
 
     componentDidMount(): void {
@@ -57,7 +58,10 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     updatePerson = async () => {
         const data = this.state.persons.find(person => person.id === this.state.currentPersonId);
         if (data) {
-            await axios.put(`https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/${this.state.currentPersonId}`, data);
+            await axios.put(`https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/${this.state.currentPersonId}`, {
+                ...data,
+                lastUpdate: this.state.lastUpdate
+            });
         }
     };
 
@@ -69,8 +73,6 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         this.intervalGameLoop = setTimeout(this.gameLoop, this.gameRefreshSpeed);
         window.addEventListener("keydown", this.handleKeyDown);
         window.addEventListener("keyup", this.handleKeyUp);
-
-        // delete all previous users
         (async () => {
             const response = await axios.get("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons");
             if (response && response.data) {
@@ -89,6 +91,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         }
         window.removeEventListener("keydown", this.handleKeyDown);
         window.removeEventListener("keyup", this.handleKeyUp);
+        this.deletePerson();
     };
 
     gameLoop = async () => {
@@ -97,27 +100,73 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
             this.createPerson();
         }
 
-        if (this.state.update) {
+        if (currentPerson && +Date.parse(this.state.lastUpdate) > +Date.parse(currentPerson.lastUpdate)) {
             await this.updatePerson();
-            await new Promise((resolve) => {
-                this.setState({update: false}, () => {
-                    resolve();
-                });
-            });
         }
 
         const response = await axios.get("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons");
         if (response && response.data) {
-            const persons = response.data as IPerson[];
+            // get persons data from the server
+            const serverPersons = response.data as IPerson[];
+
+            // modify server data with local data, pick most up to date version of the data
+            const persons = serverPersons.reduce((arr: IPerson[], person: IPerson): IPerson[] => {
+                console.log("PERSON", person.lastUpdate, this.state.lastUpdate);
+                // check to see if the local data is more up to date.
+                if (currentPerson && person.id === this.state.currentPersonId && +Date.parse(person.lastUpdate) <= +Date.parse(this.state.lastUpdate)) {
+                    // local data is more up to date, replace server position with local position, to prevent backward moving glitch
+                    const {x, y} = currentPerson;
+                    return [
+                        ...arr,
+                        {
+                            ...person,
+                            x,
+                            y
+                        }
+                    ]
+                } else {
+                    // server is up to date, no changes
+                    return [...arr, person];
+                }
+            }, []);
             this.setState({persons});
         }
 
+        // schedule next game loop
         this.intervalGameLoop = setTimeout(this.gameLoop, this.gameRefreshSpeed);
     };
 
+    /**
+     * Detect if the object is a person.
+     * @param person The object to detect as a person.
+     */
     isPerson = (person: any): person is IPerson => {
         return person && typeof person.id === "string" && typeof person.x === "number" && typeof person.y === "number" &&
             typeof person.shirtColor === "string" && person.pantColor === "string";
+    };
+
+    /**
+     * Generic handler that handles any keyboard movement, add update function to determine how to update the object.
+     * The code for WASD keys movement is identical except for one line, adding or subtracting x or y.
+     * @param event
+     */
+    handleKeyDownMovement = (event: KeyboardEvent) => (update: (person: IPerson) => IPerson) => {
+        this.keyDownHandlers.push({
+            key: event.key as any,
+            interval: setInterval(() => {
+                const persons = this.state.persons.reduce((arr: IPerson[], person: IPerson): IPerson[] => {
+                    if (person.id === this.state.currentPersonId) {
+                        return [...arr, update(person)];
+                    } else {
+                        return [...arr, person];
+                    }
+                }, []);
+                this.setState({
+                    persons,
+                    lastUpdate: new Date().toISOString()
+                });
+            }, 100)
+        });
     };
 
     /**
@@ -125,61 +174,43 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
      * @param event
      */
     handleKeyDown = (event: KeyboardEvent) => {
+        // ignore repeat key down events to prevent multiple key presses being registered.
+        if (event.repeat) {
+            return;
+        }
+
+        // for each key press type
         switch (event.key) {
             case "w":
             case "ArrowUp": {
-                this.keyDownHandlers.push({
-                    key: event.key,
-                    interval: setInterval(() => {
-                        const person = this.state.persons.find(person => person.id === this.state.currentPersonId);
-                        if (person) {
-                            person.y -= 1;
-                            this.setState({update: true});
-                        }
-                    }, 100)
-                });
+                this.handleKeyDownMovement(event)((person: IPerson): IPerson => ({
+                    ...person,
+                    y: person.y - 10
+                }));
                 break;
             }
             case "s":
             case "ArrowDown": {
-                this.keyDownHandlers.push({
-                    key: event.key,
-                    interval: setInterval(() => {
-                        const person = this.state.persons.find(person => person.id === this.state.currentPersonId);
-                        if (person) {
-                            person.y += 1;
-                            this.setState({update: true});
-                        }
-                    }, 100)
-                });
+                this.handleKeyDownMovement(event)((person: IPerson): IPerson => ({
+                    ...person,
+                    y: person.y + 10
+                }));
                 break;
             }
             case "a":
             case "ArrowLeft": {
-                this.keyDownHandlers.push({
-                    key: event.key,
-                    interval: setInterval(() => {
-                        const person = this.state.persons.find(person => person.id === this.state.currentPersonId);
-                        if (person) {
-                            person.x -= 1;
-                            this.setState({update: true});
-                        }
-                    }, 100)
-                });
+                this.handleKeyDownMovement(event)((person: IPerson): IPerson => ({
+                    ...person,
+                    x: person.x - 10
+                }));
                 break;
             }
             case "d":
             case "ArrowRight": {
-                this.keyDownHandlers.push({
-                    key: event.key,
-                    interval: setInterval(() => {
-                        const person = this.state.persons.find(person => person.id === this.state.currentPersonId);
-                        if (person) {
-                            person.x += 1;
-                            this.setState({update: true});
-                        }
-                    }, 100)
-                });
+                this.handleKeyDownMovement(event)((person: IPerson): IPerson => ({
+                    ...person,
+                    x: person.x + 10
+                }));
                 break;
             }
         }
@@ -224,7 +255,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
             // mutable update of shirt color
             person.shirtColor = event.target.value;
             // set the update flag to let the next game loop update the shirt color
-            this.setState({update: true});
+            this.setState({lastUpdate: new Date().toISOString()});
         }
     };
 
@@ -238,7 +269,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
             // mutable update of pant color
             person.pantColor = event.target.value;
             // set the update flag to let the next game loop update the pant color
-            this.setState({update: true});
+            this.setState({lastUpdate: new Date().toISOString()});
         }
     };
 
@@ -297,6 +328,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     {this.drawTable(250, 150)}
                 </svg>
                 <div>
+                    <p>Select a custom shirt color for your character.</p>
                     <label>Shirt Color</label>
                     <select onChange={this.handleShirtColor}>
                         <option>grey</option>
@@ -307,6 +339,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     </select>
                 </div>
                 <div>
+                    <p>Select a custom pant color for your character.</p>
                     <label>Pant Color</label>
                     <select onChange={this.handlePantColor}>
                         <option>blue</option>
