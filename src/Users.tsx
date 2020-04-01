@@ -1,7 +1,6 @@
 import React from 'react';
 import './App.scss';
 import axios from "axios";
-import {Persons} from "./Persons";
 
 interface IUsersProps {}
 

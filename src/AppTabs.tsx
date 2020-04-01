@@ -41,7 +41,7 @@ export class AppTabs extends React.Component<IAppTabsProps> {
                 {
                     appTabs.map(tab => {
                         return (
-                            <Link style={{
+                            <Link key={tab.name} style={{
                                 display: "inline-block",
                                 padding: 10,
                                 margin: 5,

@@ -3,7 +3,7 @@
  */
 import React from 'react';
 import './App.scss';
-import {Route, BrowserRouter, Switch, Link} from 'react-router-dom';
+import {Route, BrowserRouter, Switch} from 'react-router-dom';
 import {Persons} from "./Persons";
 import {Cars} from "./Cars";
 import {Users} from "./Users";
