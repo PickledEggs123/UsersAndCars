@@ -9,7 +9,8 @@
       "npm --prefix \"$RESOURCE_DIR\" run build"
     ]
   },
-  "hosting": {
+  "hosting": [{
+    "site": "tyler-truong-demos",
     "public": "build",
     "ignore": [
       "firebase.json",
@@ -22,5 +23,19 @@
         "destination": "/index.html"
       }
     ]
-  }
+  }, {
+    "site": "tyler-truong-search-demo",
+    "public": "search-build",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }]
 }
