@@ -21,6 +21,11 @@ enum EDrawableType {
     OBJECT = "OBJECT"
 }
 
+interface IRoom extends IObject {
+    chairs: IObject[];
+    tables: IObject[];
+}
+
 interface IDrawable extends IObject {
     draw(this: IDrawable): void;
     type: EDrawableType;
@@ -33,8 +38,7 @@ interface IKeyDownHandler {
 
 interface IPersonsState {
     persons: IPerson[];
-    chairs: IObject[];
-    tables: IObject[];
+    rooms: IRoom[];
     currentPersonId: string;
     lastUpdate: string;
 }
@@ -53,19 +57,23 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     gameRefreshSpeed: number = 2000;
 
     state = {
-        persons: [],
-        chairs: [
-            {x: 200, y: 50},
-            {x: 300, y: 50},
-            {x: 200, y: 250},
-            {x: 300, y: 250}
-        ],
-        tables: [
-            {x: 250, y: 150}
-        ],
+        persons: [] as IPerson[],
+        rooms: [{
+            x: 0,
+            y: 0,
+            chairs: [
+                {x: 200, y: 50},
+                {x: 300, y: 50},
+                {x: 200, y: 250},
+                {x: 300, y: 250}
+            ] as IObject[],
+            tables: [
+                {x: 250, y: 150}
+            ] as IObject[]
+        } as IRoom] as IRoom[],
         currentPersonId: this.randomPersonId(),
         lastUpdate: new Date().toISOString()
-    } as IPersonsState;
+    };
 
     componentDidMount(): void {
         this.beginGameLoop();
@@ -351,29 +359,31 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     drawPerson = (person: IPerson) => {
         const {x, y} = person;
         return (
-            <g key={person.id} transform={`translate(${x - 50},${y - 100})`}>
-                <polygon fill="yellow" points="40,10 60,10 60,30 40,30"/>
-                <polygon fill={person.shirtColor} points="20,30 80,30 80,100 20,100"/>
-                <polygon fill={person.pantColor} points="20,100 80,100 80,120 20,120"/>
-                <polygon fill={person.pantColor} points="20,120 40,120 40,200 20,200"/>
-                <polygon fill={person.pantColor} points="80,120 60,120 60,200 80,200"/>
+            <g key={person.id} x="0" y="0" width="500" height="300" mask={`url(#room-0)`}>
+                <g key={person.id} transform={`translate(${x - 50},${y - 100})`}>
+                    <polygon fill="yellow" points="40,10 60,10 60,30 40,30"/>
+                    <polygon fill={person.shirtColor} points="20,30 80,30 80,100 20,100"/>
+                    <polygon fill={person.pantColor} points="20,100 80,100 80,120 20,120"/>
+                    <polygon fill={person.pantColor} points="20,120 40,120 40,200 20,200"/>
+                    <polygon fill={person.pantColor} points="80,120 60,120 60,200 80,200"/>
+                </g>
             </g>
         );
     };
 
-    drawTable = (drawable: IObject, index: number) => {
+    drawTable = (drawable: IObject, room: IObject, index: number) => {
         const {x, y} = drawable;
         return (
-            <g key={`table-${index}`} transform={`translate(${x - 100},${y - 50})`}>
+            <g key={`table-${index}`} transform={`translate(${x - 100 + room.x},${y - 50 + room.y})`}>
                 <polygon fill="brown" points="0,100 200,100 200,0 0,0"/>
             </g>
         );
     };
 
-    drawChair = (drawable: IObject, index: number) => {
+    drawChair = (drawable: IObject, room: IObject, index: number) => {
         const {x, y} = drawable;
         return (
-            <g key={`chair-${index}`} transform={`translate(${x - 50},${y - 50})`}>
+            <g key={`chair-${index}`} transform={`translate(${x - 50 + room.x},${y - 50 + room.y})`}>
                 <polygon fill="brown" points="10,90 20,90 20,10 10,10"/>
                 <polygon fill="brown" points="80,90 90,90 90,10 80,10"/>
                 <polygon fill="brown" points="40,90 60,90 60,10 40,10"/>
@@ -381,6 +391,55 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 <polygon fill="brown" points="10,50 90,50 90,90 10,90"/>
             </g>
         );
+    };
+
+    drawRoomWalls = (drawable: IObject, index: number) => {
+        const {x, y} = drawable;
+        return [{
+            x,
+            y,
+            type: EDrawableType.OBJECT,
+            draw(this: IDrawable) {
+                return (
+                    <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                        <polygon fill="brown" points="0,0 500,0 500,5 0,5"/>
+                    </g>
+                );
+            }
+        } as IDrawable, {
+            x,
+            y,
+            type: EDrawableType.OBJECT,
+            draw(this: IDrawable) {
+                return (
+                    <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
+                        <polygon fill="brown" points="0,295 500,295 500,300 0,300"/>
+                    </g>
+                );
+            }
+        } as IDrawable, {
+            x,
+            y,
+            type: EDrawableType.OBJECT,
+            draw(this: IDrawable) {
+                return (
+                    <g key={`room-${index}-wall-left`} transform={`translate(${x},${y})`}>
+                        <polygon fill="brown" points="0,0 5,0 5,300 0,300"/>
+                    </g>
+                );
+            }
+        } as IDrawable, {
+            x,
+            y,
+            type: EDrawableType.OBJECT,
+            draw(this: IDrawable) {
+                return (
+                    <g key={`room-${index}-wall-right`} transform={`translate(${x},${y})`}>
+                        <polygon fill="brown" points="495,0 500,0 500,300 495,300"/>
+                    </g>
+                );
+            }
+        } as IDrawable];
     };
 
     sortDrawables = () => {
@@ -393,20 +452,36 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 type: EDrawableType.PERSON,
                 ...person
             }) as IDrawable),
-            ...this.state.chairs.map((chair, index) => ({
-                draw(this: IObject) {
-                    return component.drawChair(this, index);
-                },
-                type: EDrawableType.OBJECT,
-                ...chair
-            }) as IDrawable),
-            ...this.state.tables.map((table, index) => ({
-                draw(this: IObject) {
-                    return component.drawTable(this, index);
-                },
-                type: EDrawableType.OBJECT,
-                ...table
-            }) as IDrawable)
+            ...this.state.rooms.reduce((arr: IDrawable[], room: IRoom): IDrawable[] => {
+                return [
+                    ...arr,
+                    ...room.chairs.map((chair, index) => ({
+                        draw(this: IObject) {
+                            return component.drawChair(this, room, index);
+                        },
+                        type: EDrawableType.OBJECT,
+                        ...chair
+                    }) as IDrawable)
+                ];
+            }, []),
+            ...this.state.rooms.reduce((arr: IDrawable[], room: IRoom): IDrawable[] => {
+                return [
+                    ...arr,
+                    ...room.tables.map((table, index) => ({
+                        draw(this: IObject) {
+                            return component.drawTable(this, room, index);
+                        },
+                        type: EDrawableType.OBJECT,
+                        ...table
+                    }) as IDrawable)
+                ];
+            }, []),
+            ...this.state.rooms.reduce((arr: IDrawable[], room: IRoom, index: number): IDrawable[] => {
+                return [
+                    ...arr,
+                    ...component.drawRoomWalls(room, index)
+                ];
+            }, [])
         ];
 
         // sort drawable objects from bottom to top
@@ -429,6 +504,18 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 <h1>Multiplayer Room</h1>
                 <p>Use the left and right arrow keys or WASD keys to move the player left and right within the room.</p>
                 <svg className="game" width={500} height={300} style={{border: "1px solid black"}}>
+                    <defs>
+                        {
+                            this.state.rooms.map((room: IRoom, index: number) => {
+                                const {x, y} = room;
+                                return (
+                                    <mask key={`room-${index}`} id={`room-${index}`} x="0" y="0" width="500" height="300">
+                                        <rect fill="white" x={x + 5} y={y - 200} width={490} height={495}/>
+                                    </mask>
+                                );
+                            })
+                        }
+                    </defs>
                     {
                         this.sortDrawables().map(drawable => {
                             return drawable.draw();
