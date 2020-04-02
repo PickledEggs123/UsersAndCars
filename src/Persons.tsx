@@ -21,7 +21,15 @@ enum EDrawableType {
     OBJECT = "OBJECT"
 }
 
+interface IRoomDoors {
+    left: boolean;
+    right: boolean;
+    top: boolean;
+    bottom: boolean;
+}
+
 interface IRoom extends IObject {
+    doors: IRoomDoors;
     chairs: IObject[];
     tables: IObject[];
 }
@@ -69,7 +77,42 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
             ] as IObject[],
             tables: [
                 {x: 250, y: 150}
-            ] as IObject[]
+            ] as IObject[],
+            doors: {
+                left: false,
+                right: true,
+                top: false,
+                bottom: false
+            }
+        } as IRoom, {
+            x: 500,
+            y: 0,
+            chairs: [] as IObject[],
+            tables: [] as IObject[],
+            doors: {
+                left: true,
+                right: true,
+                top: true,
+                bottom: true
+            }
+        } as IRoom, {
+            x: 1000,
+            y: 0,
+            chairs: [
+                {x: 200, y: 50},
+                {x: 300, y: 50},
+                {x: 200, y: 250},
+                {x: 300, y: 250}
+            ] as IObject[],
+            tables: [
+                {x: 250, y: 150}
+            ] as IObject[],
+            doors: {
+                left: true,
+                right: false,
+                top: false,
+                bottom: false
+            }
         } as IRoom] as IRoom[],
         currentPersonId: this.randomPersonId(),
         lastUpdate: new Date().toISOString()
@@ -356,10 +399,25 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         return new Array(10).fill(0).map(() => Number(Math.floor(Math.random() * 36)).toString(36)).join("");
     }
 
+    /**
+     * Determine if an object is inside the room.
+     * @param position The object to test.
+     */
+    isInRoom = (position: IObject) => (room: IRoom): boolean => {
+        return position.x >= room.x && position.x <= room.x + 500 &&
+            position.y >= room.y && position.y <= room.y + 300;
+    };
+
     drawPerson = (person: IPerson) => {
         const {x, y} = person;
+        let mask: string = "";
+        const roomIndex = this.state.rooms.findIndex(this.isInRoom(person));
+        if (roomIndex >= 0) {
+            mask = `url(#room-${roomIndex})`;
+        }
+
         return (
-            <g key={person.id} x="0" y="0" width="500" height="300" mask={`url(#room-0)`}>
+            <g key={person.id} x="0" y="0" width="500" height="300" mask={mask}>
                 <g key={person.id} transform={`translate(${x - 50},${y - 100})`}>
                     <polygon fill="yellow" points="40,10 60,10 60,30 40,30"/>
                     <polygon fill={person.shirtColor} points="20,30 80,30 80,100 20,100"/>
@@ -397,47 +455,83 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         const {x, y} = drawable;
         return [{
             x,
-            y,
+            y: y - 130,
             type: EDrawableType.OBJECT,
             draw(this: IDrawable) {
-                return (
-                    <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
-                        <polygon fill="brown" points="0,0 500,0 500,5 0,5"/>
-                    </g>
-                );
+                if ((drawable as IRoom).doors.top) {
+                    return (
+                        <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                            <polygon fill="brown" points="0,0 200,0 200,5 0,5"/>
+                            <polygon fill="brown" points="300,0 500,0 500,5 300,5"/>
+                        </g>
+                    );
+                } else {
+                    return (
+                        <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                            <polygon fill="brown" points="0,0 500,0 500,5 0,5"/>
+                        </g>
+                    );
+                }
             }
         } as IDrawable, {
             x,
             y,
             type: EDrawableType.OBJECT,
             draw(this: IDrawable) {
-                return (
-                    <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
-                        <polygon fill="brown" points="0,295 500,295 500,300 0,300"/>
-                    </g>
-                );
+                if ((drawable as IRoom).doors.bottom) {
+                    return (
+                        <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                            <polygon fill="brown" points="0,295 200,295 200,300 0,300"/>
+                            <polygon fill="brown" points="300,295 500,295 500,300 300,300"/>
+                        </g>
+                    );
+                } else {
+                    return (
+                        <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
+                            <polygon fill="brown" points="0,295 500,295 500,300 0,300"/>
+                        </g>
+                    );
+                }
             }
         } as IDrawable, {
             x,
             y,
             type: EDrawableType.OBJECT,
             draw(this: IDrawable) {
-                return (
-                    <g key={`room-${index}-wall-left`} transform={`translate(${x},${y})`}>
-                        <polygon fill="brown" points="0,0 5,0 5,300 0,300"/>
-                    </g>
-                );
+                if ((drawable as IRoom).doors.left) {
+                    return (
+                        <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                            <polygon fill="brown" points="0,0 5,0 5,100 0,100"/>
+                            <polygon fill="brown" points="0,200 5,200 5,300 0,300"/>
+                        </g>
+                    );
+                } else {
+                    return (
+                        <g key={`room-${index}-wall-left`} transform={`translate(${x},${y})`}>
+                            <polygon fill="brown" points="0,0 5,0 5,300 0,300"/>
+                        </g>
+                    );
+                }
             }
         } as IDrawable, {
             x,
             y,
             type: EDrawableType.OBJECT,
             draw(this: IDrawable) {
-                return (
-                    <g key={`room-${index}-wall-right`} transform={`translate(${x},${y})`}>
-                        <polygon fill="brown" points="495,0 500,0 500,300 495,300"/>
-                    </g>
-                );
+                if ((drawable as IRoom).doors.right) {
+                    return (
+                        <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                            <polygon fill="brown" points="495,0 500,0 500,100 495,100"/>
+                            <polygon fill="brown" points="495,200 500,200 500,300 495,300"/>
+                        </g>
+                    );
+                } else {
+                    return (
+                        <g key={`room-${index}-wall-right`} transform={`translate(${x},${y})`}>
+                            <polygon fill="brown" points="495,0 500,0 500,300 495,300"/>
+                        </g>
+                    );
+                }
             }
         } as IDrawable];
     };
@@ -499,6 +593,13 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     };
 
     render() {
+        const currentPerson = this.state.persons.find(person => person.id === this.state.currentPersonId);
+        let worldOffsetX: number = 0;
+        let worldOffsetY: number = 0;
+        if (currentPerson) {
+            worldOffsetX = currentPerson.x - 250;
+            worldOffsetY = currentPerson.y - 150;
+        }
         return (
             <div className="persons">
                 <h1>Multiplayer Room</h1>
@@ -511,16 +612,39 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                                 return (
                                     <mask key={`room-${index}`} id={`room-${index}`} x="0" y="0" width="500" height="300">
                                         <rect fill="white" x={x + 5} y={y - 200} width={490} height={495}/>
+                                        {
+                                            room.doors.left ?
+                                                <>
+                                                    <rect fill="white" x={x - 5} y={y + 100} width={10} height={100}/>
+                                                    <rect fill="white" x={x - 105} y={y - 200} width={100} height={495}/>
+                                                </> :
+                                                null
+                                        }
+                                        {
+                                            room.doors.right ?
+                                                <>
+                                                    <rect fill="white" x={x + 495} y={y + 100} width={10} height={100}/>
+                                                    <rect fill="white" x={x + 505} y={y - 200} width={100} height={495}/>
+                                                </> :
+                                                null
+                                        }
+                                        {
+                                            room.doors.bottom ?
+                                                <rect fill="white" x={x + 200} y={y + 295} width={100} height={205}/> :
+                                                null
+                                        }
                                     </mask>
                                 );
                             })
                         }
                     </defs>
-                    {
-                        this.sortDrawables().map(drawable => {
-                            return drawable.draw();
-                        })
-                    }
+                    <g transform={`translate(${-worldOffsetX},${-worldOffsetY})`}>
+                        {
+                            this.sortDrawables().map(drawable => {
+                                return drawable.draw();
+                            })
+                        }
+                    </g>
                 </svg>
                 <div>
                     <p>Select a custom shirt color for your character.</p>
