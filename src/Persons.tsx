@@ -21,22 +21,11 @@ interface IObject {
     y: number;
 }
 
-/**
- * The base interface for all people in the game.
- */
-interface IPerson extends IObject {
+interface INetworkObject extends IObject {
     /**
      * The randomly generated unique id of the person. Each person has a unique id for selecting and controlling them.
      */
     id: string;
-    /**
-     * The customizable shirt color of the person.
-     */
-    shirtColor: string;
-    /**
-     * The customizable pant color of the person.
-     */
-    pantColor: string;
     /**
      * When the person was last updated. Used to keep track of which version of the person data is more up to date. The
      * local copy sometimes can be more up to date than the network copy, so the network copy has to be modified with
@@ -46,6 +35,24 @@ interface IPerson extends IObject {
      * person will teleport backwards, causing a constant teleport backwards glitch.
      */
     lastUpdate: string;
+}
+
+/**
+ * The base interface for all people in the game.
+ */
+interface IPerson extends INetworkObject {
+    /**
+     * The customizable shirt color of the person.
+     */
+    shirtColor: string;
+    /**
+     * The customizable pant color of the person.
+     */
+    pantColor: string;
+    /**
+     * The car the person is currently in.
+     */
+    carId: string | null;
 }
 
 /**
@@ -119,11 +126,7 @@ enum ECarDirection {
 /**
  * A car that can contain people who can drive around.
  */
-interface ICar extends IObject {
-    /**
-     * Unique id of the car.
-     */
-    id: string;
+interface ICar extends INetworkObject {
     /**
      * The direction the car is facing.
      */
@@ -318,7 +321,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
      * Update the person in the database then update the game.
      */
     updatePerson = async () => {
-        const currentPerson = this.state.persons.find(person => person.id === this.state.currentPersonId);
+        const currentPerson = this.getCurrentPerson();
         if (currentPerson) {
             // person exist, update the database with the current copy of current person.
             await axios.put(`https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/${this.state.currentPersonId}`, currentPerson);
@@ -386,7 +389,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
      */
     gameLoop = async () => {
         // find current person
-        let currentPerson = this.state.persons.find(person => person.id === this.state.currentPersonId);
+        let currentPerson = this.getCurrentPerson();
         if (!currentPerson) {
             // person does not exist, create current person
             this.createPerson();
@@ -395,12 +398,12 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         // update current person
         if (currentPerson && +Date.parse(this.state.lastUpdate) < +Date.parse(currentPerson.lastUpdate)) {
             await this.updatePerson();
-            currentPerson = this.state.persons.find(person => person.id === this.state.currentPersonId);
+            currentPerson = this.getCurrentPerson();
         }
 
         // get a list of persons from the database
         const response = await axios.get("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons");
-        currentPerson = this.state.persons.find(person => person.id === this.state.currentPersonId);
+        currentPerson = this.getCurrentPerson();
         if (response && response.data) {
             // get persons data from the server
             const serverPersons = response.data as IPerson[];
@@ -443,11 +446,23 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
             typeof person.shirtColor === "string" && person.pantColor === "string";
     };
 
-    updateCurrentPerson = (update: (person: IPerson) => IPerson): IPerson[] => {
+    /**
+     * Find the current person in the game state.
+     */
+    getCurrentPerson = (): IPerson | undefined => {
+        return this.state.persons.find(person => person.id === this.state.currentPersonId);
+    };
+
+    /**
+     * Update only the current person in the person array. Return the array to save as a new React state.
+     * @param update The update to perform on current person.
+     */
+    updateCurrentPerson = (update: (person: IPerson, car?: ICar) => IPerson): IPerson[] => {
         return this.state.persons.reduce((arr: IPerson[], person: IPerson): IPerson[] => {
             if (person.id === this.state.currentPersonId) {
+                const car = this.state.cars.find(car => car.id === person.carId);
                 return [...arr, {
-                    ...update(person),
+                    ...update(person, car),
                     lastUpdate: new Date().toISOString()
                 }];
             } else {
@@ -457,18 +472,171 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     };
 
     /**
+     * Update only the current person in the person array. Return the array to save as a new React state.
+     * @param update The update to perform on current person.
+     */
+    updateCurrentCar = (update: (car: ICar) => ICar): ICar[] => {
+        const currentPerson = this.getCurrentPerson();
+        if (currentPerson && currentPerson.carId) {
+            return this.state.cars.reduce((arr: ICar[], car: ICar): ICar[] => {
+                if (car.id === currentPerson.carId) {
+                    return [...arr, {
+                        ...update(car),
+                        lastUpdate: new Date().toISOString()
+                    }];
+                } else {
+                    return [...arr, car];
+                }
+            }, []);
+        } else {
+            return this.state.cars;
+        }
+    };
+
+    /**
+     * How many milliseconds should the setInterval take when handling a person's speed. A lower number will perform
+     * faster movement.
+     * @param person The person to move.
+     */
+    personIntervalSpeed = (person: IPerson): number => {
+        if (person.carId) {
+            // the person is in a car, move every 33 milliseconds, or 30 times a second
+            return 33;
+        } else {
+            // the person is not in a car, move every 100 milliseconds, or 10 times a second
+            return 100;
+        }
+    };
+
+    /**
+     * Get the person offset relatve to a car.
+     * @param person Person to calculate offset for.
+     * @param car Car to calculate offset for.
+     */
+    getPersonOffset = (person: IObject, car: IObject): IObject => {
+        return {
+            x: person.x - car.x,
+            y: person.y - car.y
+        };
+    };
+
+    /**
+     * Rotate offset by 90 degrees clockwise.
+     * @param offset Offset to rotate.
+     */
+    rotate90 = (offset: IObject): IObject => {
+        // noinspection JSSuspiciousNameCombination
+        return {
+            x: -offset.y,
+            y: offset.x
+        } as IObject;
+    };
+
+    /**
+     * Perform a person offset rotation relative to the change in car direction.
+     * @param prevDirection The previous car direction.
+     * @param direction The new car direction.
+     * @param offset The offset to rotate to match direction.
+     */
+    rotatePersonOffset = (prevDirection: ECarDirection, direction: ECarDirection, offset: IObject): IObject => {
+        switch (prevDirection) {
+            default:
+            case ECarDirection.UP: {
+                switch (direction) {
+                    default:
+                    case ECarDirection.UP: return offset;
+                    case ECarDirection.RIGHT: return this.rotate90(offset);
+                    case ECarDirection.DOWN: return this.rotate90(this.rotate90(offset));
+                    case ECarDirection.LEFT: return this.rotate90(this.rotate90(this.rotate90(offset)));
+                }
+            }
+            case ECarDirection.RIGHT: {
+                switch (direction) {
+                    default:
+                    case ECarDirection.RIGHT: return offset;
+                    case ECarDirection.DOWN: return this.rotate90(offset);
+                    case ECarDirection.LEFT: return this.rotate90(this.rotate90(offset));
+                    case ECarDirection.UP: return this.rotate90(this.rotate90(this.rotate90(offset)));
+                }
+            }
+            case ECarDirection.DOWN: {
+                switch (direction) {
+                    default:
+                    case ECarDirection.DOWN: return offset;
+                    case ECarDirection.LEFT: return this.rotate90(offset);
+                    case ECarDirection.UP: return this.rotate90(this.rotate90(offset));
+                    case ECarDirection.RIGHT: return this.rotate90(this.rotate90(this.rotate90(offset)));
+                }
+            }
+            case ECarDirection.LEFT: {
+                switch (direction) {
+                    default:
+                    case ECarDirection.LEFT: return offset;
+                    case ECarDirection.UP: return this.rotate90(offset);
+                    case ECarDirection.RIGHT: return this.rotate90(this.rotate90(offset));
+                    case ECarDirection.DOWN: return this.rotate90(this.rotate90(this.rotate90(offset)));
+                }
+            }
+        }
+    };
+
+    /**
      * Generic handler that handles any keyboard movement, add update function to determine how to update the object.
      * The code for WASD keys movement is identical except for one line, adding or subtracting x or y.
-     * @param event
+     * @param event The keyboard event which contains which key was pressed.
+     * @param person The cached copy of a person, used for determining speed of setInterval.
      */
-    handleKeyDownMovement = (event: KeyboardEvent) => (update: (person: IPerson) => IPerson) => {
+    handleKeyDownMovementPerson = (event: KeyboardEvent, person: IPerson) => (
+        updatePerson: (person: IPerson, car?: ICar) => IPerson,
+        updateCar: (car: ICar) => ICar
+    ) => {
         this.keyDownHandlers.push({
             key: event.key as any,
             interval: setInterval(() => {
-                const persons = this.updateCurrentPerson(update);
-                this.setState({persons});
-            }, 100)
+                // create an array of updates
+                // add person array to updates
+                const stateUpdates = [] as Array<Partial<IPersonsState>>;
+
+                /**
+                 * Update the person's car position if the person is driving the car.
+                 */
+                // update cars and include into array of updates
+                // determine if current person is in a car
+                let currentPersonInCar: boolean = false;
+                const currentPerson = this.getCurrentPerson();
+                if (currentPerson) {
+                    currentPersonInCar = !!currentPerson.carId;
+                }
+
+                // if person is in car, update cars, add to state updates
+                if (currentPersonInCar) {
+                    // update person array
+                    const persons = this.updateCurrentPerson(updatePerson);
+                    stateUpdates.push({persons});
+
+                    // update car array
+                    const cars = this.updateCurrentCar(updateCar);
+                    stateUpdates.push({cars});
+                } else {
+                    // update person array
+                    const persons = this.updateCurrentPerson(updatePerson);
+                    stateUpdates.push({persons});
+                }
+
+                // merge optional state updates into one state update object to perform a single setState.
+                const stateUpdate: IPersonsState = Object.assign.apply({}, [{}, ...stateUpdates]);
+                this.setState(stateUpdate);
+            }, this.personIntervalSpeed(person))
         });
+    };
+
+    /**
+     * Change a property on the current person.
+     * @param update A function that performs the property update.
+     */
+    handlePersonPropertyChange = (update: (person: IPerson) => IPerson) => {
+        const persons = this.updateCurrentPerson(update);
+        this.setState({persons});
     };
 
     /**
@@ -481,40 +649,130 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
             return;
         }
 
+        // find the current person
+        // the current person is cached for determining speed of a setInterval callback.
+        const currentPerson = this.getCurrentPerson();
+        if (!currentPerson) {
+            // no current person, do nothing
+            return;
+        }
+
         // for each key press type
         switch (event.key) {
             case "w":
             case "ArrowUp": {
-                this.handleKeyDownMovement(event)((person: IPerson): IPerson => ({
-                    ...person,
-                    y: person.y - 10
+                this.handleKeyDownMovementPerson(event, currentPerson)((person: IPerson, car?: ICar): IPerson => {
+                    if (car) {
+                        const personOffsetInCar = this.getPersonOffset(person, car);
+                        const rotatedPersonOffsetInCar = this.rotatePersonOffset(car.direction, ECarDirection.UP, personOffsetInCar);
+                        return {
+                            ...person,
+                            x: car.x + rotatedPersonOffsetInCar.x,
+                            y: car.y + rotatedPersonOffsetInCar.y - 10
+                        }
+                    } else {
+                        return {
+                            ...person,
+                            y: person.y - 10
+                        };
+                    }
+                }, (car: ICar): ICar => ({
+                    ...car,
+                    y: car.y - 10,
+                    direction: ECarDirection.UP
                 }));
                 break;
             }
             case "s":
             case "ArrowDown": {
-                this.handleKeyDownMovement(event)((person: IPerson): IPerson => ({
-                    ...person,
-                    y: person.y + 10
+                this.handleKeyDownMovementPerson(event, currentPerson)((person: IPerson, car?: ICar): IPerson => {
+                    if (car) {
+                        const personOffsetInCar = this.getPersonOffset(person, car);
+                        const rotatedPersonOffsetInCar = this.rotatePersonOffset(car.direction, ECarDirection.DOWN, personOffsetInCar);
+                        return {
+                            ...person,
+                            x: car.x + rotatedPersonOffsetInCar.x,
+                            y: car.y + rotatedPersonOffsetInCar.y + 10
+                        }
+                    } else {
+                        return {
+                            ...person,
+                            y: person.y + 10
+                        };
+                    }
+                }, (car: ICar): ICar => ({
+                    ...car,
+                    y: car.y + 10,
+                    direction: ECarDirection.DOWN
                 }));
                 break;
             }
             case "a":
             case "ArrowLeft": {
-                this.handleKeyDownMovement(event)((person: IPerson): IPerson => ({
-                    ...person,
-                    x: person.x - 10
+                this.handleKeyDownMovementPerson(event, currentPerson)((person: IPerson, car?: ICar): IPerson => {
+                    if (car) {
+                        const personOffsetInCar = this.getPersonOffset(person, car);
+                        const rotatedPersonOffsetInCar = this.rotatePersonOffset(car.direction, ECarDirection.LEFT, personOffsetInCar);
+                        return {
+                            ...person,
+                            x: car.x + rotatedPersonOffsetInCar.x - 10,
+                            y: car.y + rotatedPersonOffsetInCar.y
+                        }
+                    } else {
+                        return {
+                            ...person,
+                            x: person.x - 10
+                        };
+                    }
+                }, (car: ICar): ICar => ({
+                    ...car,
+                    x: car.x - 10,
+                    direction: ECarDirection.LEFT
                 }));
                 break;
             }
             case "d":
             case "ArrowRight": {
-                this.handleKeyDownMovement(event)((person: IPerson): IPerson => ({
-                    ...person,
-                    x: person.x + 10
+                this.handleKeyDownMovementPerson(event, currentPerson)((person: IPerson, car?: ICar): IPerson => {
+                    if (car) {
+                        const personOffsetInCar = this.getPersonOffset(person, car);
+                        const rotatedPersonOffsetInCar = this.rotatePersonOffset(car.direction, ECarDirection.RIGHT, personOffsetInCar);
+                        return {
+                            ...person,
+                            x: car.x + rotatedPersonOffsetInCar.x + 10,
+                            y: car.y + rotatedPersonOffsetInCar.y
+                        }
+                    } else {
+                        return {
+                            ...person,
+                            x: person.x + 10
+                        };
+                    }
+                }, (car: ICar): ICar => ({
+                    ...car,
+                    x: car.x + 10,
+                    direction: ECarDirection.RIGHT
                 }));
                 break;
             }
+            case "e":
+                this.handlePersonPropertyChange((person: IPerson): IPerson => {
+                    const car = this.state.cars.find(this.isInCar(person));
+                    if (car) {
+                        return {
+                            ...person,
+                            carId: person.carId === car.id ? null : car.id
+                        };
+                    } else if (person.carId) {
+                        return {
+                            ...person,
+                            carId: null
+                        };
+                    } else {
+                        return person;
+                    }
+                });
+                break;
         }
     };
 
@@ -620,13 +878,14 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         const {x, y} = person;
 
         // the mask property which will mask the person's body so the bottom half of the person does not appear below a wall
-        let mask: string = "";
+        let roomMask: string = "";
+        let carMask: string = "";
 
         // find which room the person is in
         const roomIndex = this.state.rooms.findIndex(this.isInRoom(person));
         if (roomIndex >= 0) {
             // person is in a room, apply the room mask
-            mask = `url(#room-${roomIndex})`;
+            roomMask = `url(#room-${roomIndex})`;
         }
 
         // find which car the person is in
@@ -637,25 +896,27 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 default:
                 case ECarDirection.DOWN:
                 case ECarDirection.UP: {
-                    mask = `url(#car-${car.id}-down)`;
+                    carMask = `url(#car-${car.id}-down)`;
                     break;
                 }
                 case ECarDirection.LEFT:
                 case ECarDirection.RIGHT: {
-                    mask = `url(#car-${car.id}-left)`;
+                    carMask = `url(#car-${car.id}-left)`;
                     break;
                 }
             }
         }
 
         return (
-            <g key={person.id} x="0" y="0" width="500" height="300" mask={mask}>
-                <g key={person.id} transform={`translate(${x - 50},${y - 100})`}>
-                    <polygon fill="yellow" points="40,10 60,10 60,30 40,30"/>
-                    <polygon fill={person.shirtColor} points="20,30 80,30 80,100 20,100"/>
-                    <polygon fill={person.pantColor} points="20,100 80,100 80,120 20,120"/>
-                    <polygon fill={person.pantColor} points="20,120 40,120 40,200 20,200"/>
-                    <polygon fill={person.pantColor} points="80,120 60,120 60,200 80,200"/>
+            <g key={person.id} x="0" y="0" width="500" height="300" mask={roomMask}>
+                <g key={person.id} x="0" y="0" width="500" height="300" mask={carMask}>
+                    <g key={person.id} transform={`translate(${x - 50},${y - 100})`}>
+                        <polygon fill="yellow" points="40,10 60,10 60,30 40,30"/>
+                        <polygon fill={person.shirtColor} points="20,30 80,30 80,100 20,100"/>
+                        <polygon fill={person.pantColor} points="20,100 80,100 80,120 20,120"/>
+                        <polygon fill={person.pantColor} points="20,120 40,120 40,200 20,200"/>
+                        <polygon fill={person.pantColor} points="80,120 60,120 60,200 80,200"/>
+                    </g>
                 </g>
             </g>
         );
@@ -1015,7 +1276,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
 
     render() {
         // find the current person
-        const currentPerson = this.state.persons.find(person => person.id === this.state.currentPersonId);
+        const currentPerson = this.getCurrentPerson();
 
         // the offset of the entire world
         let worldOffsetX: number = 0;
@@ -1092,6 +1353,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                             })
                         }
                     </g>
+                    <text x="20" y="20">Position: {worldOffsetX} {worldOffsetY}</text>
                 </svg>
                 <div>
                     <p>Select a custom shirt color for your character.</p>
