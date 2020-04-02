@@ -146,6 +146,24 @@ interface IPerson {
     carId: string | null;
 }
 
+/**
+ * The direction a car is facing.
+ */
+enum ECarDirection {
+    UP = "UP",
+    DOWN = "DOWN",
+    LEFT = "LEFT",
+    RIGHT = "RIGHT"
+}
+
+interface ICar {
+    id: string;
+    x: number;
+    y: number;
+    direction: ECarDirection;
+    lastUpdate: string;
+}
+
 const personsApp = express();
 
 // Use CORS to allow any URL to access the API, used to enable Single Page Applications.
@@ -156,16 +174,37 @@ personsApp.use(cors({origin: true}));
  */
 personsApp.get("/", (req: any, res: { json: (arg0: any) => void; }, next: (arg0: any) => any) => {
     (async () => {
-        const querySnapshot = await admin.firestore().collection("persons").get();
+        // json response data
         const personsToReturnAsJson = [];
+        const carsToReturnAsJson = [];
 
-        for (const documentSnapshot of querySnapshot.docs) {
-            personsToReturnAsJson.push({
-                ...documentSnapshot.data()
-            });
+        // get persons
+        {
+            const querySnapshot = await admin.firestore().collection("persons").get();
+
+            for (const documentSnapshot of querySnapshot.docs) {
+                personsToReturnAsJson.push({
+                    ...documentSnapshot.data()
+                });
+            }
         }
 
-        res.json(personsToReturnAsJson as any);
+        // get cars
+        {
+            const querySnapshot = await admin.firestore().collection("personalCars").get();
+
+            for (const documentSnapshot of querySnapshot.docs) {
+                carsToReturnAsJson.push({
+                    ...documentSnapshot.data()
+                });
+            }
+        }
+
+        // return both persons and cars since both can move and both are network objects
+        res.json({
+            persons: personsToReturnAsJson,
+            cars: carsToReturnAsJson
+        });
     })().catch((err) => next(err));
 });
 
@@ -204,6 +243,24 @@ personsApp.put("/:id", (req: { params: { id: any; }; body: any; }, res: any, nex
             ...req.body
         };
         await admin.firestore().collection("persons").doc(id).set(person);
+        res.sendStatus(200);
+    })().catch((err) => next(err));
+});
+
+/**
+ * Update a person.
+ */
+personsApp.put("/cars/:id", (req: { params: { id: any; }; body: any; }, res: any, next: (arg0: any) => any) => {
+    (async () => {
+        const id: string = req.params.id;
+        const person: ICar = {
+            id,
+            direction: ECarDirection.DOWN,
+            x: 50,
+            y: 150,
+            ...req.body
+        };
+        await admin.firestore().collection("personalCars").doc(id).set(person);
         res.sendStatus(200);
     })().catch((err) => next(err));
 });

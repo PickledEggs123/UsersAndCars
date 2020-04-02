@@ -165,6 +165,20 @@ interface IKeyDownHandler {
 }
 
 /**
+ * The HTTP GET /persons response.
+ */
+interface IApiPersonsGet {
+    /**
+     * A list of people.
+     */
+    persons: IPerson[];
+    /**
+     * A list of cars.
+     */
+    cars: ICar[];
+}
+
+/**
  * The state of the game component. The game state is stored in React so all changes to the game state will update the
  * SVG on the screen.
  */
@@ -271,27 +285,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 bottom: false
             }
         } as IRoom],
-        cars: [{
-            id: "car-1",
-            x: 500,
-            y: 450,
-            direction: ECarDirection.DOWN
-        } as ICar, {
-            id: "car-2",
-            x: 700,
-            y: 450,
-            direction: ECarDirection.RIGHT
-        } as ICar, {
-            id: "car-3",
-            x: 900,
-            y: 450,
-            direction: ECarDirection.UP
-        } as ICar, {
-            id: "car-4",
-            x: 1100,
-            y: 450,
-            direction: ECarDirection.LEFT
-        } as ICar],
+        cars: [] as ICar[],
         currentPersonId: this.randomPersonId(),
         lastUpdate: new Date().toISOString()
     };
@@ -320,11 +314,28 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     /**
      * Update the person in the database then update the game.
      */
-    updatePerson = async () => {
-        const currentPerson = this.getCurrentPerson();
-        if (currentPerson) {
+    updatePerson = async (person: IPerson) => {
+        if (person) {
             // person exist, update the database with the current copy of current person.
-            await axios.put(`https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/${this.state.currentPersonId}`, currentPerson);
+            await axios.put(`https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/${person.id}`, person);
+            // wait for [[state.lastUpdate]] to update after the network call.
+            await new Promise((resolve) => {
+                this.setState({
+                    lastUpdate: new Date().toISOString()
+                }, () => {
+                    resolve();
+                });
+            });
+        }
+    };
+
+    /**
+     * Update the car in the database then update the game.
+     */
+    updateCar = async (car: ICar) => {
+        if (car) {
+            // person exist, update the database with the current copy of current person.
+            await axios.put(`https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/cars/${car.id}`, car);
             // wait for [[state.lastUpdate]] to update after the network call.
             await new Promise((resolve) => {
                 this.setState({
@@ -353,9 +364,9 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
 
         // delete all previous persons
         (async () => {
-            const response = await axios.get("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons");
+            const response = await axios.get<IApiPersonsGet>("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons");
             if (response && response.data) {
-                const persons = response.data as IPerson[];
+                const {persons} = response.data;
                 await Promise.all(persons.map(person => {
                     return axios.delete(`https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/${person.id}`);
                 }));
@@ -385,50 +396,69 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     };
 
     /**
+     * Merge local and network sets of [[INetworkObject]] arrays.
+     * @param localArr The local data.
+     * @param networkArr The network data.
+     * @param networkItem A single network data item.
+     */
+    updateMergeLocalAndNetworkData = <T extends INetworkObject>(localArr: T[], networkArr: T[], networkItem: T): T[] => {
+        // find local data
+        const localItem = localArr.find(d => d.id === networkItem.id);
+
+        // check to see if the local data is more up to date.
+        if (localItem && +Date.parse(localItem.lastUpdate) > +Date.parse(networkItem.lastUpdate)) {
+            // local data is more up to date, replace server position with local position, to prevent backward moving glitch
+            const {x, y} = localItem;
+            return [
+                ...networkArr,
+                {
+                    ...networkItem,
+                    x,
+                    y
+                }
+            ]
+        } else {
+            // server is up to date, no changes
+            return [...networkArr, networkItem];
+        }
+    };
+
+    /**
      * Update the state of the game.
      */
     gameLoop = async () => {
         // find current person
-        let currentPerson = this.getCurrentPerson();
+        const currentPerson = this.getCurrentPerson();
         if (!currentPerson) {
             // person does not exist, create current person
             this.createPerson();
         }
 
-        // update current person
-        if (currentPerson && +Date.parse(this.state.lastUpdate) < +Date.parse(currentPerson.lastUpdate)) {
-            await this.updatePerson();
-            currentPerson = this.getCurrentPerson();
-        }
+        // get list of persons and cars that have changed
+        const personsToUpdate = this.state.persons.filter(person => +Date.parse(this.state.lastUpdate) < +Date.parse(person.lastUpdate));
+        const carsToUpdate = this.state.cars.filter(car => +Date.parse(this.state.lastUpdate) < +Date.parse(car.lastUpdate));
+        // update all changed persons and cars
+        await Promise.all([
+            ...personsToUpdate.map(person => this.updatePerson(person)),
+            ...carsToUpdate.map(car => this.updateCar(car))
+        ]);
 
         // get a list of persons from the database
-        const response = await axios.get("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons");
-        currentPerson = this.getCurrentPerson();
+        const response = await axios.get<IApiPersonsGet>("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons");
         if (response && response.data) {
             // get persons data from the server
-            const serverPersons = response.data as IPerson[];
+            const {persons: serverPersons, cars: serverCars} = response.data;
 
             // modify server data with local data, pick most up to date version of the data
             const persons = serverPersons.reduce((arr: IPerson[], person: IPerson): IPerson[] => {
-                // check to see if the local data is more up to date.
-                if (currentPerson && person.id === this.state.currentPersonId && +Date.parse(currentPerson.lastUpdate) > +Date.parse(person.lastUpdate)) {
-                    // local data is more up to date, replace server position with local position, to prevent backward moving glitch
-                    const {x, y} = currentPerson;
-                    return [
-                        ...arr,
-                        {
-                            ...person,
-                            x,
-                            y
-                        }
-                    ]
-                } else {
-                    // server is up to date, no changes
-                    return [...arr, person];
-                }
+                return this.updateMergeLocalAndNetworkData(this.state.persons, arr, person);
+            }, []);
+            const cars = serverCars.reduce((arr: ICar[], car: ICar): ICar[] => {
+                return this.updateMergeLocalAndNetworkData(this.state.cars, arr, car);
             }, []);
             this.setState({
                 persons,
+                cars,
                 lastUpdate: new Date().toISOString()
             });
         }
@@ -454,18 +484,31 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     };
 
     /**
-     * Update only the current person in the person array. Return the array to save as a new React state.
-     * @param update The update to perform on current person.
+     * Update current person and car passengers in the person array. Return the array to save as a new React state.
+     * @param update The update to perform on current person and car passengers.
      */
-    updateCurrentPerson = (update: (person: IPerson, car?: ICar) => IPerson): IPerson[] => {
+    updatePersons = (update: (person: IPerson, car?: ICar) => IPerson): IPerson[] => {
+        // get all passengers in the car with the current person
+        const passengers = [] as IPerson[];
+        const currentPerson = this.getCurrentPerson();
+        if (currentPerson && currentPerson.carId) {
+            const currentCar = this.state.cars.find(car => car.id === currentPerson.carId);
+            if (currentCar) {
+                passengers.push(...this.state.persons.filter(person => currentPerson && person.carId === currentCar.id && person.id !== currentPerson.id));
+            }
+        }
+
         return this.state.persons.reduce((arr: IPerson[], person: IPerson): IPerson[] => {
-            if (person.id === this.state.currentPersonId) {
+            // if current person or passenger in the car with the current person
+            if (person.id === this.state.currentPersonId || passengers.map(passenger => passenger.id).includes(person.id)) {
+                // perform movement update with current person, any passengers, and the car
                 const car = this.state.cars.find(car => car.id === person.carId);
                 return [...arr, {
                     ...update(person, car),
                     lastUpdate: new Date().toISOString()
                 }];
             } else {
+                // not current person or passenger in car with the current person, do nothing
                 return [...arr, person];
             }
         }, []);
@@ -611,7 +654,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 // if person is in car, update cars, add to state updates
                 if (currentPersonInCar) {
                     // update person array
-                    const persons = this.updateCurrentPerson(updatePerson);
+                    const persons = this.updatePersons(updatePerson);
                     stateUpdates.push({persons});
 
                     // update car array
@@ -619,7 +662,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     stateUpdates.push({cars});
                 } else {
                     // update person array
-                    const persons = this.updateCurrentPerson(updatePerson);
+                    const persons = this.updatePersons(updatePerson);
                     stateUpdates.push({persons});
                 }
 
@@ -635,7 +678,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
      * @param update A function that performs the property update.
      */
     handlePersonPropertyChange = (update: (person: IPerson) => IPerson) => {
-        const persons = this.updateCurrentPerson(update);
+        const persons = this.updatePersons(update);
         this.setState({persons});
     };
 
@@ -810,7 +853,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
      * @param update
      */
     updatePersonProperty = (update: (person: IPerson) => IPerson) => {
-        const persons = this.updateCurrentPerson(update);
+        const persons = this.updatePersons(update);
         this.setState({persons});
     };
 
