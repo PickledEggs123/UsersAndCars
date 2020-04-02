@@ -89,6 +89,10 @@ interface IRoomDoors {
  */
 interface IRoom extends IObject {
     /**
+     * Unique id of the room.
+     */
+    id: string;
+    /**
      * The doors of the room.
      */
     doors: IRoomDoors;
@@ -100,6 +104,30 @@ interface IRoom extends IObject {
      * The tables in the room.
      */
     tables: IObject[];
+}
+
+/**
+ * The direction a car is facing.
+ */
+enum ECarDirection {
+    UP = "UP",
+    DOWN = "DOWN",
+    LEFT = "LEFT",
+    RIGHT = "RIGHT"
+}
+
+/**
+ * A car that can contain people who can drive around.
+ */
+interface ICar extends IObject {
+    /**
+     * Unique id of the car.
+     */
+    id: string;
+    /**
+     * The direction the car is facing.
+     */
+    direction: ECarDirection;
 }
 
 /**
@@ -147,6 +175,10 @@ interface IPersonsState {
      */
     rooms: IRoom[];
     /**
+     * A list of cars in the current location.
+     */
+    cars: ICar[];
+    /**
      * The randomly generated ID of the current person shown.
      */
     currentPersonId: string;
@@ -186,6 +218,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     state = {
         persons: [] as IPerson[],
         rooms: [{
+            id: "left-office-room",
             x: 0,
             y: 0,
             chairs: [
@@ -204,6 +237,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 bottom: false
             }
         } as IRoom, {
+            id: "hallway-room",
             x: 500,
             y: 0,
             chairs: [] as IObject[],
@@ -215,6 +249,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 bottom: true
             }
         } as IRoom, {
+            id: "right-office-room",
             x: 1000,
             y: 0,
             chairs: [
@@ -232,7 +267,28 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 top: false,
                 bottom: false
             }
-        } as IRoom] as IRoom[],
+        } as IRoom],
+        cars: [{
+            id: "car-1",
+            x: 500,
+            y: 450,
+            direction: ECarDirection.DOWN
+        } as ICar, {
+            id: "car-2",
+            x: 700,
+            y: 450,
+            direction: ECarDirection.RIGHT
+        } as ICar, {
+            id: "car-3",
+            x: 900,
+            y: 450,
+            direction: ECarDirection.UP
+        } as ICar, {
+            id: "car-4",
+            x: 1100,
+            y: 450,
+            direction: ECarDirection.LEFT
+        } as ICar],
         currentPersonId: this.randomPersonId(),
         lastUpdate: new Date().toISOString()
     };
@@ -539,6 +595,24 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     };
 
     /**
+     * Determine if an object is inside the car.
+     * @param position The object to test.
+     */
+    isInCar = (position: IObject) => (car: ICar): boolean => {
+        switch (car.direction) {
+            default:
+            case ECarDirection.UP:
+            case ECarDirection.DOWN:
+                return position.x >= car.x - 50 && position.x <= car.x + 50 &&
+                    position.y >= car.y - 100 && position.y <= car.y + 100;
+            case ECarDirection.LEFT:
+            case ECarDirection.RIGHT:
+                return position.x >= car.x - 100 && position.x <= car.x + 100 &&
+                    position.y >= car.y - 50 && position.y <= car.y + 50;
+        }
+    };
+
+    /**
      * Draw a person as some SVG elements.
      * @param person The person to draw.
      */
@@ -547,11 +621,31 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
 
         // the mask property which will mask the person's body so the bottom half of the person does not appear below a wall
         let mask: string = "";
+
         // find which room the person is in
         const roomIndex = this.state.rooms.findIndex(this.isInRoom(person));
         if (roomIndex >= 0) {
             // person is in a room, apply the room mask
             mask = `url(#room-${roomIndex})`;
+        }
+
+        // find which car the person is in
+        const car = this.state.cars.find(this.isInCar(person));
+        if (car) {
+            // person is in a room, apply the room mask
+            switch (car.direction) {
+                default:
+                case ECarDirection.DOWN:
+                case ECarDirection.UP: {
+                    mask = `url(#car-${car.id}-down)`;
+                    break;
+                }
+                case ECarDirection.LEFT:
+                case ECarDirection.RIGHT: {
+                    mask = `url(#car-${car.id}-left)`;
+                    break;
+                }
+            }
         }
 
         return (
@@ -568,15 +662,147 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     };
 
     /**
+     * Draw a person as some SVG elements.
+     * @param car The person to draw.
+     */
+    drawCar = (car: ICar): IDrawable[] => {
+        const {x, y} = car;
+
+        // the mask property which will mask the car so the bottom half of the car does not appear below a wall
+        let mask: string = "";
+        // find which room the car is in
+        const roomIndex = this.state.rooms.findIndex(this.isInRoom(car));
+        if (roomIndex >= 0) {
+            // car is in a room, apply the room mask
+            mask = `url(#room-${roomIndex})`;
+        }
+
+        // return a list of drawable car parts
+        switch (car.direction) {
+            default:
+            case ECarDirection.DOWN: return [{
+                // draw the back of the car
+                x,
+                y: y - 100,
+                type: EDrawableType.OBJECT,
+                draw(this: IDrawable) {
+                    return (
+                        <g key={`car-top-${car.id}`} x="0" y="0" width="100" height="200" mask={mask}>
+                            <g key={car.id} transform={`translate(${x},${y})`}>
+                                <polygon fill="lightblue" points="-50,-100 50,-100 50,50, -50,50"/>
+                                <polygon fill="grey" stroke="black" strokeWidth={2} points="-40,-90 40,-90 40,50, -40,50"/>
+                                <polyline stroke="black" strokeWidth={2} points="-20,-90 -20,50"/>
+                                <polyline stroke="black" strokeWidth={2} points="0,-90 0,50"/>
+                                <polyline stroke="black" strokeWidth={2} points="20,-90 20,50"/>
+                            </g>
+                        </g>
+                    );
+                }
+            }, {
+                // draw the front of the car
+                x,
+                y,
+                type: EDrawableType.OBJECT,
+                draw(this: IDrawable) {
+                    return (
+                        <g key={`car-bottom-${car.id}`} x="0" y="0" width="100" height="200" mask={mask}>
+                            <g key={car.id} transform={`translate(${x},${y})`}>
+                                <polygon fill="lightblue" opacity={0.5} points="-40,0 40,0 50,50 -50,50"/>
+                                <polygon fill="lightblue" points="-50,50 50,50 50,100 -50,100"/>
+                                <polygon fill="white" stroke="black" strokeWidth={2} points="-40,70 40,70 40,90 -40,90"/>
+                                <polyline stroke="black" strokeWidth={2} points="-20,70 -20,90"/>
+                                <polyline stroke="black" strokeWidth={2} points="0,70 0,90"/>
+                                <polyline stroke="black" strokeWidth={2} points="20,70 20,90"/>
+                            </g>
+                        </g>
+                    );
+                }
+            }];
+            case ECarDirection.UP: return [{
+                // draw the back of the car
+                x,
+                y: y - 100,
+                type: EDrawableType.OBJECT,
+                draw(this: IDrawable) {
+                    return (
+                        <g key={`car-top-${car.id}`} x="0" y="0" width="100" height="200" mask={mask}>
+                            <g key={car.id} transform={`translate(${x},${y})`}>
+                                <polygon fill="lightblue" opacity={0.5} points="-40,-100 40,-100 50,-80 -50,-80"/>
+                                <polygon fill="lightblue" points="-50,-80 50,-80 50,50 -50,50"/>
+                                <polygon fill="grey" stroke="black" strokeWidth={2} points="-40,-70 40,-70 40,50 -40,50"/>
+                                <polyline stroke="black" strokeWidth={2} points="-20,-70 -20,50"/>
+                                <polyline stroke="black" strokeWidth={2} points="0,-70 0,50"/>
+                                <polyline stroke="black" strokeWidth={2} points="20,-70 20,50"/>
+                            </g>
+                        </g>
+                    );
+                }
+            }, {
+                // draw the front of the car
+                x,
+                y,
+                type: EDrawableType.OBJECT,
+                draw(this: IDrawable) {
+                    return (
+                        <g key={`car-bottom-${car.id}`} x="0" y="0" width="100" height="200" mask={mask}>
+                            <g key={car.id} transform={`translate(${x},${y})`}>
+                                <polygon fill="lightblue" points="-50,50 50,50 50,100 -50,100"/>
+                                <polygon fill="red" stroke="black" strokeWidth={2} points="-40,60 -20,60 -20,80 -40,80"/>
+                                <polygon fill="red" stroke="black" strokeWidth={2} points="40,60 20,60 20,80 40,80"/>
+                                <polygon fill="white" stroke="black" strokeWidth={2} points="-10,60 10,60 10,80 -10,80"/>
+                            </g>
+                        </g>
+                    );
+                }
+            }];
+            case ECarDirection.RIGHT:
+            case ECarDirection.LEFT: return [{
+                // draw the back of the car
+                x,
+                y: y - 50,
+                type: EDrawableType.OBJECT,
+                draw(this: IDrawable) {
+                    return (
+                        <g key={`car-top-${car.id}`} x="0" y="0" width="200" height="100" mask={mask}>
+                            <g key={car.id} transform={`translate(${x},${y})${car.direction === ECarDirection.RIGHT ? " scale(-1,1)": ""}`}>
+                                <polygon fill="lightblue" opacity={0.5} points="-40,-50 -40,-20 -50,-20"/>
+                                <polygon fill="lightblue" points="-50,-20 100,-20 100,25 -100,25 -100,0 -75,0"/>
+                                <polygon fill="grey" stroke="black" strokeWidth={2} points="-40,-10 90,-10 90,25 -40,25"/>
+                                <polyline stroke="black" strokeWidth={2} points="-40,10 90,10"/>
+                            </g>
+                        </g>
+                    );
+                }
+            }, {
+                // draw the front of the car
+                x,
+                y: y + 100,
+                type: EDrawableType.OBJECT,
+                draw(this: IDrawable) {
+                    return (
+                        <g key={`car-bottom-${car.id}`} x="0" y="0" width="200" height="100" mask={mask}>
+                            <g key={car.id} transform={`translate(${x},${y})${car.direction === ECarDirection.RIGHT ? " scale(-1,1)": ""}`}>
+                                <polygon fill="lightblue" points="-100,25 100,25 100,50 -100,50"/>
+                                <polygon fill="white" stroke="black" strokeWidth={2} points="-100,25 -80,25 -80,35 -100,35"/>
+                                <polygon fill="red" stroke="black" strokeWidth={2} points="100,25 80,25 80,35 100,35"/>
+                            </g>
+                        </g>
+                    );
+                }
+            }];
+        }
+    };
+
+    /**
      * Draw a table in a room.
      * @param drawable The table to draw.
      * @param room The room the table is in.
      * @param index The index of the table.
      */
-    drawTable = (drawable: IObject, room: IObject, index: number) => {
+    drawTable = (drawable: IObject, room: IRoom, index: number) => {
         const {x, y} = drawable;
         return (
-            <g key={`table-${index}`} transform={`translate(${x - 100 + room.x},${y - 50 + room.y})`}>
+            <g key={`room-${room.id}-table-${index}`} transform={`translate(${x - 100 + room.x},${y - 50 + room.y})`}>
                 <polygon fill="brown" points="0,100 200,100 200,0 0,0"/>
             </g>
         );
@@ -588,10 +814,10 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
      * @param room The room that contains the chair.
      * @param index The index of the chair in the room.
      */
-    drawChair = (drawable: IObject, room: IObject, index: number) => {
+    drawChair = (drawable: IObject, room: IRoom, index: number) => {
         const {x, y} = drawable;
         return (
-            <g key={`chair-${index}`} transform={`translate(${x - 50 + room.x},${y - 50 + room.y})`}>
+            <g key={`room-${room.id}-chair-${index}`} transform={`translate(${x - 50 + room.x},${y - 50 + room.y})`}>
                 <polygon fill="brown" points="10,90 20,90 20,10 10,10"/>
                 <polygon fill="brown" points="80,90 90,90 90,10 80,10"/>
                 <polygon fill="brown" points="40,90 60,90 60,10 40,10"/>
@@ -638,7 +864,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 if ((drawable as IRoom).doors.bottom) {
                     // there is a bottom door, draw a wall with a bottom door
                     return (
-                        <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                        <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
                             <polygon fill="brown" points="0,295 200,295 200,300 0,300"/>
                             <polygon fill="brown" points="300,295 500,295 500,300 300,300"/>
                         </g>
@@ -660,7 +886,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 if ((drawable as IRoom).doors.left) {
                     // there is a left door, draw a wall with a left door
                     return (
-                        <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                        <g key={`room-${index}-wall-left`} transform={`translate(${x},${y})`}>
                             <polygon fill="brown" points="0,0 5,0 5,100 0,100"/>
                             <polygon fill="brown" points="0,200 5,200 5,300 0,300"/>
                         </g>
@@ -682,7 +908,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 if ((drawable as IRoom).doors.right) {
                     // there is a right wall, draw a door with a right wall
                     return (
-                        <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                        <g key={`room-${index}-wall-right`} transform={`translate(${x},${y})`}>
                             <polygon fill="brown" points="495,0 500,0 500,100 495,100"/>
                             <polygon fill="brown" points="495,200 500,200 500,300 495,300"/>
                         </g>
@@ -756,6 +982,16 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     // add all walls
                     ...component.drawRoomWalls(room, index)
                 ];
+            }, []),
+
+            // for each car
+            ...this.state.cars.reduce((arr: IDrawable[], car: ICar): IDrawable[] => {
+                return [
+                    ...arr,
+
+                    // add all car parts
+                    ...component.drawCar(car)
+                ];
             }, [])
         ];
 
@@ -826,6 +1062,25 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                                                 null
                                         }
                                     </mask>
+                                );
+                            })
+                        }
+                        {
+                            this.state.cars.map((car: ICar) => {
+                                const {x, y} = car;
+                                return (
+                                    <>
+                                        <mask key={`car-${car.id}-down`} id={`car-${car.id}-down`} x="0" y="0" width="100" height="200">
+                                            <rect fill="white" x={x - 50} y={y - 200} width={100} height={250}/>
+                                            <rect fill="white" x={x - 100} y={y - 200} width={50} height={400}/>
+                                            <rect fill="white" x={x + 50} y={y - 200} width={50} height={400}/>
+                                        </mask>
+                                        <mask key={`car-${car.id}-left`} id={`car-${car.id}-left`} x="0" y="0" width="200" height="100">
+                                            <rect fill="white" x={x - 100} y={y - 200} width={200} height={250}/>
+                                            <rect fill="white" x={x - 150} y={y - 200} width={50} height={400}/>
+                                            <rect fill="white" x={x + 100} y={y - 200} width={50} height={400}/>
+                                        </mask>
+                                    </>
                                 );
                             })
                         }
