@@ -12,6 +12,26 @@
   }
 }
 
+.persons {
+  .modal {
+    position: absolute;
+    background-color: lightgrey;
+    padding: 10px;
+    &.hide {
+      display: none;
+    }
+  }
+  .login {
+    width: 500px;
+    display: grid;
+    grid-template-areas:
+            "label-user user user user"
+            "label-pass pass pass pass"
+            "login login cancel cancel"
+            "status status status status";
+  }
+}
+
 .delete {
   background-color: maroon;
   color: white;

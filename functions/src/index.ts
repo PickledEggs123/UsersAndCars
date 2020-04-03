@@ -6,6 +6,7 @@ import * as functions from 'firebase-functions';
 import * as admin from "firebase-admin";
 import * as express from "express";
 import * as cors from "cors";
+import {ECarDirection, IApiPersonsPost, IApiPersonsPut, ICar, IPerson} from "./types/GameTypes";
 
 /**
  * Initialize the firebase API.
@@ -136,15 +137,6 @@ export const cars = functions.https.onRequest(carsApp);
  * if you use the API for less than 12 hours out of a 24 hour day.
  */
 
-interface IPerson {
-    id: string;
-    x: number;
-    y: number;
-    shirtColor: string;
-    pantColor: string;
-    lastUpdate: string;
-    carId: string | null;
-}
 interface IPersonDatabase {
     id: string;
     x: number;
@@ -153,24 +145,7 @@ interface IPersonDatabase {
     pantColor: string;
     lastUpdate: admin.firestore.Timestamp;
     carId: string | null;
-}
-
-/**
- * The direction a car is facing.
- */
-enum ECarDirection {
-    UP = "UP",
-    DOWN = "DOWN",
-    LEFT = "LEFT",
-    RIGHT = "RIGHT"
-}
-
-interface ICar {
-    id: string;
-    x: number;
-    y: number;
-    direction: ECarDirection;
-    lastUpdate: string;
+    password: string;
 }
 
 interface ICarDatabase {
@@ -187,9 +162,20 @@ const personsApp = express();
 personsApp.use(cors({origin: true}));
 
 /**
+ * Compute the date from thirty seconds ago. Used for determining if tha user is logged in. If the last update was less
+ * than 30 seconds ago, they are logged in. If it was greater than 30 seconds, they are logged out.
+ */
+const getThirtySecondsAgo = (): admin.firestore.Timestamp => {
+    const dateNow = admin.firestore.Timestamp.now().toDate();
+    const dateThirtySecondsAgo = new Date(dateNow);
+    dateThirtySecondsAgo.setSeconds(dateNow.getSeconds() - 30);
+    return admin.firestore.Timestamp.fromDate(dateThirtySecondsAgo);
+};
+
+/**
  * Get a list of persons.
  */
-personsApp.get("/", (req: any, res: { json: (arg0: any) => void; }, next: (arg0: any) => any) => {
+personsApp.get("/data", (req: any, res: { json: (arg0: any) => void; }, next: (arg0: any) => any) => {
     (async () => {
         // json response data
         const personsToReturnAsJson = [];
@@ -197,23 +183,23 @@ personsApp.get("/", (req: any, res: { json: (arg0: any) => void; }, next: (arg0:
 
         // get persons
         {
-            // compute date from thirty seconds ago
-            const dateNow = admin.firestore.Timestamp.now().toDate();
-            const dateThirtySecondsAgo = new Date(dateNow);
-            dateThirtySecondsAgo.setSeconds(dateNow.getSeconds() - 30);
-            const thirtySecondsAgo = admin.firestore.Timestamp.fromDate(dateThirtySecondsAgo);
-
             // get a list of all people who have updated within the last thirty seconds
             const querySnapshot = await admin.firestore().collection("persons")
-                .where("lastUpdate", ">=", thirtySecondsAgo)
+                .where("lastUpdate", ">=", getThirtySecondsAgo())
                 .get();
 
             // add to json list
             for (const documentSnapshot of querySnapshot.docs) {
                 const data = documentSnapshot.data() as IPersonDatabase;
+
+                // delete password so it does not reach the frontend
+                const dataWithoutPassword = {...data};
+                delete dataWithoutPassword.password;
+
+                // save database record into json array
                 personsToReturnAsJson.push({
-                    ...data,
-                    lastUpdate: data.lastUpdate.toDate().toISOString()
+                    ...dataWithoutPassword,
+                    lastUpdate: dataWithoutPassword.lastUpdate.toDate().toISOString()
                 } as IPerson);
             }
         }
@@ -240,71 +226,94 @@ personsApp.get("/", (req: any, res: { json: (arg0: any) => void; }, next: (arg0:
 });
 
 /**
- * Create a new person.
+ * The login method.
  */
-personsApp.post("/:id", (req: { params: { id: any; }; }, res: any, next: (arg0: any) => any) => {
+personsApp.post("/login", (req: { body: IApiPersonsPost; }, res: any, next: (arg0: any) => any) => {
     (async () => {
-        const id: string = req.params.id;
-        const person: IPersonDatabase = {
-            id,
-            x: 50,
-            y: 150,
-            pantColor: "blue",
-            shirtColor: "grey",
-            carId: null,
-            lastUpdate: admin.firestore.Timestamp.now()
-        };
-        await admin.firestore().collection("persons").doc(id).set(person);
-        res.sendStatus(200);
+        // check to see if person exists in the database
+        const {id, password} = req.body;
+        const person = await admin.firestore().collection("persons").doc(id).get();
+        if (person.exists) {
+            // person exist, check if logged in already
+            const data = person.data() as IPersonDatabase;
+            if (data.lastUpdate < getThirtySecondsAgo()) {
+                // the person is not logged in, check password
+                if (data.password === password) {
+                    // update lastUpdate to login, keep original position
+                    await person.ref.update({
+                        lastUpdate: admin.firestore.Timestamp.now()
+                    } as Partial<IPersonDatabase>);
+
+                    // return accepted
+                    res.sendStatus(202);
+                } else {
+                    // incorrect password, reject
+                    res.sendStatus(401);
+                }
+            } else {
+                // the person is logged in, do nothing
+                res.sendStatus(200);
+            }
+        } else {
+            // person does not exist, create a new login
+            await admin.firestore().collection("persons").doc(id).set({
+                id,
+                password,
+                x: 50,
+                y: 150,
+                pantColor: "blue",
+                shirtColor: "grey",
+                carId: null,
+                lastUpdate: admin.firestore.Timestamp.now()
+            } as IPersonDatabase);
+
+            // return created
+            res.sendStatus(201);
+        }
     })().catch((err) => next(err));
 });
 
 /**
- * Update a person.
+ * Update game state.
  */
-personsApp.put("/:id", (req: { params: { id: any; }; body: any; }, res: any, next: (arg0: any) => any) => {
+personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: any) => any) => {
     (async () => {
-        const id: string = req.params.id;
-        const person: IPersonDatabase = {
-            id,
-            x: 50,
-            y: 150,
-            pantColor: "blue",
-            shirtColor: "grey",
-            ...req.body,
-            lastUpdate: req.body.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(req.body.lastUpdate)) : admin.firestore.Timestamp.now()
-        };
-        await admin.firestore().collection("persons").doc(id).set(person);
-        res.sendStatus(200);
-    })().catch((err) => next(err));
-});
+        // convert data into database format
+        const personsToSaveIntoDatabase = req.body.persons.map((person: IPerson): Partial<IPersonDatabase> => {
+            return  {
+                id: person.id,
+                x: 50,
+                y: 150,
+                pantColor: "blue",
+                shirtColor: "grey",
+                ...person,
+                // convert ISO string date into firebase firestore Timestamp
+                lastUpdate: person.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(person.lastUpdate)) : admin.firestore.Timestamp.now()
+            };
+        });
+        const carsToSaveIntoDatabase = req.body.cars.map((car: ICar): Partial<ICarDatabase> => {
+            return  {
+                id: car.id,
+                direction: ECarDirection.DOWN,
+                x: 50,
+                y: 150,
+                ...car,
+                // convert ISO string date into firebase firestore Timestamp
+                lastUpdate: car.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(car.lastUpdate)) : admin.firestore.Timestamp.now()
+            };
+        });
 
-/**
- * Update a person.
- */
-personsApp.put("/cars/:id", (req: { params: { id: any; }; body: any; }, res: any, next: (arg0: any) => any) => {
-    (async () => {
-        const id: string = req.params.id;
-        const person: ICar = {
-            id,
-            direction: ECarDirection.DOWN,
-            x: 50,
-            y: 150,
-            ...req.body,
-            lastUpdate: req.body.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(req.body.lastUpdate)) : admin.firestore.Timestamp.now()
-        };
-        await admin.firestore().collection("personalCars").doc(id).set(person);
-        res.sendStatus(200);
-    })().catch((err) => next(err));
-});
+        // save all data objects to the database simultaneously
+        await Promise.all([
+            ...personsToSaveIntoDatabase.map((person) => {
+                return admin.firestore().collection("persons").doc(person.id as string).set(person, {merge: true});
+            }),
+            ...carsToSaveIntoDatabase.map((car) => {
+                return admin.firestore().collection("cars").doc(car.id as string).set(car, {merge: true});
+            })
+        ]);
 
-/**
- * Delete a person.
- */
-personsApp.delete("/:id", (req: { params: { id: any; }; }, res: any, next: (arg0: any) => any) => {
-    (async () => {
-        const {id} = req.params;
-        await admin.firestore().collection("persons").doc(id).delete();
+        // end request
         res.sendStatus(200);
     })().catch((err) => next(err));
 });
