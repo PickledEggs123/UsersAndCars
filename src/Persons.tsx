@@ -200,15 +200,40 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     };
 
     /**
+     * Generate an entrance.
+     * @param id The id of the entrance
+     * @param x The x position of the hallway.
+     * @param y THe y position of the hallway.
+     */
+    generateEntrance = ({id, x, y}: {id: string, x: number, y: number}): IRoom => {
+        return {
+            id,
+            x,
+            y,
+            chairs: [] as IObject[],
+            tables: [] as IObject[],
+            doors: {
+                left: ERoomWallType.OPEN,
+                right: ERoomWallType.OPEN,
+                top: ERoomWallType.OPEN,
+                bottom: ERoomWallType.OPEN
+            }
+        } as IRoom;
+    };
+
+    /**
      * Map a roomString to a generated room.
      * @param prefix The house prefix.
      * @param x The x position within the house.
      * @param y The y position within the house.
      */
-    roomStringToRoom = ({prefix, x, y}: {prefix: string, x: number, y: number}) => (roomString: string): IRoom => {
+    roomStringToRoom = ({prefix, offset: {x, y}}: {prefix: string, offset: IObject}) => (roomString: string): IRoom | null => {
         switch (roomString) {
             case "O": return this.generateOffice({id: `${prefix}-office-${x}-${y}`, x, y});
-            default: return this.generateHallway({id: `${prefix}-hallway-${x}-${y}`, x, y});
+            case "H": return this.generateHallway({id: `${prefix}-hallway-${x}-${y}`, x, y});
+            case "E": return this.generateEntrance({id: `${prefix}-entrance-${x}-${y}`, x, y});
+            default:
+                return null;
         }
     };
 
@@ -272,8 +297,9 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
      * Generate a house from a format string.
      * @param prefix The house prefix.
      * @param format A string containing the layout of the house.
+     * @param offset The offset of the house.
      */
-    generateHouse = (prefix: string, format: string): IRoom[] => {
+    generateHouse = ({prefix, format, offset}: {prefix: string, format: string, offset: IObject}): IRoom[] => {
         const rooms = [] as IRoom[];
 
         // for each line
@@ -283,7 +309,16 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
             const roomStrings = row.split("");
             // map letter to room
             roomStrings.forEach((roomString: string, columnIndex: number) => {
-                rooms.push(this.roomStringToRoom({prefix, x: columnIndex * 500, y: rowIndex * 300})(roomString));
+                const room = this.roomStringToRoom({
+                    prefix,
+                    offset: {
+                        x: columnIndex * 500 + offset.x,
+                        y: rowIndex * 300 + offset.y
+                    }
+                })(roomString);
+                if (room) {
+                    rooms.push(room);
+                }
             });
         });
 
@@ -308,10 +343,19 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         // build doors from offices to hallways
         const offices = rooms.filter(room => room.id.includes("office"));
         offices.forEach(office => {
-            // find nearby rooms, add door
+            // find nearby hallways, add door
             const nearbyRooms = hallways.filter(this.roomIsNearbyRoom(office));
             const whichDoorsShouldBeOpen = this.whichDoorsShouldBeOpen(office, nearbyRooms);
             this.applyWhichDoorsShouldBeOpen(office, whichDoorsShouldBeOpen, ERoomWallType.DOOR);
+        });
+
+        // build doors from entrances to hallways
+        const entrances = rooms.filter(room => room.id.includes("entrance"));
+        entrances.forEach(entrance => {
+            // find nearby hallways, add door
+            const nearbyRooms = hallways.filter(this.roomIsNearbyRoom(entrance));
+            const whichDoorsShouldBeOpen = this.whichDoorsShouldBeOpen(entrance, nearbyRooms);
+            this.applyWhichDoorsShouldBeOpen(entrance, whichDoorsShouldBeOpen, ERoomWallType.ENTRANCE);
         });
 
 
@@ -383,11 +427,26 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         this.intervalGameLoop = setTimeout(this.gameLoop, this.gameRefreshSpeed);
         this.intervalHeartbeat = setInterval(this.heartbeat, this.heartbeatRefreshSpeed);
 
-        this.setState({rooms: this.generateHouse("house-1", "" +
-            "OHOOOHO\n" +
-            "OHHHHHO\n" +
-            "OHOOOHO"
-        )});
+        // generate some houses
+        const format = "" +
+            "  E  \n" +
+            "OHHO \n" +
+            "OHOH \n" +
+            " E   ";
+        const rooms = [format, format, format].reduce((arr: IRoom[], f: string, index: number): IRoom[] => {
+            return [
+                ...arr,
+                ...this.generateHouse({
+                    prefix: `house-${index}`,
+                    format,
+                    offset: {
+                        x: index * 2500,
+                        y: 0
+                    }
+                })
+            ];
+        }, []);
+        this.setState({rooms});
     };
 
     /**
@@ -1198,123 +1257,290 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
      */
     drawRoomWalls = (drawable: IObject, index: number) => {
         const {x, y} = drawable;
-        return [{
-            x,
-            y: y - 130,
-            type: EDrawableType.OBJECT,
-            draw(this: IDrawable) {
-                switch ((drawable as IRoom).doors.top) {
-                    case ERoomWallType.DOOR: {
-                        // there is a top door, draw a wall with a top door
+        const drawables = [] as IDrawable[];
+
+        // top wall
+        switch ((drawable as IRoom).doors.top) {
+            case ERoomWallType.DOOR: {
+                // there is a top door, draw a wall with a top door
+                drawables.push({
+                    x,
+                    y: y + 30,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
                         return (
                             <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="0,0 200,0 200,5 0,5"/>
+                            </g>
+                        );
+                    }
+                } as IDrawable, {
+                    x,
+                    y: y + 30,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="300,0 500,0 500,5 300,5"/>
                             </g>
                         );
                     }
-                    default:
-                    case ERoomWallType.WALL: {
-                        // there is no top door, draw a plain wall
+                } as IDrawable);
+                break;
+            }
+            case ERoomWallType.ENTRANCE: {
+                // draw an entrance at the top of the building
+                drawables.push({
+                    x,
+                    y: y + 30,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                                <polygon fill="brown" points="0,0 200,0 200,5 0,5"/>
+                            </g>
+                        );
+                    }
+                } as IDrawable, {
+                    x,
+                    y: y + 30,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                                <polygon fill="brown" points="300,0 500,0 500,5 300,5"/>
+                            </g>
+                        );
+                    }
+                } as IDrawable, {
+                    x,
+                    y: y + 30,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                                <polygon fill="brown" points="195,0 195,-205 305,-205 305,0 300,0 300,-200 200,-200 200,0"/>
+                            </g>
+                        );
+                    }
+                } as IDrawable);
+                break;
+            }
+            default:
+            case ERoomWallType.WALL: {
+                // there is no top door, draw a plain wall
+                drawables.push({
+                    x,
+                    y: y + 30,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
                         return (
                             <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="0,0 500,0 500,5 0,5"/>
                             </g>
                         );
                     }
-                    case ERoomWallType.OPEN: {
-                        return null;
-                    }
-                }
+                } as IDrawable);
+                break;
             }
-        } as IDrawable, {
-            x,
-            y,
-            type: EDrawableType.OBJECT,
-            draw(this: IDrawable) {
-                switch ((drawable as IRoom).doors.bottom) {
-                    case ERoomWallType.DOOR: {
-                        // there is a bottom door, draw a wall with a bottom door
+            case ERoomWallType.OPEN: {
+                // do nothing
+            }
+        }
+
+        // draw bottom wall
+        switch ((drawable as IRoom).doors.bottom) {
+            case ERoomWallType.DOOR: {
+                // there is a bottom door, draw a wall with a bottom door
+                drawables.push({
+                    x,
+                    y: y + 330,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
                         return (
                             <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="0,295 200,295 200,300 0,300"/>
+                            </g>
+                        );
+                    }
+                } as IDrawable, {
+                    x,
+                    y: y + 330,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="300,295 500,295 500,300 300,300"/>
                             </g>
                         );
                     }
-                    default:
-                    case ERoomWallType.WALL: {
-                        // there is no bottom door, draw a plain wall
+                } as IDrawable);
+                break;
+            }
+            case ERoomWallType.ENTRANCE: {
+                // there is an entrance at the bottom of the room
+                drawables.push({
+                    x,
+                    y: y + 330,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
+                                <polygon fill="brown" points="0,295 200,295 200,300 0,300"/>
+                            </g>
+                        );
+                    }
+                } as IDrawable, {
+                    x,
+                    y: y + 330,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
+                                <polygon fill="brown" points="300,295 500,295 500,300 300,300"/>
+                            </g>
+                        );
+                    }
+                } as IDrawable, {
+                    x,
+                    y: y + 330,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
+                                <polygon fill="brown" points="195,300 195,95 305,95 305,300 300,300 300,100 200,100 200,300"/>
+                            </g>
+                        );
+                    }
+                } as IDrawable);
+                break;
+            }
+            default:
+            case ERoomWallType.WALL: {
+                // there is an entrance at the bottom of the room
+                drawables.push({
+                    x,
+                    y: y + 330,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
                         return (
                             <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="0,295 500,295 500,300 0,300"/>
                             </g>
                         );
                     }
-                    case ERoomWallType.OPEN: {
-                        return null;
-                    }
-                }
+                } as IDrawable);
+                break;
             }
-        } as IDrawable, {
-            x,
-            y,
-            type: EDrawableType.OBJECT,
-            draw(this: IDrawable) {
-                switch ((drawable as IRoom).doors.left) {
-                    case ERoomWallType.DOOR: {
-                        // there is a left door, draw a wall with a left door
+            case ERoomWallType.OPEN: {
+                // do nothing
+            }
+        }
+
+        // draw left wall
+        switch ((drawable as IRoom).doors.left) {
+            case ERoomWallType.ENTRANCE:
+            case ERoomWallType.DOOR: {
+                // there is a left door, draw a wall with a left door
+                drawables.push({
+                    x,
+                    y: y + 30,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
                         return (
                             <g key={`room-${index}-wall-left`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="0,0 5,0 5,100 0,100"/>
+                            </g>
+                        );
+                    }
+                } as IDrawable, {
+                    x,
+                    y: y + 330,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`room-${index}-wall-left`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="0,200 5,200 5,300 0,300"/>
                             </g>
                         );
                     }
-                    default:
-                    case ERoomWallType.WALL: {
-                        // there is no left door, draw a plain wall
+                } as IDrawable);
+                break;
+            }
+            default:
+            case ERoomWallType.WALL: {
+                // there is no left door, draw a plain wall
+                drawables.push({
+                    x,
+                    y: y + 330,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
                         return (
                             <g key={`room-${index}-wall-left`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="0,0 5,0 5,300 0,300"/>
                             </g>
                         );
                     }
-                    case ERoomWallType.OPEN: {
-                        return null;
-                    }
-                }
+                } as IDrawable);
+                break;
             }
-        } as IDrawable, {
-            x,
-            y,
-            type: EDrawableType.OBJECT,
-            draw(this: IDrawable) {
-                switch ((drawable as IRoom).doors.right) {
-                    case ERoomWallType.DOOR: {
-                        // there is a right wall, draw a door with a right wall
+            case ERoomWallType.OPEN: {
+                // do nothing
+            }
+        }
+
+        // draw right wall
+        switch ((drawable as IRoom).doors.right) {
+            case ERoomWallType.ENTRANCE:
+            case ERoomWallType.DOOR: {
+                // there is a right wall, draw a door with a right wall
+                drawables.push({
+                    x,
+                    y: y + 30,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
                         return (
                             <g key={`room-${index}-wall-right`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="495,0 500,0 500,100 495,100"/>
+                            </g>
+                        );
+                    }
+                } as IDrawable, {
+                    x,
+                    y: y + 330,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`room-${index}-wall-right`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="495,200 500,200 500,300 495,300"/>
                             </g>
                         );
                     }
-                    default:
-                    case ERoomWallType.WALL: {
-                        // there is no right wall, draw a plain wall
+                } as IDrawable);
+                break;
+            }
+            default:
+            case ERoomWallType.WALL: {
+                // there is no right wall, draw a plain wall
+                drawables.push({
+                    x,
+                    y: y + 330,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
                         return (
                             <g key={`room-${index}-wall-right`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="495,0 500,0 500,300 495,300"/>
                             </g>
                         );
                     }
-                    case ERoomWallType.OPEN: {
-                        return null;
-                    }
-                }
+                } as IDrawable);
+                break;
             }
-        } as IDrawable];
+            case ERoomWallType.OPEN: {
+                // do nothing
+            }
+        }
+        return drawables;
     };
 
     /**
@@ -1437,23 +1663,23 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                                     <mask key={`room-${index}`} id={`room-${index}`} x="0" y="0" width="500" height="300">
                                         <rect fill="white" x={x + 5} y={y - 200} width={490} height={495}/>
                                         {
-                                            room.doors.left === ERoomWallType.DOOR ?
+                                            [ERoomWallType.DOOR, ERoomWallType.ENTRANCE].includes(room.doors.left) ?
                                                 <>
-                                                    <rect fill="white" x={x - 5} y={y + 100} width={10} height={100}/>
-                                                    <rect fill="white" x={x - 105} y={y - 200} width={100} height={495}/>
+                                                    <rect fill="white" x={x - 5} y={y - 200} width={10} height={400}/>
+                                                    <rect fill="white" x={x - 105} y={y - 200} width={100} height={595}/>
                                                 </> :
                                                 null
                                         }
                                         {
-                                            room.doors.right === ERoomWallType.DOOR ?
+                                            [ERoomWallType.DOOR, ERoomWallType.ENTRANCE].includes(room.doors.right) ?
                                                 <>
-                                                    <rect fill="white" x={x + 495} y={y + 100} width={10} height={100}/>
-                                                    <rect fill="white" x={x + 505} y={y - 200} width={100} height={495}/>
+                                                    <rect fill="white" x={x + 495} y={y - 200} width={10} height={400}/>
+                                                    <rect fill="white" x={x + 505} y={y - 200} width={100} height={595}/>
                                                 </> :
                                                 null
                                         }
                                         {
-                                            room.doors.bottom === ERoomWallType.DOOR ?
+                                            [ERoomWallType.DOOR, ERoomWallType.ENTRANCE].includes(room.doors.bottom) ?
                                                 <rect fill="white" x={x + 200} y={y + 295} width={100} height={205}/> :
                                                 room.doors.bottom === ERoomWallType.OPEN ?
                                                     <rect fill="white" x={x} y={y + 295} width={500} height={205}/> :

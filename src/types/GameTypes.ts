@@ -66,7 +66,8 @@ export enum EDrawableType {
 export enum ERoomWallType {
     WALL = "WALL",
     DOOR = "DOOR",
-    OPEN = "OPEN"
+    OPEN = "OPEN",
+    ENTRANCE = "ENTRANCE"
 }
 
 /**
