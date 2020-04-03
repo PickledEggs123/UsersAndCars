@@ -61,25 +61,34 @@ export enum EDrawableType {
 }
 
 /**
+ * The type of wall to be drawn.
+ */
+export enum ERoomWallType {
+    WALL = "WALL",
+    DOOR = "DOOR",
+    OPEN = "OPEN"
+}
+
+/**
  * The state of the doors in a room.
  */
-interface IRoomDoors {
+export interface IRoomDoors {
     /**
      * There is a left door.
      */
-    left: boolean;
+    left: ERoomWallType;
     /**
      * There is a right door.
      */
-    right: boolean;
+    right: ERoomWallType;
     /**
      * There is a top door.
      */
-    top: boolean;
+    top: ERoomWallType;
     /**
      * There is a bottom door.
      */
-    bottom: boolean;
+    bottom: ERoomWallType;
 }
 
 /**

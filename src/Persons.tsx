@@ -4,7 +4,9 @@ import axios from "axios";
 import {
     ECarDirection,
     EDrawableType,
-    IApiPersonsGet, IApiPersonsPut,
+    ERoomWallType,
+    IApiPersonsGet,
+    IApiPersonsPut,
     ICar,
     IDrawable,
     IGameTutorials,
@@ -15,6 +17,7 @@ import {
     IRoom
 } from "./types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
+import {IWhichDoorsShouldBeOpen} from "../functions/src/types/GameTypes";
 
 /**
  * The input to the [[Persons]] component that changes how the game is rendered.
@@ -106,57 +109,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
             driving: true
         },
         persons: [] as IPerson[],
-        rooms: [{
-            id: "left-office-room",
-            x: 0,
-            y: 0,
-            chairs: [
-                {x: 200, y: 50},
-                {x: 300, y: 50},
-                {x: 200, y: 250},
-                {x: 300, y: 250}
-            ] as IObject[],
-            tables: [
-                {x: 250, y: 150}
-            ] as IObject[],
-            doors: {
-                left: false,
-                right: true,
-                top: false,
-                bottom: false
-            }
-        } as IRoom, {
-            id: "hallway-room",
-            x: 500,
-            y: 0,
-            chairs: [] as IObject[],
-            tables: [] as IObject[],
-            doors: {
-                left: true,
-                right: true,
-                top: true,
-                bottom: true
-            }
-        } as IRoom, {
-            id: "right-office-room",
-            x: 1000,
-            y: 0,
-            chairs: [
-                {x: 200, y: 50},
-                {x: 300, y: 50},
-                {x: 200, y: 250},
-                {x: 300, y: 250}
-            ] as IObject[],
-            tables: [
-                {x: 250, y: 150}
-            ] as IObject[],
-            doors: {
-                left: true,
-                right: false,
-                top: false,
-                bottom: false
-            }
-        } as IRoom],
+        rooms: [] as IRoom[],
         cars: [] as ICar[],
         currentPersonId: this.randomPersonId(),
         lastUpdate: new Date().toISOString()
@@ -193,6 +146,176 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         this.setState({
             currentPersonId: username
         });
+    };
+
+    /**
+     * Generate an office.
+     * @param id The id of the office.
+     * @param x The x position of the office.
+     * @param y The y position of the office.
+     */
+    generateOffice = ({id, x, y}: {id: string, x: number, y: number}): IRoom => {
+        return {
+            id,
+            x,
+            y,
+            chairs: [
+                {x: 200, y: 50},
+                {x: 300, y: 50},
+                {x: 200, y: 250},
+                {x: 300, y: 250}
+            ] as IObject[],
+            tables: [
+                {x: 250, y: 150}
+            ] as IObject[],
+            doors: {
+                left: ERoomWallType.WALL,
+                right: ERoomWallType.WALL,
+                top: ERoomWallType.WALL,
+                bottom: ERoomWallType.WALL
+            }
+        } as IRoom;
+    };
+
+    /**
+     * Generate a hallway.
+     * @param id The id of the hallway
+     * @param x The x position of the hallway.
+     * @param y THe y position of the hallway.
+     */
+    generateHallway = ({id, x, y}: {id: string, x: number, y: number}): IRoom => {
+        return {
+            id,
+            x,
+            y,
+            chairs: [] as IObject[],
+            tables: [] as IObject[],
+            doors: {
+                left: ERoomWallType.WALL,
+                right: ERoomWallType.WALL,
+                top: ERoomWallType.WALL,
+                bottom: ERoomWallType.WALL
+            }
+        } as IRoom;
+    };
+
+    /**
+     * Map a roomString to a generated room.
+     * @param prefix The house prefix.
+     * @param x The x position within the house.
+     * @param y The y position within the house.
+     */
+    roomStringToRoom = ({prefix, x, y}: {prefix: string, x: number, y: number}) => (roomString: string): IRoom => {
+        switch (roomString) {
+            case "O": return this.generateOffice({id: `${prefix}-office-${x}-${y}`, x, y});
+            default: return this.generateHallway({id: `${prefix}-hallway-${x}-${y}`, x, y});
+        }
+    };
+
+    /**
+     * Determine if room is nearby another room.
+     * @param a The room to test being nearby room b.
+     */
+    roomIsNearbyRoom = (a: IRoom) => (b: IRoom) => {
+        return b.x >= a.x - 500 && b.x <= a.x + 500 && b.y >= a.y - 300 && b.y <= a.y + 300;
+    };
+
+    /**
+     * Return which doors should be open given a room and an array of nearby rooms.
+     * @param room The room which doors should be computed.
+     * @param nearbyRooms The array of nearby rooms.
+     */
+    whichDoorsShouldBeOpen = (room: IRoom, nearbyRooms: IRoom[]): IWhichDoorsShouldBeOpen => {
+        const up = nearbyRooms.some((nearbyRoom) => {
+            return Math.abs(nearbyRoom.x - room.x) < 10 && Math.abs(nearbyRoom.y - room.y + 300) < 10;
+        });
+        const down = nearbyRooms.some((nearbyRoom) => {
+            return Math.abs(nearbyRoom.x - room.x) < 10 && Math.abs(nearbyRoom.y - room.y - 300) < 10;
+        });
+        const left = nearbyRooms.some((nearbyRoom) => {
+            return Math.abs(nearbyRoom.y - room.y) < 10 && Math.abs(nearbyRoom.x - room.x + 500) < 10;
+        });
+        const right = nearbyRooms.some((nearbyRoom) => {
+            return Math.abs(nearbyRoom.y - room.y) < 10 && Math.abs(nearbyRoom.x - room.x - 500) < 10;
+        });
+
+        return {
+            up,
+            down,
+            left,
+            right
+        } as IWhichDoorsShouldBeOpen;
+    };
+
+    /**
+     * Apply doors onto the room mutably.
+     * @param room The room which should be modified with new doors.
+     * @param whichDoorsShouldBeOpen The doors to open.
+     * @param value The type of wall to be drawn.
+     */
+    applyWhichDoorsShouldBeOpen = (room: IRoom, whichDoorsShouldBeOpen: IWhichDoorsShouldBeOpen, value: ERoomWallType): void => {
+        if (whichDoorsShouldBeOpen.up) {
+            room.doors.top = value;
+        }
+        if (whichDoorsShouldBeOpen.down) {
+            room.doors.bottom = value;
+        }
+        if (whichDoorsShouldBeOpen.left) {
+            room.doors.left = value;
+        }
+        if (whichDoorsShouldBeOpen.right) {
+            room.doors.right = value;
+        }
+    };
+
+    /**
+     * Generate a house from a format string.
+     * @param prefix The house prefix.
+     * @param format A string containing the layout of the house.
+     */
+    generateHouse = (prefix: string, format: string): IRoom[] => {
+        const rooms = [] as IRoom[];
+
+        // for each line
+        const rows = format.split(/\r|\n|\r\n/);
+        rows.forEach((row: string, rowIndex: number) => {
+            // for each letter
+            const roomStrings = row.split("");
+            // map letter to room
+            roomStrings.forEach((roomString: string, columnIndex: number) => {
+                rooms.push(this.roomStringToRoom({prefix, x: columnIndex * 500, y: rowIndex * 300})(roomString));
+            });
+        });
+
+        // build doors from hallways to any room
+        const hallways = rooms.filter(room => room.id.includes("hallway"));
+        const notHallways = rooms.filter(room => !room.id.includes("hallway"));
+        hallways.forEach(hallway => {
+            {
+                // find nearby hallways, make open
+                const nearbyRooms = hallways.filter(this.roomIsNearbyRoom(hallway));
+                const whichDoorsShouldBeOpen = this.whichDoorsShouldBeOpen(hallway, nearbyRooms);
+                this.applyWhichDoorsShouldBeOpen(hallway, whichDoorsShouldBeOpen, ERoomWallType.OPEN);
+            }
+            {
+                // find nearby rooms that are not hallways, make door
+                const nearbyRooms = notHallways.filter(this.roomIsNearbyRoom(hallway));
+                const whichDoorsShouldBeOpen = this.whichDoorsShouldBeOpen(hallway, nearbyRooms);
+                this.applyWhichDoorsShouldBeOpen(hallway, whichDoorsShouldBeOpen, ERoomWallType.DOOR);
+            }
+        });
+
+        // build doors from offices to hallways
+        const offices = rooms.filter(room => room.id.includes("office"));
+        offices.forEach(office => {
+            // find nearby rooms, add door
+            const nearbyRooms = hallways.filter(this.roomIsNearbyRoom(office));
+            const whichDoorsShouldBeOpen = this.whichDoorsShouldBeOpen(office, nearbyRooms);
+            this.applyWhichDoorsShouldBeOpen(office, whichDoorsShouldBeOpen, ERoomWallType.DOOR);
+        });
+
+
+        return rooms;
     };
 
     /**
@@ -259,6 +382,12 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         // begin game loop
         this.intervalGameLoop = setTimeout(this.gameLoop, this.gameRefreshSpeed);
         this.intervalHeartbeat = setInterval(this.heartbeat, this.heartbeatRefreshSpeed);
+
+        this.setState({rooms: this.generateHouse("house-1", "" +
+            "OHOOOHO\n" +
+            "OHHHHHO\n" +
+            "OHOOOHO"
+        )});
     };
 
     /**
@@ -618,7 +747,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                             ...person,
                             x: car.x + rotatedPersonOffsetInCar.x,
                             y: car.y + rotatedPersonOffsetInCar.y - 10
-                        }
+                        };
                     } else {
                         return {
                             ...person,
@@ -642,7 +771,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                             ...person,
                             x: car.x + rotatedPersonOffsetInCar.x,
                             y: car.y + rotatedPersonOffsetInCar.y + 10
-                        }
+                        };
                     } else {
                         return {
                             ...person,
@@ -666,7 +795,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                             ...person,
                             x: car.x + rotatedPersonOffsetInCar.x - 10,
                             y: car.y + rotatedPersonOffsetInCar.y
-                        }
+                        };
                     } else {
                         return {
                             ...person,
@@ -690,7 +819,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                             ...person,
                             x: car.x + rotatedPersonOffsetInCar.x + 10,
                             y: car.y + rotatedPersonOffsetInCar.y
-                        }
+                        };
                     } else {
                         return {
                             ...person,
@@ -1074,21 +1203,28 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
             y: y - 130,
             type: EDrawableType.OBJECT,
             draw(this: IDrawable) {
-                if ((drawable as IRoom).doors.top) {
-                    // there is a top door, draw a wall with a top door
-                    return (
-                        <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
-                            <polygon fill="brown" points="0,0 200,0 200,5 0,5"/>
-                            <polygon fill="brown" points="300,0 500,0 500,5 300,5"/>
-                        </g>
-                    );
-                } else {
-                    // there is no top door, draw a plain wall
-                    return (
-                        <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
-                            <polygon fill="brown" points="0,0 500,0 500,5 0,5"/>
-                        </g>
-                    );
+                switch ((drawable as IRoom).doors.top) {
+                    case ERoomWallType.DOOR: {
+                        // there is a top door, draw a wall with a top door
+                        return (
+                            <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                                <polygon fill="brown" points="0,0 200,0 200,5 0,5"/>
+                                <polygon fill="brown" points="300,0 500,0 500,5 300,5"/>
+                            </g>
+                        );
+                    }
+                    default:
+                    case ERoomWallType.WALL: {
+                        // there is no top door, draw a plain wall
+                        return (
+                            <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                                <polygon fill="brown" points="0,0 500,0 500,5 0,5"/>
+                            </g>
+                        );
+                    }
+                    case ERoomWallType.OPEN: {
+                        return null;
+                    }
                 }
             }
         } as IDrawable, {
@@ -1096,21 +1232,28 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
             y,
             type: EDrawableType.OBJECT,
             draw(this: IDrawable) {
-                if ((drawable as IRoom).doors.bottom) {
-                    // there is a bottom door, draw a wall with a bottom door
-                    return (
-                        <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
-                            <polygon fill="brown" points="0,295 200,295 200,300 0,300"/>
-                            <polygon fill="brown" points="300,295 500,295 500,300 300,300"/>
-                        </g>
-                    );
-                } else {
-                    // there is no bottom door, draw a plain wall
-                    return (
-                        <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
-                            <polygon fill="brown" points="0,295 500,295 500,300 0,300"/>
-                        </g>
-                    );
+                switch ((drawable as IRoom).doors.bottom) {
+                    case ERoomWallType.DOOR: {
+                        // there is a bottom door, draw a wall with a bottom door
+                        return (
+                            <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
+                                <polygon fill="brown" points="0,295 200,295 200,300 0,300"/>
+                                <polygon fill="brown" points="300,295 500,295 500,300 300,300"/>
+                            </g>
+                        );
+                    }
+                    default:
+                    case ERoomWallType.WALL: {
+                        // there is no bottom door, draw a plain wall
+                        return (
+                            <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
+                                <polygon fill="brown" points="0,295 500,295 500,300 0,300"/>
+                            </g>
+                        );
+                    }
+                    case ERoomWallType.OPEN: {
+                        return null;
+                    }
                 }
             }
         } as IDrawable, {
@@ -1118,21 +1261,28 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
             y,
             type: EDrawableType.OBJECT,
             draw(this: IDrawable) {
-                if ((drawable as IRoom).doors.left) {
-                    // there is a left door, draw a wall with a left door
-                    return (
-                        <g key={`room-${index}-wall-left`} transform={`translate(${x},${y})`}>
-                            <polygon fill="brown" points="0,0 5,0 5,100 0,100"/>
-                            <polygon fill="brown" points="0,200 5,200 5,300 0,300"/>
-                        </g>
-                    );
-                } else {
-                    // there is no left door, draw a plain wall
-                    return (
-                        <g key={`room-${index}-wall-left`} transform={`translate(${x},${y})`}>
-                            <polygon fill="brown" points="0,0 5,0 5,300 0,300"/>
-                        </g>
-                    );
+                switch ((drawable as IRoom).doors.left) {
+                    case ERoomWallType.DOOR: {
+                        // there is a left door, draw a wall with a left door
+                        return (
+                            <g key={`room-${index}-wall-left`} transform={`translate(${x},${y})`}>
+                                <polygon fill="brown" points="0,0 5,0 5,100 0,100"/>
+                                <polygon fill="brown" points="0,200 5,200 5,300 0,300"/>
+                            </g>
+                        );
+                    }
+                    default:
+                    case ERoomWallType.WALL: {
+                        // there is no left door, draw a plain wall
+                        return (
+                            <g key={`room-${index}-wall-left`} transform={`translate(${x},${y})`}>
+                                <polygon fill="brown" points="0,0 5,0 5,300 0,300"/>
+                            </g>
+                        );
+                    }
+                    case ERoomWallType.OPEN: {
+                        return null;
+                    }
                 }
             }
         } as IDrawable, {
@@ -1140,21 +1290,28 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
             y,
             type: EDrawableType.OBJECT,
             draw(this: IDrawable) {
-                if ((drawable as IRoom).doors.right) {
-                    // there is a right wall, draw a door with a right wall
-                    return (
-                        <g key={`room-${index}-wall-right`} transform={`translate(${x},${y})`}>
-                            <polygon fill="brown" points="495,0 500,0 500,100 495,100"/>
-                            <polygon fill="brown" points="495,200 500,200 500,300 495,300"/>
-                        </g>
-                    );
-                } else {
-                    // there is no right wall, draw a plain wall
-                    return (
-                        <g key={`room-${index}-wall-right`} transform={`translate(${x},${y})`}>
-                            <polygon fill="brown" points="495,0 500,0 500,300 495,300"/>
-                        </g>
-                    );
+                switch ((drawable as IRoom).doors.right) {
+                    case ERoomWallType.DOOR: {
+                        // there is a right wall, draw a door with a right wall
+                        return (
+                            <g key={`room-${index}-wall-right`} transform={`translate(${x},${y})`}>
+                                <polygon fill="brown" points="495,0 500,0 500,100 495,100"/>
+                                <polygon fill="brown" points="495,200 500,200 500,300 495,300"/>
+                            </g>
+                        );
+                    }
+                    default:
+                    case ERoomWallType.WALL: {
+                        // there is no right wall, draw a plain wall
+                        return (
+                            <g key={`room-${index}-wall-right`} transform={`translate(${x},${y})`}>
+                                <polygon fill="brown" points="495,0 500,0 500,300 495,300"/>
+                            </g>
+                        );
+                    }
+                    case ERoomWallType.OPEN: {
+                        return null;
+                    }
                 }
             }
         } as IDrawable];
@@ -1280,7 +1437,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                                     <mask key={`room-${index}`} id={`room-${index}`} x="0" y="0" width="500" height="300">
                                         <rect fill="white" x={x + 5} y={y - 200} width={490} height={495}/>
                                         {
-                                            room.doors.left ?
+                                            room.doors.left === ERoomWallType.DOOR ?
                                                 <>
                                                     <rect fill="white" x={x - 5} y={y + 100} width={10} height={100}/>
                                                     <rect fill="white" x={x - 105} y={y - 200} width={100} height={495}/>
@@ -1288,7 +1445,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                                                 null
                                         }
                                         {
-                                            room.doors.right ?
+                                            room.doors.right === ERoomWallType.DOOR ?
                                                 <>
                                                     <rect fill="white" x={x + 495} y={y + 100} width={10} height={100}/>
                                                     <rect fill="white" x={x + 505} y={y - 200} width={100} height={495}/>
@@ -1296,9 +1453,11 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                                                 null
                                         }
                                         {
-                                            room.doors.bottom ?
+                                            room.doors.bottom === ERoomWallType.DOOR ?
                                                 <rect fill="white" x={x + 200} y={y + 295} width={100} height={205}/> :
-                                                null
+                                                room.doors.bottom === ERoomWallType.OPEN ?
+                                                    <rect fill="white" x={x} y={y + 295} width={500} height={205}/> :
+                                                    null
                                         }
                                     </mask>
                                 );

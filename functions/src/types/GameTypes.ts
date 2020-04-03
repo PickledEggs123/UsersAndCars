@@ -228,3 +228,13 @@ export interface IGameTutorials {
      */
     driving: boolean;
 }
+
+/**
+ * Directions for which door should be open.
+ */
+export interface IWhichDoorsShouldBeOpen {
+    up: boolean;
+    down: boolean;
+    left: boolean;
+    right: boolean;
+}

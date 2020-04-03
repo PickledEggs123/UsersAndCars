@@ -309,7 +309,7 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
                 return admin.firestore().collection("persons").doc(person.id as string).set(person, {merge: true});
             }),
             ...carsToSaveIntoDatabase.map((car) => {
-                return admin.firestore().collection("cars").doc(car.id as string).set(car, {merge: true});
+                return admin.firestore().collection("personalCars").doc(car.id as string).set(car, {merge: true});
             })
         ]);
 
