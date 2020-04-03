@@ -145,6 +145,15 @@ interface IPerson {
     lastUpdate: string;
     carId: string | null;
 }
+interface IPersonDatabase {
+    id: string;
+    x: number;
+    y: number;
+    shirtColor: string;
+    pantColor: string;
+    lastUpdate: admin.firestore.Timestamp;
+    carId: string | null;
+}
 
 /**
  * The direction a car is facing.
@@ -164,6 +173,14 @@ interface ICar {
     lastUpdate: string;
 }
 
+interface ICarDatabase {
+    id: string;
+    x: number;
+    y: number;
+    direction: ECarDirection;
+    lastUpdate: admin.firestore.Timestamp;
+}
+
 const personsApp = express();
 
 // Use CORS to allow any URL to access the API, used to enable Single Page Applications.
@@ -180,12 +197,24 @@ personsApp.get("/", (req: any, res: { json: (arg0: any) => void; }, next: (arg0:
 
         // get persons
         {
-            const querySnapshot = await admin.firestore().collection("persons").get();
+            // compute date from thirty seconds ago
+            const dateNow = admin.firestore.Timestamp.now().toDate();
+            const dateThirtySecondsAgo = new Date(dateNow);
+            dateThirtySecondsAgo.setSeconds(dateNow.getSeconds() - 30);
+            const thirtySecondsAgo = admin.firestore.Timestamp.fromDate(dateThirtySecondsAgo);
 
+            // get a list of all people who have updated within the last thirty seconds
+            const querySnapshot = await admin.firestore().collection("persons")
+                .where("lastUpdate", ">=", thirtySecondsAgo)
+                .get();
+
+            // add to json list
             for (const documentSnapshot of querySnapshot.docs) {
+                const data = documentSnapshot.data() as IPersonDatabase;
                 personsToReturnAsJson.push({
-                    ...documentSnapshot.data()
-                });
+                    ...data,
+                    lastUpdate: data.lastUpdate.toDate().toISOString()
+                } as IPerson);
             }
         }
 
@@ -194,9 +223,11 @@ personsApp.get("/", (req: any, res: { json: (arg0: any) => void; }, next: (arg0:
             const querySnapshot = await admin.firestore().collection("personalCars").get();
 
             for (const documentSnapshot of querySnapshot.docs) {
+                const data = documentSnapshot.data() as ICarDatabase;
                 carsToReturnAsJson.push({
-                    ...documentSnapshot.data()
-                });
+                    ...data,
+                    lastUpdate: data.lastUpdate.toDate().toISOString()
+                } as ICar);
             }
         }
 
@@ -214,14 +245,14 @@ personsApp.get("/", (req: any, res: { json: (arg0: any) => void; }, next: (arg0:
 personsApp.post("/:id", (req: { params: { id: any; }; }, res: any, next: (arg0: any) => any) => {
     (async () => {
         const id: string = req.params.id;
-        const person: IPerson = {
+        const person: IPersonDatabase = {
             id,
             x: 50,
             y: 150,
             pantColor: "blue",
             shirtColor: "grey",
             carId: null,
-            lastUpdate: new Date().toISOString()
+            lastUpdate: admin.firestore.Timestamp.now()
         };
         await admin.firestore().collection("persons").doc(id).set(person);
         res.sendStatus(200);
@@ -234,13 +265,14 @@ personsApp.post("/:id", (req: { params: { id: any; }; }, res: any, next: (arg0: 
 personsApp.put("/:id", (req: { params: { id: any; }; body: any; }, res: any, next: (arg0: any) => any) => {
     (async () => {
         const id: string = req.params.id;
-        const person: IPerson = {
+        const person: IPersonDatabase = {
             id,
             x: 50,
             y: 150,
             pantColor: "blue",
             shirtColor: "grey",
-            ...req.body
+            ...req.body,
+            lastUpdate: req.body.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(req.body.lastUpdate)) : admin.firestore.Timestamp.now()
         };
         await admin.firestore().collection("persons").doc(id).set(person);
         res.sendStatus(200);
@@ -258,7 +290,8 @@ personsApp.put("/cars/:id", (req: { params: { id: any; }; body: any; }, res: any
             direction: ECarDirection.DOWN,
             x: 50,
             y: 150,
-            ...req.body
+            ...req.body,
+            lastUpdate: req.body.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(req.body.lastUpdate)) : admin.firestore.Timestamp.now()
         };
         await admin.firestore().collection("personalCars").doc(id).set(person);
         res.sendStatus(200);

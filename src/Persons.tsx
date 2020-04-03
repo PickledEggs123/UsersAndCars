@@ -179,10 +179,45 @@ interface IApiPersonsGet {
 }
 
 /**
+ * A list of game tutorials that should be shown.
+ */
+interface IGameTutorials {
+    /**
+     * If the walking tutorial should be shown.
+     */
+    walking: {
+        /**
+         * Was the W key pressed yet.
+         */
+        w: boolean;
+        /**
+         * Was the A key pressed yet.
+         */
+        a: boolean;
+        /**
+         * Was the S key pressed yet.
+         */
+        s: boolean;
+        /**
+         * Was the D key pressed yet.
+         */
+        d: boolean;
+    };
+    /**
+     * If the driving tutorial should be shown.
+     */
+    driving: boolean;
+}
+
+/**
  * The state of the game component. The game state is stored in React so all changes to the game state will update the
  * SVG on the screen.
  */
 interface IPersonsState {
+    /**
+     * The tutorials that should be shown.
+     */
+    tutorials: IGameTutorials;
     /**
      * A list of persons from the network.
      */
@@ -218,6 +253,11 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     intervalGameLoop: any = null;
 
     /**
+     * Heartbeat interval which keeps the person logged in.
+     */
+    intervalHeartbeat: any = null;
+
+    /**
      * Set Intervals that move the user across the screen.
      */
     keyDownHandlers: IKeyDownHandler[] = [];
@@ -230,9 +270,24 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     gameRefreshSpeed: number = 2000;
 
     /**
+     * The heartbeat refresh rate. 1000 means 1 second. Decreasing this value will increase how often the game sends
+     * a heartbeat for the current user. The heartbeat function will keep the user logged in until the browser is closed.
+     */
+    heartbeatRefreshSpeed: number = 25000;
+
+    /**
      * The state of the game.
      */
     state = {
+        tutorials: {
+            walking: {
+                w: false,
+                a: false,
+                s: false,
+                d: false
+            },
+            driving: true
+        },
         persons: [] as IPerson[],
         rooms: [{
             id: "left-office-room",
@@ -305,6 +360,43 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     }
 
     /**
+     * If the walking tutorial should be shown.
+     */
+    showWalkingTutorial = () => {
+        const currentPerson = this.getCurrentPerson();
+        if (currentPerson) {
+            // there is a current person
+            const {w, a, s, d} = this.state.tutorials.walking;
+            // one of the WASD keys has not been pressed yet, show walking tutorial
+            return !w || !a || !s || !d;
+        } else {
+            // no current person, do not show tutorial
+            return false;
+        }
+    };
+
+    /**
+     * If the driving text should be shown. Only when inside of a car.
+     */
+    showDrivingText = () => {
+        const currentPerson = this.getCurrentPerson();
+        if (currentPerson) {
+            // if the current person is inside of a car
+            return this.state.cars.some(this.isInCar(currentPerson));
+        } else {
+            // no current person, cannot be inside a car without a person
+            return false;
+        }
+    };
+
+    /**
+     * If the driving tutorial should be shown.
+     */
+    showDrivingTutorial = () => {
+        return this.showDrivingText() && this.state.tutorials.driving;
+    };
+
+    /**
      * Create a new person in the database.
      */
     createPerson = async () => {
@@ -362,19 +454,9 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         window.addEventListener("keydown", this.handleKeyDown);
         window.addEventListener("keyup", this.handleKeyUp);
 
-        // delete all previous persons
-        (async () => {
-            const response = await axios.get<IApiPersonsGet>("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons");
-            if (response && response.data) {
-                const {persons} = response.data;
-                await Promise.all(persons.map(person => {
-                    return axios.delete(`https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/${person.id}`);
-                }));
-            }
-        })().then(() => {
-            // begin game loop
-            this.intervalGameLoop = setTimeout(this.gameLoop, this.gameRefreshSpeed);
-        });
+        // begin game loop
+        this.intervalGameLoop = setTimeout(this.gameLoop, this.gameRefreshSpeed);
+        this.intervalHeartbeat = setInterval(this.heartbeat, this.heartbeatRefreshSpeed);
     };
 
     /**
@@ -384,6 +466,12 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         // remove keyboard events
         window.removeEventListener("keydown", this.handleKeyDown);
         window.removeEventListener("keyup", this.handleKeyUp);
+
+        // stop the heartbeat
+        if (this.intervalHeartbeat) {
+            clearTimeout(this.intervalHeartbeat);
+            this.intervalGameLoop = null;
+        }
 
         // stop game loop
         if (this.intervalGameLoop) {
@@ -421,6 +509,13 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
             // server is up to date, no changes
             return [...networkArr, networkItem];
         }
+    };
+
+    /**
+     * Keep the person logged in by updating their last update timestamp every 25 seconds.
+     */
+    heartbeat = () => {
+        this.updatePersonProperty((person: IPerson) => person);
     };
 
     /**
@@ -683,6 +778,24 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     };
 
     /**
+     * Record a key press as pressed for the walking tutorial.
+     * @param key The key that was pressed.
+     */
+    handleWalkingTutorialKey = (key: "w" | "a" | "s" | "d") => {
+        if (!this.state.tutorials.walking[key]) {
+            this.setState({
+                tutorials: {
+                    ...this.state.tutorials,
+                    walking: {
+                        ...this.state.tutorials.walking,
+                        [key]: true
+                    }
+                }
+            });
+        }
+    };
+
+    /**
      * Handle the movement of the current person across the screen.
      * @param event
      */
@@ -798,7 +911,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 }));
                 break;
             }
-            case "e":
+            case "e": {
                 this.handlePersonPropertyChange((person: IPerson): IPerson => {
                     const car = this.state.cars.find(this.isInCar(person));
                     if (car) {
@@ -816,6 +929,31 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     }
                 });
                 break;
+            }
+        }
+
+        // handle a walking tutorial key press
+        switch (event.key) {
+            case "w":
+            case "a":
+            case "s":
+            case "d": {
+                this.handleWalkingTutorialKey(event.key);
+                break;
+            }
+            default:
+                break;
+        }
+
+        // if the e key was pressed and the driving tutorial is shown
+        if (event.key === "e" && this.state.tutorials.driving) {
+            // hide driving tutorial
+            this.setState({
+                tutorials: {
+                    ...this.state.tutorials,
+                    driving: false
+                }
+            });
         }
     };
 
@@ -1397,6 +1535,31 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                         }
                     </g>
                     <text x="20" y="20">Position: {worldOffsetX} {worldOffsetY}</text>
+                    {
+                        this.showWalkingTutorial() ? (
+                            <g>
+                                <text x="20" y="40" fill="black" opacity={0.5}>Press the WASD keys to walk.</text>
+                                <text x="70" y="60" fill={this.state.tutorials.walking.w ? "blue" : "black"} opacity={0.5}>W</text>
+                                <text x="20" y="110" fill={this.state.tutorials.walking.w ? "blue" : "black"} opacity={0.5}>A</text>
+                                <text x="70" y="110" fill={this.state.tutorials.walking.w ? "blue" : "black"} opacity={0.5}>S</text>
+                                <text x="120" y="110" fill={this.state.tutorials.walking.w ? "blue" : "black"} opacity={0.5}>D</text>
+                            </g>
+                        ) : null
+                    }
+                    {
+                        this.showDrivingTutorial() ? (
+                            <g>
+                                <text x="20" y="40" fill="black">Press the E key to Enter and Exit the car.</text>
+                            </g>
+                        ) : null
+                    }
+                    {
+                        this.showDrivingText() ? (
+                            <g>
+                                <text x="20" y="260" fill="black">Starter</text>
+                            </g>
+                        ) : null
+                    }
                 </svg>
                 <div>
                     <p>Select a custom shirt color for your character.</p>
