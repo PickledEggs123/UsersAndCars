@@ -1,6 +1,8 @@
 /**
  * The base interface for all game objects.
  */
+import {IWhichDIrectionIsNearby} from "../../functions/src/types/GameTypes";
+
 export interface IObject {
     /**
      * The left to right position of the object in the game world.
@@ -113,6 +115,81 @@ export interface IRoom extends IObject {
      */
     tables: IObject[];
 }
+
+/**
+ * The type of the lot.
+ */
+export enum ELotZone {
+    RESIDENTIAL = "RESIDENTIAL",
+    COMMERCIAL = "COMMERCIAL",
+    INDUSTRIAL = "INDUSTRIAL"
+}
+
+/**
+ * A city is made of lots. Each lot has locations to place houses, roads, and stores.
+ */
+export interface ILot extends IObject {
+    owner: string;
+    format: string;
+    width: number;
+    height: number;
+    zone: ELotZone;
+}
+
+/**
+ * The type of the road.
+ */
+export enum ERoadType {
+    TWO_LANE = "TWO_LANE",
+    ONE_WAY = "ONE_WAY",
+    INTERSECTION = "INTERSECTION"
+}
+
+/**
+ * The direction of the road.
+ */
+export enum ERoadDirection {
+    INTERSECTION = "INTERSECTION",
+    NORTH = "NORTH",
+    SOUTH = "SOUTH",
+    EAST = "EAST",
+    WEST = "WEST",
+    HORIZONTAL = "HORIZONTAL",
+    VERTICAL = "VERTICAL"
+}
+
+/**
+ * A city has roads to travel between buildings.
+ */
+export interface IRoad extends IObject {
+    /**
+     * The type of road.
+     */
+    type: ERoadType;
+    /**
+     * The direction of the road.
+     */
+    direction: ERoadDirection;
+    /**
+     * Which side of the road is connected.
+     */
+    connected: IWhichDIrectionIsNearby;
+}
+
+/**
+ * A city is a combination of lots and roads.
+ */
+export interface ICity {
+    /**
+     * A list of lots in the city.
+     */
+    lots: ILot[];
+    /**
+     * A list of roads in the city.
+     */
+    roads: IRoad[];
+}
+
 
 /**
  * The direction a car is facing.

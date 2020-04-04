@@ -3,60 +3,40 @@ import './App.scss';
 import axios from "axios";
 import {
     ECarDirection,
-    EDrawableType,
+    ERoadDirection,
+    ERoadType,
     ERoomWallType,
     IApiPersonsGet,
     IApiPersonsPut,
     ICar,
-    IDrawable,
+    ICity,
     IGameTutorials,
     IKeyDownHandler,
+    ILot,
     INetworkObject,
     IObject,
     IPerson,
+    IRoad,
     IRoom
 } from "./types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
-import {IWhichDoorsShouldBeOpen} from "../functions/src/types/GameTypes";
+import {IWhichDIrectionIsNearby} from "../functions/src/types/GameTypes";
+import {IPersonsDrawablesProps, IPersonsDrawablesState, PersonsDrawables} from "./PersonsDrawables";
 
 /**
  * The input to the [[Persons]] component that changes how the game is rendered.
  */
-interface IPersonsProps {}
+interface IPersonsProps extends IPersonsDrawablesProps {}
 
 /**
  * The state of the game component. The game state is stored in React so all changes to the game state will update the
  * SVG on the screen.
  */
-interface IPersonsState {
-    /**
-     * The number of pixels of the game screen wide.
-     */
-    width: number;
-    /**
-     * The number of pixels of the game screen is tall.
-     */
-    height: number;
+interface IPersonsState extends IPersonsDrawablesState {
     /**
      * The tutorials that should be shown.
      */
     tutorials: IGameTutorials;
-    /**
-     * A list of persons from the network.
-     */
-    persons: IPerson[];
-    /**
-     * A list of rooms in the current building.
-     */
-    rooms: IRoom[];
-    /**
-     * A list of cars in the current location.
-     */
-    cars: ICar[];
-    /**
-     * The randomly generated ID of the current person shown.
-     */
-    currentPersonId: string;
     /**
      * The timestamp of the last network update. Used to prevent the backward teleporting glitch when moving. If the
      * local update is newer than the last network update, the local update will replace the network update. This
@@ -69,7 +49,7 @@ interface IPersonsState {
 /**
  * A React Component which renders the Persons game.
  */
-export class Persons extends React.Component<IPersonsProps, IPersonsState> {
+export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     /**
      * The interval containing the game loop.
      */
@@ -121,6 +101,8 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         persons: [] as IPerson[],
         rooms: [] as IRoom[],
         cars: [] as ICar[],
+        roads: [] as IRoad[],
+        lots: [] as ILot[],
         currentPersonId: this.randomPersonId(),
         lastUpdate: new Date().toISOString()
     };
@@ -174,39 +156,39 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 {x: 300, y: 50},
                 {x: 200, y: 250},
                 {x: 300, y: 250}
-            ] as IObject[],
+            ],
             tables: [
                 {x: 250, y: 150}
-            ] as IObject[],
+            ],
             doors: {
                 left: ERoomWallType.WALL,
                 right: ERoomWallType.WALL,
                 top: ERoomWallType.WALL,
                 bottom: ERoomWallType.WALL
             }
-        } as IRoom;
+        };
     };
 
     /**
      * Generate a hallway.
      * @param id The id of the hallway
      * @param x The x position of the hallway.
-     * @param y THe y position of the hallway.
+     * @param y The y position of the hallway.
      */
     generateHallway = ({id, x, y}: {id: string, x: number, y: number}): IRoom => {
         return {
             id,
             x,
             y,
-            chairs: [] as IObject[],
-            tables: [] as IObject[],
+            chairs: [],
+            tables: [],
             doors: {
                 left: ERoomWallType.WALL,
                 right: ERoomWallType.WALL,
                 top: ERoomWallType.WALL,
                 bottom: ERoomWallType.WALL
             }
-        } as IRoom;
+        };
     };
 
     /**
@@ -228,7 +210,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 top: ERoomWallType.OPEN,
                 bottom: ERoomWallType.OPEN
             }
-        } as IRoom;
+        };
     };
 
     /**
@@ -251,27 +233,27 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
      * Determine if room is nearby another room.
      * @param a The room to test being nearby room b.
      */
-    roomIsNearbyRoom = (a: IRoom) => (b: IRoom) => {
+    tileIsNearbyTile = (a: IObject) => (b: IObject) => {
         return b.x >= a.x - 500 && b.x <= a.x + 500 && b.y >= a.y - 300 && b.y <= a.y + 300;
     };
 
     /**
      * Return which doors should be open given a room and an array of nearby rooms.
-     * @param room The room which doors should be computed.
-     * @param nearbyRooms The array of nearby rooms.
+     * @param tile The room which doors should be computed.
+     * @param nearbyTiles The array of nearby rooms.
      */
-    whichDoorsShouldBeOpen = (room: IRoom, nearbyRooms: IRoom[]): IWhichDoorsShouldBeOpen => {
-        const up = nearbyRooms.some((nearbyRoom) => {
-            return Math.abs(nearbyRoom.x - room.x) < 10 && Math.abs(nearbyRoom.y - room.y + 300) < 10;
+    whichDirectionIsNearby = (tile: IObject, nearbyTiles: IObject[]): IWhichDIrectionIsNearby => {
+        const up = nearbyTiles.some((nearbyTile) => {
+            return Math.abs(nearbyTile.x - tile.x) < 10 && Math.abs(nearbyTile.y - tile.y + 300) < 10;
         });
-        const down = nearbyRooms.some((nearbyRoom) => {
-            return Math.abs(nearbyRoom.x - room.x) < 10 && Math.abs(nearbyRoom.y - room.y - 300) < 10;
+        const down = nearbyTiles.some((nearbyTile) => {
+            return Math.abs(nearbyTile.x - tile.x) < 10 && Math.abs(nearbyTile.y - tile.y - 300) < 10;
         });
-        const left = nearbyRooms.some((nearbyRoom) => {
-            return Math.abs(nearbyRoom.y - room.y) < 10 && Math.abs(nearbyRoom.x - room.x + 500) < 10;
+        const left = nearbyTiles.some((nearbyTile) => {
+            return Math.abs(nearbyTile.y - tile.y) < 10 && Math.abs(nearbyTile.x - tile.x + 500) < 10;
         });
-        const right = nearbyRooms.some((nearbyRoom) => {
-            return Math.abs(nearbyRoom.y - room.y) < 10 && Math.abs(nearbyRoom.x - room.x - 500) < 10;
+        const right = nearbyTiles.some((nearbyTile) => {
+            return Math.abs(nearbyTile.y - tile.y) < 10 && Math.abs(nearbyTile.x - tile.x - 500) < 10;
         });
 
         return {
@@ -279,7 +261,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
             down,
             left,
             right
-        } as IWhichDoorsShouldBeOpen;
+        } as IWhichDIrectionIsNearby;
     };
 
     /**
@@ -288,7 +270,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
      * @param whichDoorsShouldBeOpen The doors to open.
      * @param value The type of wall to be drawn.
      */
-    applyWhichDoorsShouldBeOpen = (room: IRoom, whichDoorsShouldBeOpen: IWhichDoorsShouldBeOpen, value: ERoomWallType): void => {
+    applyWhichDoorsShouldBeOpen = (room: IRoom, whichDoorsShouldBeOpen: IWhichDIrectionIsNearby, value: ERoomWallType): void => {
         if (whichDoorsShouldBeOpen.up) {
             room.doors.top = value;
         }
@@ -301,6 +283,18 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         if (whichDoorsShouldBeOpen.right) {
             room.doors.right = value;
         }
+    };
+
+    /**
+     * Apply doors onto the room mutably.
+     * @param road The room which should be modified with new doors.
+     * @param whichDoorsShouldBeOpen The doors to open.
+     */
+    applyRoadConnections = (road: IRoad, whichDoorsShouldBeOpen: IWhichDIrectionIsNearby): void => {
+        road.connected = {
+            ...road.connected,
+            ...whichDoorsShouldBeOpen
+        };
     };
 
     /**
@@ -338,14 +332,14 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         hallways.forEach(hallway => {
             {
                 // find nearby hallways, make open
-                const nearbyRooms = hallways.filter(this.roomIsNearbyRoom(hallway));
-                const whichDoorsShouldBeOpen = this.whichDoorsShouldBeOpen(hallway, nearbyRooms);
+                const nearbyRooms = hallways.filter(this.tileIsNearbyTile(hallway));
+                const whichDoorsShouldBeOpen = this.whichDirectionIsNearby(hallway, nearbyRooms);
                 this.applyWhichDoorsShouldBeOpen(hallway, whichDoorsShouldBeOpen, ERoomWallType.OPEN);
             }
             {
                 // find nearby rooms that are not hallways, make door
-                const nearbyRooms = notHallways.filter(this.roomIsNearbyRoom(hallway));
-                const whichDoorsShouldBeOpen = this.whichDoorsShouldBeOpen(hallway, nearbyRooms);
+                const nearbyRooms = notHallways.filter(this.tileIsNearbyTile(hallway));
+                const whichDoorsShouldBeOpen = this.whichDirectionIsNearby(hallway, nearbyRooms);
                 this.applyWhichDoorsShouldBeOpen(hallway, whichDoorsShouldBeOpen, ERoomWallType.DOOR);
             }
         });
@@ -354,8 +348,8 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         const offices = rooms.filter(room => room.id.includes("office"));
         offices.forEach(office => {
             // find nearby hallways, add door
-            const nearbyRooms = hallways.filter(this.roomIsNearbyRoom(office));
-            const whichDoorsShouldBeOpen = this.whichDoorsShouldBeOpen(office, nearbyRooms);
+            const nearbyRooms = hallways.filter(this.tileIsNearbyTile(office));
+            const whichDoorsShouldBeOpen = this.whichDirectionIsNearby(office, nearbyRooms);
             this.applyWhichDoorsShouldBeOpen(office, whichDoorsShouldBeOpen, ERoomWallType.DOOR);
         });
 
@@ -363,13 +357,93 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         const entrances = rooms.filter(room => room.id.includes("entrance"));
         entrances.forEach(entrance => {
             // find nearby hallways, add door
-            const nearbyRooms = hallways.filter(this.roomIsNearbyRoom(entrance));
-            const whichDoorsShouldBeOpen = this.whichDoorsShouldBeOpen(entrance, nearbyRooms);
+            const nearbyRooms = hallways.filter(this.tileIsNearbyTile(entrance));
+            const whichDoorsShouldBeOpen = this.whichDirectionIsNearby(entrance, nearbyRooms);
             this.applyWhichDoorsShouldBeOpen(entrance, whichDoorsShouldBeOpen, ERoomWallType.ENTRANCE);
         });
 
-
         return rooms;
+    };
+
+    /**
+     * Generate a city from an ASCII map.
+     * @param prefix The name of the city. It's prepended to the [[ILot]] names.
+     * @param format The ASCII map of the city.
+     * @param x The x offset of the city.
+     * @param y The y offset of the city.
+     */
+    generateCity = ({prefix, format, offset: {x, y}}: {prefix: string, format: string, offset: IObject}): ICity => {
+        format = "" +
+            "|-----|---------------|-----|---------------|-----|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|-----|---------------|-----|---------------|-----|\n" +
+            "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
+            "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
+            "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
+            "|-----|---------------|-----|---------------|-----|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|-----|---------------|-----|---------------|-----|";
+
+        const roads = [] as IRoad[];
+        const lots = [] as ILot[];
+
+        // parse all roads
+        const rows = format.split(/\r\n|\r|\n/);
+        rows.forEach((row, rowIndex) => {
+            const tiles = row.split("");
+            tiles.forEach((tile, columnIndex) => {
+                switch (tile) {
+                    case "|": {
+                        roads.push({
+                            x: x + columnIndex * 500,
+                            y: y + rowIndex * 300,
+                            type: ERoadType.TWO_LANE,
+                            direction: ERoadDirection.VERTICAL,
+                            connected: {
+                                up: false,
+                                down: false,
+                                left: false,
+                                right: false
+                            }
+                        });
+                        break;
+                    }
+                    case "-": {
+                        roads.push({
+                            x: columnIndex * 500,
+                            y: rowIndex * 300,
+                            type: ERoadType.TWO_LANE,
+                            direction: ERoadDirection.HORIZONTAL,
+                            connected: {
+                                up: false,
+                                down: false,
+                                left: false,
+                                right: false
+                            }
+                        });
+                        break;
+                    }
+                }
+            });
+        });
+
+        // connect roads to each other
+        roads.forEach(road => {
+            const nearbyRoads = roads.filter(this.tileIsNearbyTile(road));
+            const whichDirectionShouldBeConnected = this.whichDirectionIsNearby(road, nearbyRoads);
+            this.applyRoadConnections(road, whichDirectionShouldBeConnected);
+        });
+
+        return {
+            roads,
+            lots
+        };
     };
 
     /**
@@ -456,7 +530,8 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 })
             ];
         }, []);
-        this.setState({rooms});
+        const {roads, lots} = this.generateCity({prefix: "city1", format: "", offset: {x: 0, y: 0}});
+        this.setState({rooms, roads, lots});
     };
 
     /**
@@ -1009,639 +1084,6 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
     };
 
     /**
-     * Generate a random Person Id to control a specific person on the server.
-     */
-    randomPersonId() {
-        return new Array(10).fill(0).map(() => Number(Math.floor(Math.random() * 36)).toString(36)).join("");
-    }
-
-    /**
-     * Determine if an object is inside the room.
-     * @param position The object to test.
-     */
-    isInRoom = (position: IObject) => (room: IRoom): boolean => {
-        return position.x >= room.x && position.x <= room.x + 500 &&
-            position.y >= room.y && position.y <= room.y + 300;
-    };
-
-    /**
-     * Determine if an object is inside the car.
-     * @param position The object to test.
-     */
-    isInCar = (position: IObject) => (car: ICar): boolean => {
-        switch (car.direction) {
-            default:
-            case ECarDirection.UP:
-            case ECarDirection.DOWN:
-                return position.x >= car.x - 50 && position.x <= car.x + 50 &&
-                    position.y >= car.y - 100 && position.y <= car.y + 100;
-            case ECarDirection.LEFT:
-            case ECarDirection.RIGHT:
-                return position.x >= car.x - 100 && position.x <= car.x + 100 &&
-                    position.y >= car.y - 50 && position.y <= car.y + 50;
-        }
-    };
-
-    /**
-     * Draw a person as some SVG elements.
-     * @param person The person to draw.
-     */
-    drawPerson = (person: IPerson) => {
-        const {x, y} = person;
-
-        // the mask property which will mask the person's body so the bottom half of the person does not appear below a wall
-        let roomMask: string = "";
-        let carMask: string = "";
-
-        // find which room the person is in
-        const roomIndex = this.state.rooms.findIndex(this.isInRoom(person));
-        if (roomIndex >= 0) {
-            // person is in a room, apply the room mask
-            roomMask = `url(#room-${roomIndex})`;
-        }
-
-        // find which car the person is in
-        const car = this.state.cars.find(this.isInCar(person));
-        if (car) {
-            // person is in a room, apply the room mask
-            switch (car.direction) {
-                default:
-                case ECarDirection.DOWN:
-                case ECarDirection.UP: {
-                    carMask = `url(#car-${car.id}-down)`;
-                    break;
-                }
-                case ECarDirection.LEFT:
-                case ECarDirection.RIGHT: {
-                    carMask = `url(#car-${car.id}-left)`;
-                    break;
-                }
-            }
-        }
-
-        return (
-            <g key={person.id} x="0" y="0" width="500" height="300" mask={roomMask}>
-                <g key={person.id} x="0" y="0" width="500" height="300" mask={carMask}>
-                    <g key={person.id} transform={`translate(${x - 50},${y - 100})`}>
-                        <polygon fill="yellow" points="40,10 60,10 60,30 40,30"/>
-                        <polygon fill={person.shirtColor} points="20,30 80,30 80,100 20,100"/>
-                        <polygon fill={person.pantColor} points="20,100 80,100 80,120 20,120"/>
-                        <polygon fill={person.pantColor} points="20,120 40,120 40,200 20,200"/>
-                        <polygon fill={person.pantColor} points="80,120 60,120 60,200 80,200"/>
-                    </g>
-                </g>
-            </g>
-        );
-    };
-
-    /**
-     * Draw a person as some SVG elements.
-     * @param car The person to draw.
-     */
-    drawCar = (car: ICar): IDrawable[] => {
-        const {x, y} = car;
-
-        // the mask property which will mask the car so the bottom half of the car does not appear below a wall
-        let mask: string = "";
-        // find which room the car is in
-        const roomIndex = this.state.rooms.findIndex(this.isInRoom(car));
-        if (roomIndex >= 0) {
-            // car is in a room, apply the room mask
-            mask = `url(#room-${roomIndex})`;
-        }
-
-        // return a list of drawable car parts
-        switch (car.direction) {
-            default:
-            case ECarDirection.DOWN: return [{
-                // draw the back of the car
-                x,
-                y: y - 100,
-                type: EDrawableType.OBJECT,
-                draw(this: IDrawable) {
-                    return (
-                        <g key={`car-top-${car.id}`} x="0" y="0" width="100" height="200" mask={mask}>
-                            <g key={car.id} transform={`translate(${x},${y})`}>
-                                <polygon fill="lightblue" points="-50,-100 50,-100 50,50, -50,50"/>
-                                <polygon fill="grey" stroke="black" strokeWidth={2} points="-40,-90 40,-90 40,50, -40,50"/>
-                                <polyline stroke="black" strokeWidth={2} points="-20,-90 -20,50"/>
-                                <polyline stroke="black" strokeWidth={2} points="0,-90 0,50"/>
-                                <polyline stroke="black" strokeWidth={2} points="20,-90 20,50"/>
-                            </g>
-                        </g>
-                    );
-                }
-            }, {
-                // draw the front of the car
-                x,
-                y,
-                type: EDrawableType.OBJECT,
-                draw(this: IDrawable) {
-                    return (
-                        <g key={`car-bottom-${car.id}`} x="0" y="0" width="100" height="200" mask={mask}>
-                            <g key={car.id} transform={`translate(${x},${y})`}>
-                                <polygon fill="lightblue" opacity={0.5} points="-40,0 40,0 50,50 -50,50"/>
-                                <polygon fill="lightblue" points="-50,50 50,50 50,100 -50,100"/>
-                                <polygon fill="white" stroke="black" strokeWidth={2} points="-40,70 40,70 40,90 -40,90"/>
-                                <polyline stroke="black" strokeWidth={2} points="-20,70 -20,90"/>
-                                <polyline stroke="black" strokeWidth={2} points="0,70 0,90"/>
-                                <polyline stroke="black" strokeWidth={2} points="20,70 20,90"/>
-                            </g>
-                        </g>
-                    );
-                }
-            }];
-            case ECarDirection.UP: return [{
-                // draw the back of the car
-                x,
-                y: y - 100,
-                type: EDrawableType.OBJECT,
-                draw(this: IDrawable) {
-                    return (
-                        <g key={`car-top-${car.id}`} x="0" y="0" width="100" height="200" mask={mask}>
-                            <g key={car.id} transform={`translate(${x},${y})`}>
-                                <polygon fill="lightblue" opacity={0.5} points="-40,-100 40,-100 50,-80 -50,-80"/>
-                                <polygon fill="lightblue" points="-50,-80 50,-80 50,50 -50,50"/>
-                                <polygon fill="grey" stroke="black" strokeWidth={2} points="-40,-70 40,-70 40,50 -40,50"/>
-                                <polyline stroke="black" strokeWidth={2} points="-20,-70 -20,50"/>
-                                <polyline stroke="black" strokeWidth={2} points="0,-70 0,50"/>
-                                <polyline stroke="black" strokeWidth={2} points="20,-70 20,50"/>
-                            </g>
-                        </g>
-                    );
-                }
-            }, {
-                // draw the front of the car
-                x,
-                y,
-                type: EDrawableType.OBJECT,
-                draw(this: IDrawable) {
-                    return (
-                        <g key={`car-bottom-${car.id}`} x="0" y="0" width="100" height="200" mask={mask}>
-                            <g key={car.id} transform={`translate(${x},${y})`}>
-                                <polygon fill="lightblue" points="-50,50 50,50 50,100 -50,100"/>
-                                <polygon fill="red" stroke="black" strokeWidth={2} points="-40,60 -20,60 -20,80 -40,80"/>
-                                <polygon fill="red" stroke="black" strokeWidth={2} points="40,60 20,60 20,80 40,80"/>
-                                <polygon fill="white" stroke="black" strokeWidth={2} points="-10,60 10,60 10,80 -10,80"/>
-                            </g>
-                        </g>
-                    );
-                }
-            }];
-            case ECarDirection.RIGHT:
-            case ECarDirection.LEFT: return [{
-                // draw the back of the car
-                x,
-                y: y - 50,
-                type: EDrawableType.OBJECT,
-                draw(this: IDrawable) {
-                    return (
-                        <g key={`car-top-${car.id}`} x="0" y="0" width="200" height="100" mask={mask}>
-                            <g key={car.id} transform={`translate(${x},${y})${car.direction === ECarDirection.RIGHT ? " scale(-1,1)": ""}`}>
-                                <polygon fill="lightblue" opacity={0.5} points="-40,-50 -40,-20 -50,-20"/>
-                                <polygon fill="lightblue" points="-50,-20 100,-20 100,25 -100,25 -100,0 -75,0"/>
-                                <polygon fill="grey" stroke="black" strokeWidth={2} points="-40,-10 90,-10 90,25 -40,25"/>
-                                <polyline stroke="black" strokeWidth={2} points="-40,10 90,10"/>
-                            </g>
-                        </g>
-                    );
-                }
-            }, {
-                // draw the front of the car
-                x,
-                y: y + 100,
-                type: EDrawableType.OBJECT,
-                draw(this: IDrawable) {
-                    return (
-                        <g key={`car-bottom-${car.id}`} x="0" y="0" width="200" height="100" mask={mask}>
-                            <g key={car.id} transform={`translate(${x},${y})${car.direction === ECarDirection.RIGHT ? " scale(-1,1)": ""}`}>
-                                <polygon fill="lightblue" points="-100,25 100,25 100,50 -100,50"/>
-                                <polygon fill="white" stroke="black" strokeWidth={2} points="-100,25 -80,25 -80,35 -100,35"/>
-                                <polygon fill="red" stroke="black" strokeWidth={2} points="100,25 80,25 80,35 100,35"/>
-                            </g>
-                        </g>
-                    );
-                }
-            }];
-        }
-    };
-
-    /**
-     * Draw a table in a room.
-     * @param drawable The table to draw.
-     * @param room The room the table is in.
-     * @param index The index of the table.
-     */
-    drawTable = (drawable: IObject, room: IRoom, index: number) => {
-        const {x, y} = drawable;
-        return (
-            <g key={`room-${room.id}-table-${index}`} transform={`translate(${x - 100 + room.x},${y - 50 + room.y})`}>
-                <polygon fill="brown" points="0,100 200,100 200,0 0,0"/>
-            </g>
-        );
-    };
-
-    /**
-     * Draw a chair in a room.
-     * @param drawable The chair to draw.
-     * @param room The room that contains the chair.
-     * @param index The index of the chair in the room.
-     */
-    drawChair = (drawable: IObject, room: IRoom, index: number) => {
-        const {x, y} = drawable;
-        return (
-            <g key={`room-${room.id}-chair-${index}`} transform={`translate(${x - 50 + room.x},${y - 50 + room.y})`}>
-                <polygon fill="brown" points="10,90 20,90 20,10 10,10"/>
-                <polygon fill="brown" points="80,90 90,90 90,10 80,10"/>
-                <polygon fill="brown" points="40,90 60,90 60,10 40,10"/>
-                <polygon fill="brown" points="10,10 90,10 90,20 10,20"/>
-                <polygon fill="brown" points="10,50 90,50 90,90 10,90"/>
-            </g>
-        );
-    };
-
-    /**
-     * Draw walls around the room.
-     * @param drawable The room to draw walls for.
-     * @param index The index of the room.
-     */
-    drawRoomWalls = (drawable: IObject, index: number) => {
-        const {x, y} = drawable;
-        const drawables = [] as IDrawable[];
-
-        // top wall
-        switch ((drawable as IRoom).doors.top) {
-            case ERoomWallType.DOOR: {
-                // there is a top door, draw a wall with a top door
-                drawables.push({
-                    x,
-                    y: y + 30,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-top-left`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,0 200,0 200,5 0,5"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable, {
-                    x,
-                    y: y + 30,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-top-right`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="300,0 500,0 500,5 300,5"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable);
-                break;
-            }
-            case ERoomWallType.ENTRANCE: {
-                // draw an entrance at the top of the building
-                drawables.push({
-                    x,
-                    y: y + 30,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-top-left`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,0 200,0 200,5 0,5"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable, {
-                    x,
-                    y: y + 30,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-top-right`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="300,0 500,0 500,5 300,5"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable, {
-                    x,
-                    y: y + 30,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-top-door`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="195,0 195,-205 305,-205 305,0 300,0 300,-200 200,-200 200,0"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable);
-                break;
-            }
-            default:
-            case ERoomWallType.WALL: {
-                // there is no top door, draw a plain wall
-                drawables.push({
-                    x,
-                    y: y + 30,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,0 500,0 500,5 0,5"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable);
-                break;
-            }
-            case ERoomWallType.OPEN: {
-                // do nothing
-            }
-        }
-
-        // draw bottom wall
-        switch ((drawable as IRoom).doors.bottom) {
-            case ERoomWallType.DOOR: {
-                // there is a bottom door, draw a wall with a bottom door
-                drawables.push({
-                    x,
-                    y: y + 330,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-bottom-left`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,295 200,295 200,300 0,300"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable, {
-                    x,
-                    y: y + 330,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-bottom-right`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="300,295 500,295 500,300 300,300"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable);
-                break;
-            }
-            case ERoomWallType.ENTRANCE: {
-                // there is an entrance at the bottom of the room
-                drawables.push({
-                    x,
-                    y: y + 330,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-bottom-left`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,295 200,295 200,300 0,300"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable, {
-                    x,
-                    y: y + 330,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-bottom-right`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="300,295 500,295 500,300 300,300"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable, {
-                    x,
-                    y: y + 330,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-bottom-door`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="195,300 195,95 305,95 305,300 300,300 300,100 200,100 200,300"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable);
-                break;
-            }
-            default:
-            case ERoomWallType.WALL: {
-                // there is an entrance at the bottom of the room
-                drawables.push({
-                    x,
-                    y: y + 330,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,295 500,295 500,300 0,300"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable);
-                break;
-            }
-            case ERoomWallType.OPEN: {
-                // do nothing
-            }
-        }
-
-        // draw left wall
-        switch ((drawable as IRoom).doors.left) {
-            case ERoomWallType.ENTRANCE:
-            case ERoomWallType.DOOR: {
-                // there is a left door, draw a wall with a left door
-                drawables.push({
-                    x,
-                    y: y + 30,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-left-top`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,0 5,0 5,100 0,100"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable, {
-                    x,
-                    y: y + 330,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-left-bottom`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,200 5,200 5,300 0,300"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable);
-                break;
-            }
-            default:
-            case ERoomWallType.WALL: {
-                // there is no left door, draw a plain wall
-                drawables.push({
-                    x,
-                    y: y + 330,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-left`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,0 5,0 5,300 0,300"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable);
-                break;
-            }
-            case ERoomWallType.OPEN: {
-                // do nothing
-            }
-        }
-
-        // draw right wall
-        switch ((drawable as IRoom).doors.right) {
-            case ERoomWallType.ENTRANCE:
-            case ERoomWallType.DOOR: {
-                // there is a right wall, draw a door with a right wall
-                drawables.push({
-                    x,
-                    y: y + 30,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-right-top`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="495,0 500,0 500,100 495,100"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable, {
-                    x,
-                    y: y + 330,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-right-bottom`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="495,200 500,200 500,300 495,300"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable);
-                break;
-            }
-            default:
-            case ERoomWallType.WALL: {
-                // there is no right wall, draw a plain wall
-                drawables.push({
-                    x,
-                    y: y + 330,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-right`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="495,0 500,0 500,300 495,300"/>
-                            </g>
-                        );
-                    }
-                } as IDrawable);
-                break;
-            }
-            case ERoomWallType.OPEN: {
-                // do nothing
-            }
-        }
-        return drawables;
-    };
-
-    /**
-     * Create a sorted list of all drawable objects for final rendering. Objects at the bottom should overlap objects
-     * above them to create a 2D Stereographic Projection, like a 2D with 3D movement arcade game. Sort [[IDrawable]]s
-     * from top to bottom so bottom is drawn last, on top of the [[IDrawable]] above it.
-     */
-    sortDrawables = () => {
-        const component = this;
-        const drawables = [
-            // add all persons
-            ...this.state.persons.map(person => ({
-                draw(this: IDrawable) {
-                    return component.drawPerson(this as unknown as IPerson);
-                },
-                type: EDrawableType.PERSON,
-                ...person
-            }) as IDrawable),
-
-            // for each room
-            ...this.state.rooms.reduce((arr: IDrawable[], room: IRoom): IDrawable[] => {
-                return [
-                    ...arr,
-
-                    // add all chairs
-                    ...room.chairs.map((chair, index) => ({
-                        draw(this: IObject) {
-                            return component.drawChair(this, room, index);
-                        },
-                        type: EDrawableType.OBJECT,
-                        ...chair
-                    }) as IDrawable)
-                ];
-            }, []),
-
-            // for each room
-            ...this.state.rooms.reduce((arr: IDrawable[], room: IRoom): IDrawable[] => {
-                return [
-                    ...arr,
-
-                    // add all tables
-                    ...room.tables.map((table, index) => ({
-                        draw(this: IObject) {
-                            return component.drawTable(this, room, index);
-                        },
-                        type: EDrawableType.OBJECT,
-                        ...table
-                    }) as IDrawable)
-                ];
-            }, []),
-
-            // for each room
-            ...this.state.rooms.reduce((arr: IDrawable[], room: IRoom, index: number): IDrawable[] => {
-                return [
-                    ...arr,
-
-                    // add all walls
-                    ...component.drawRoomWalls(room, index)
-                ];
-            }, []),
-
-            // for each car
-            ...this.state.cars.reduce((arr: IDrawable[], car: ICar): IDrawable[] => {
-                return [
-                    ...arr,
-
-                    // add all car parts
-                    ...component.drawCar(car)
-                ];
-            }, [])
-        ];
-
-        // sort drawable objects from top to bottom
-        return drawables.sort((a, b) => {
-            // by default, sort by height difference
-            const heightDifference = a.y - b.y;
-
-            if (a.type === EDrawableType.PERSON && b.type !== EDrawableType.PERSON && heightDifference > 30) {
-                // person has priority over regular objects
-                return 1;
-            } else if (b.type === EDrawableType.PERSON && a.type !== EDrawableType.PERSON && heightDifference < 30) {
-                // person has priority over regular objects
-                return -1;
-            } else {
-                // sort by height differences
-                return heightDifference;
-            }
-        });
-    };
-
-    /**
      * Generate a list of grass tiles to draw. The tiles should always be around the world view. Should reduce the
      * amount of grass drawn in the world.
      * @param worldOffset The offset of the camera.
@@ -1670,8 +1112,16 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
             }
         }
 
-        console.log(tilePositions);
+        // return the grass tile positions
         return tilePositions;
+    };
+
+    /**
+     * Determine if the object is near the world view.
+     * @param offset The world view to test.
+     */
+    isNearWorldView = (offset: IObject) => (object: IObject): boolean => {
+        return Math.abs(object.x - offset.x) <= this.state.width && Math.abs(object.y - offset.y) <= this.state.height;
     };
 
     render() {
@@ -1679,14 +1129,16 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         const currentPerson = this.getCurrentPerson();
 
         // the offset of the entire world
-        let worldOffsetX: number = 0;
-        let worldOffsetY: number = 0;
+        const worldOffset: IObject = {
+            x: 0,
+            y: 0
+        };
 
         // if current person exist
         if (currentPerson) {
             // center world around current person, the view should be centered on the person
-            worldOffsetX = currentPerson.x - (this.state.width / 2);
-            worldOffsetY = currentPerson.y - (this.state.height / 2);
+            worldOffset.x = currentPerson.x - (this.state.width / 2);
+            worldOffset.y = currentPerson.y - (this.state.height / 2);
         }
 
         return (
@@ -1700,56 +1152,10 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 <svg className="game" width={this.state.width} height={this.state.height} style={{border: "1px solid black"}}>
                     <defs>
                         {
-                            this.state.rooms.map((room: IRoom, index: number) => {
-                                const {x, y} = room;
-                                return (
-                                    <mask key={`room-${index}`} id={`room-${index}`} x="0" y="0" width="500" height="300">
-                                        <rect fill="white" x={x + 5} y={y - 200} width={490} height={495}/>
-                                        {
-                                            [ERoomWallType.DOOR, ERoomWallType.ENTRANCE].includes(room.doors.left) ?
-                                                <>
-                                                    <rect fill="white" x={x - 5} y={y - 200} width={10} height={400}/>
-                                                    <rect fill="white" x={x - 105} y={y - 200} width={100} height={595}/>
-                                                </> :
-                                                null
-                                        }
-                                        {
-                                            [ERoomWallType.DOOR, ERoomWallType.ENTRANCE].includes(room.doors.right) ?
-                                                <>
-                                                    <rect fill="white" x={x + 495} y={y - 200} width={10} height={400}/>
-                                                    <rect fill="white" x={x + 505} y={y - 200} width={100} height={595}/>
-                                                </> :
-                                                null
-                                        }
-                                        {
-                                            [ERoomWallType.DOOR, ERoomWallType.ENTRANCE].includes(room.doors.bottom) ?
-                                                <rect fill="white" x={x + 200} y={y + 295} width={100} height={205}/> :
-                                                room.doors.bottom === ERoomWallType.OPEN ?
-                                                    <rect fill="white" x={x} y={y + 295} width={500} height={205}/> :
-                                                    null
-                                        }
-                                    </mask>
-                                );
-                            })
+                            this.generateRoomMasks()
                         }
                         {
-                            this.state.cars.map((car: ICar) => {
-                                const {x, y} = car;
-                                return (
-                                    <>
-                                        <mask key={`car-${car.id}-down`} id={`car-${car.id}-down`} x="0" y="0" width="100" height="200">
-                                            <rect fill="white" x={x - 50} y={y - 200} width={100} height={250}/>
-                                            <rect fill="white" x={x - 100} y={y - 200} width={50} height={400}/>
-                                            <rect fill="white" x={x + 50} y={y - 200} width={50} height={400}/>
-                                        </mask>
-                                        <mask key={`car-${car.id}-left`} id={`car-${car.id}-left`} x="0" y="0" width="200" height="100">
-                                            <rect fill="white" x={x - 100} y={y - 200} width={200} height={250}/>
-                                            <rect fill="white" x={x - 150} y={y - 200} width={50} height={400}/>
-                                            <rect fill="white" x={x + 100} y={y - 200} width={50} height={400}/>
-                                        </mask>
-                                    </>
-                                );
-                            })
+                            this.generateCarMasks()
                         }
                         <pattern id="grass" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
                             <image href="/grass.png" width="16" height="16"/>
@@ -1764,41 +1170,186 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                             <image href="/road-white.png" width="16" height="16"/>
                         </pattern>
                     </defs>
-                    <g transform={`translate(${-worldOffsetX},${-worldOffsetY})`}>
+                    <g transform={`translate(${-worldOffset.x},${-worldOffset.y})`}>
                         {
                             // draw the grass on the bottom of the world
-                            this.generateGrassTile({
-                                x: worldOffsetX,
-                                y: worldOffsetY
-                            }).map(({x, y}: IObject) => {
+                            this.generateGrassTile(worldOffset).map(({x, y}: IObject) => {
                                 return <rect key={`grass-tile-${x}-${y}`} x={x} y={y} width="500" height="300" fill="url(#grass)"/>;
                             })
                         }
                         {
                             // draw a road
-                            new Array(5 * 3).fill(0).map((v, i): IObject => ({
-                                x: i * 500,
-                                y: 1200
-                            })).map(({x, y}) => {
-                                return (
-                                    <g key={`road-tile-${x}-${y}`} transform={`translate(${x}, ${y})`}>
-                                        <rect x="0" y="0" width="500" height="300" fill="url(#road)"/>
-                                        <rect x="0" y="135" width="500" height="10" fill="url(#road-yellow)"/>
-                                        <rect x="0" y="155" width="500" height="10" fill="url(#road-yellow)"/>
-                                        <rect x="0" y="0" width="500" height="10" fill="url(#road-white)"/>
-                                        <rect x="0" y="290" width="500" height="10" fill="url(#road-white)"/>
-                                    </g>
-                                )
+                            this.state.roads.filter(this.isNearWorldView(worldOffset)).map(({connected, direction, x, y}) => {
+                                switch (direction) {
+                                    case ERoadDirection.HORIZONTAL: {
+                                        return (
+                                            <g key={`road-tile-${x}-${y}`} transform={`translate(${x}, ${y})`}>
+                                                <rect x="0" y="0" width="500" height="300" fill="url(#road)"/>
+                                                <rect x="0" y="135" width="500" height="10" fill="url(#road-yellow)"/>
+                                                <rect x="0" y="155" width="500" height="10" fill="url(#road-yellow)"/>
+                                                <rect x="0" y="0" width="500" height="10" fill="url(#road-white)"/>
+                                                <rect x="0" y="290" width="500" height="10" fill="url(#road-white)"/>
+                                            </g>
+                                        );
+                                    }
+                                    case ERoadDirection.VERTICAL: {
+                                        return (
+                                            <g key={`road-tile-${x}-${y}`} transform={`translate(${x}, ${y})`}>
+                                                <rect x="100" y="0" width="300" height="300" fill="url(#road)"/>
+                                                {
+                                                    // if not connected left and right, draw yellow line in the middle
+                                                    !connected.left && !connected.right ? (
+                                                        <>
+                                                            <rect x="235" y="0" width="10" height="300" fill="url(#road-yellow)"/>
+                                                            <rect x="255" y="0" width="10" height="300" fill="url(#road-yellow)"/>
+                                                        </>
+                                                    ) :
+                                                        null
+                                                }
+                                                {
+                                                    // draw left connection of road if connected on left side
+                                                    connected.left ? (
+                                                        <>
+                                                            <rect x="0" y="0" width="100" height="300" fill="url(#road)"/>
+                                                            <rect x="0" y="0" width="100" height="10" fill="url(#road-white)"/>
+                                                            <rect x="0" y="290" width="100" height="10" fill="url(#road-white)"/>
+                                                            <rect x="0" y="135" width="100" height="10" fill="url(#road-yellow)"/>
+                                                            <rect x="0" y="155" width="100" height="10" fill="url(#road-yellow)"/>
+                                                        </>
+                                                    ) : null
+                                                }
+                                                {
+                                                    // draw right section of road if connected on the right side
+                                                    connected.right ? (
+                                                        <>
+                                                            <rect x="400" y="0" width="100" height="300" fill="url(#road)"/>
+                                                            <rect x="400" y="0" width="100" height="10" fill="url(#road-white)"/>
+                                                            <rect x="400" y="290" width="100" height="10" fill="url(#road-white)"/>
+                                                            <rect x="400" y="135" width="100" height="10" fill="url(#road-yellow)"/>
+                                                            <rect x="400" y="155" width="100" height="10" fill="url(#road-yellow)"/>
+                                                        </>
+                                                    ) : null
+                                                }
+                                                {
+                                                    // draw left white line if no connection
+                                                    !connected.left ? (
+                                                        <rect x="100" y="0" width="10" height="300" fill="url(#road-white)"/>
+                                                    ) : null
+                                                }
+                                                {
+                                                    // draw right white line if no connection
+                                                    !connected.right ? (
+                                                        <rect x="390" y="0" width="10" height="300" fill="url(#road-white)"/>
+                                                    ) : null
+                                                }
+                                                {
+                                                    // draw top white line if no connection
+                                                    !connected.up ? (
+                                                        <rect x="100" y="0" width="300" height="10" fill="url(#road-white)"/>
+                                                    ) : null
+                                                }
+                                                {
+                                                    // draw bottom white line if no connection
+                                                    !connected.down ? (
+                                                        <rect x="100" y="290" width="300" height="10" fill="url(#road-white)"/>
+                                                    ) : null
+                                                }
+                                                {
+
+                                                    // draw top left corner
+                                                    !connected.up && !connected.left && connected.down && connected.right ? (
+                                                        <g>
+                                                            <rect x="245" y="135" width="155" height="10" fill="url(#road-yellow)"/>
+                                                            <rect x="255" y="155" width="145" height="10" fill="url(#road-yellow)"/>
+                                                            <rect x="235" y="135" width="10" height="165" fill="url(#road-yellow)"/>
+                                                            <rect x="255" y="155" width="10" height="150" fill="url(#road-yellow)"/>
+                                                            <rect x="390" y="290" width="10" height="10" fill="url(#road-white)"/>
+                                                        </g>
+                                                    ) : null
+                                                }
+                                                {
+                                                    // draw bottom left corner
+                                                    connected.up && !connected.left && !connected.down && connected.right ? (
+                                                        <g>
+                                                            <rect x="255" y="135" width="150" height="10" fill="url(#road-yellow)"/>
+                                                            <rect x="245" y="155" width="165" height="10" fill="url(#road-yellow)"/>
+                                                            <rect x="235" y="0" width="10" height="165" fill="url(#road-yellow)"/>
+                                                            <rect x="255" y="0" width="10" height="145" fill="url(#road-yellow)"/>
+                                                            <rect x="390" y="0" width="10" height="10" fill="url(#road-white)"/>
+                                                        </g>
+                                                    ) : null
+                                                }
+                                                {
+                                                    // draw bottom right corner
+                                                    connected.up && connected.left && !connected.down && !connected.right ? (
+                                                        <g>
+                                                            <rect x="100" y="135" width="145" height="10" fill="url(#road-yellow)"/>
+                                                            <rect x="100" y="155" width="165" height="10" fill="url(#road-yellow)"/>
+                                                            <rect x="235" y="0" width="10" height="145" fill="url(#road-yellow)"/>
+                                                            <rect x="255" y="0" width="10" height="155" fill="url(#road-yellow)"/>
+                                                            <rect x="100" y="0" width="10" height="10" fill="url(#road-white)"/>
+                                                        </g>
+                                                    ) : null
+                                                }
+                                                {
+                                                    // draw top right corner
+                                                    !connected.up && connected.left && connected.down && !connected.right ? (
+                                                        <g>
+                                                            <rect x="100" y="135" width="165" height="10" fill="url(#road-yellow)"/>
+                                                            <rect x="100" y="155" width="145" height="10" fill="url(#road-yellow)"/>
+                                                            <rect x="255" y="135" width="10" height="165" fill="url(#road-yellow)"/>
+                                                            <rect x="235" y="155" width="10" height="145" fill="url(#road-yellow)"/>
+                                                            <rect x="100" y="0" width="10" height="10" fill="url(#road-white)"/>
+                                                        </g>
+                                                    ) : null
+                                                }
+                                                {
+                                                    // draw bottom right corner box
+                                                    connected.down && connected.right ? (
+                                                        <g>
+                                                            <rect x="390" y="290" width="10" height="10" fill="url(#road-white)"/>
+                                                        </g>
+                                                    ) : null
+                                                }
+                                                {
+                                                    // draw top right corner box
+                                                    connected.up && connected.right ? (
+                                                        <g>
+                                                            <rect x="390" y="0" width="10" height="10" fill="url(#road-white)"/>
+                                                        </g>
+                                                    ) : null
+                                                }
+                                                {
+                                                    // draw top left corner box
+                                                    connected.up && connected.left ? (
+                                                        <g>
+                                                            <rect x="100" y="0" width="10" height="10" fill="url(#road-white)"/>
+                                                        </g>
+                                                    ) : null
+                                                }
+                                                {
+                                                    // draw bottom left corner box
+                                                    connected.down && connected.left ? (
+                                                        <g>
+                                                            <rect x="100" y="290" width="10" height="10" fill="url(#road-white)"/>
+                                                        </g>
+                                                    ) : null
+                                                }
+                                            </g>
+                                        );
+                                    }
+                                    default: return null;
+                                }
                             })
                         }
                         {
                             // draw persons, cars, and movable objects
-                            this.sortDrawables().map(drawable => {
+                            this.sortDrawables().filter(this.isNearWorldView(worldOffset)).map(drawable => {
                                 return drawable.draw();
                             })
                         }
                     </g>
-                    <text x="20" y="20">Position: {worldOffsetX} {worldOffsetY}</text>
+                    <text x="20" y="20">Position: {worldOffset.x} {worldOffset.y}</text>
                     {
                         this.showWalkingTutorial() ? (
                             <g>

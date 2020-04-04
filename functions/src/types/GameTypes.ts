@@ -232,7 +232,7 @@ export interface IGameTutorials {
 /**
  * Directions for which door should be open.
  */
-export interface IWhichDoorsShouldBeOpen {
+export interface IWhichDIrectionIsNearby {
     up: boolean;
     down: boolean;
     left: boolean;
