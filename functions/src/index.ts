@@ -241,6 +241,7 @@ personsApp.post("/login", (req: { body: IApiPersonsPost; }, res: any, next: (arg
                 if (data.password === password) {
                     // update lastUpdate to login, keep original position
                     await person.ref.update({
+                        carId: null,
                         lastUpdate: admin.firestore.Timestamp.now()
                     } as Partial<IPersonDatabase>);
 

@@ -1754,6 +1754,15 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                         <pattern id="grass" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
                             <image href="/grass.png" width="16" height="16"/>
                         </pattern>
+                        <pattern id="road" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
+                            <image href="/road.png" width="16" height="16"/>
+                        </pattern>
+                        <pattern id="road-yellow" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
+                            <image href="/road-yellow.png" width="16" height="16"/>
+                        </pattern>
+                        <pattern id="road-white" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
+                            <image href="/road-white.png" width="16" height="16"/>
+                        </pattern>
                     </defs>
                     <g transform={`translate(${-worldOffsetX},${-worldOffsetY})`}>
                         {
@@ -1763,6 +1772,23 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                                 y: worldOffsetY
                             }).map(({x, y}: IObject) => {
                                 return <rect key={`grass-tile-${x}-${y}`} x={x} y={y} width="500" height="300" fill="url(#grass)"/>;
+                            })
+                        }
+                        {
+                            // draw a road
+                            new Array(5 * 3).fill(0).map((v, i): IObject => ({
+                                x: i * 500,
+                                y: 1200
+                            })).map(({x, y}) => {
+                                return (
+                                    <g key={`road-tile-${x}-${y}`} transform={`translate(${x}, ${y})`}>
+                                        <rect x="0" y="0" width="500" height="300" fill="url(#road)"/>
+                                        <rect x="0" y="135" width="500" height="10" fill="url(#road-yellow)"/>
+                                        <rect x="0" y="155" width="500" height="10" fill="url(#road-yellow)"/>
+                                        <rect x="0" y="0" width="500" height="10" fill="url(#road-white)"/>
+                                        <rect x="0" y="290" width="500" height="10" fill="url(#road-white)"/>
+                                    </g>
+                                )
                             })
                         }
                         {
