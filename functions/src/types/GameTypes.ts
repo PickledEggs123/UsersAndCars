@@ -12,11 +12,26 @@ export interface IObject {
     y: number;
 }
 
+/**
+ * The type of object being networked. They are drawn differently and behave differently
+ */
+export enum ENetworkObjectType {
+    CHAIR = "CHAIR",
+    TABLE = "TABLE",
+    BOX = "BOX",
+    PERSON = "PERSON",
+    CAR = "CAR"
+}
+
 export interface INetworkObject extends IObject {
     /**
      * The randomly generated unique id of the person. Each person has a unique id for selecting and controlling them.
      */
     id: string;
+    /**
+     * The type of network object.
+     */
+    objectType: ENetworkObjectType;
     /**
      * When the person was last updated. Used to keep track of which version of the person data is more up to date. The
      * local copy sometimes can be more up to date than the network copy, so the network copy has to be modified with
@@ -26,6 +41,10 @@ export interface INetworkObject extends IObject {
      * person will teleport backwards, causing a constant teleport backwards glitch.
      */
     lastUpdate: string;
+    /**
+     * This object is being grabbed by this person. The object will follow around the person's relative movement.
+     */
+    grabbedByPersonId: string | null;
 }
 
 /**
@@ -61,25 +80,35 @@ export enum EDrawableType {
 }
 
 /**
+ * The type of wall to be drawn.
+ */
+export enum ERoomWallType {
+    WALL = "WALL",
+    DOOR = "DOOR",
+    OPEN = "OPEN",
+    ENTRANCE = "ENTRANCE"
+}
+
+/**
  * The state of the doors in a room.
  */
-interface IRoomDoors {
+export interface IRoomDoors {
     /**
      * There is a left door.
      */
-    left: boolean;
+    left: ERoomWallType;
     /**
      * There is a right door.
      */
-    right: boolean;
+    right: ERoomWallType;
     /**
      * There is a top door.
      */
-    top: boolean;
+    top: ERoomWallType;
     /**
      * There is a bottom door.
      */
-    bottom: boolean;
+    bottom: ERoomWallType;
 }
 
 /**
@@ -94,15 +123,92 @@ export interface IRoom extends IObject {
      * The doors of the room.
      */
     doors: IRoomDoors;
-    /**
-     * The chairs in the room.
-     */
-    chairs: IObject[];
-    /**
-     * The tables in the room.
-     */
-    tables: IObject[];
 }
+
+/**
+ * The type of the lot.
+ */
+export enum ELotZone {
+    RESIDENTIAL = "RESIDENTIAL",
+    COMMERCIAL = "COMMERCIAL",
+    INDUSTRIAL = "INDUSTRIAL"
+}
+
+/**
+ * A city is made of lots. Each lot has locations to place houses, roads, and stores.
+ */
+export interface ILot extends IObject {
+    owner: string;
+    format: string;
+    width: number;
+    height: number;
+    zone: ELotZone;
+}
+
+/**
+ * The type of the road.
+ */
+export enum ERoadType {
+    TWO_LANE = "TWO_LANE",
+    ONE_WAY = "ONE_WAY",
+    INTERSECTION = "INTERSECTION"
+}
+
+/**
+ * The direction of the road.
+ */
+export enum ERoadDirection {
+    INTERSECTION = "INTERSECTION",
+    NORTH = "NORTH",
+    SOUTH = "SOUTH",
+    EAST = "EAST",
+    WEST = "WEST",
+    HORIZONTAL = "HORIZONTAL",
+    VERTICAL = "VERTICAL"
+}
+
+/**
+ * Stores four directions that are nearby.
+ */
+export interface IWhichDirectionIsNearby {
+    up: boolean;
+    down: boolean;
+    left: boolean;
+    right: boolean;
+}
+
+/**
+ * A city has roads to travel between buildings.
+ */
+export interface IRoad extends IObject {
+    /**
+     * The type of road.
+     */
+    type: ERoadType;
+    /**
+     * The direction of the road.
+     */
+    direction: ERoadDirection;
+    /**
+     * Which side of the road is connected.
+     */
+    connected: IWhichDirectionIsNearby;
+}
+
+/**
+ * A city is a combination of lots and roads.
+ */
+export interface ICity {
+    /**
+     * A list of lots in the city.
+     */
+    lots: ILot[];
+    /**
+     * A list of roads in the city.
+     */
+    roads: IRoad[];
+}
+
 
 /**
  * The direction a car is facing.
@@ -168,6 +274,10 @@ export interface IApiPersonsGet {
      * A list of cars.
      */
     cars: ICar[];
+    /**
+     * A list of objects.
+     */
+    objects: INetworkObject[];
 }
 
 /**
@@ -196,6 +306,10 @@ export interface IApiPersonsPut {
      * A list of cars.
      */
     cars: ICar[];
+    /**
+     * A list of objects.
+     */
+    objects: INetworkObject[];
 }
 
 /**
@@ -227,14 +341,4 @@ export interface IGameTutorials {
      * If the driving tutorial should be shown.
      */
     driving: boolean;
-}
-
-/**
- * Directions for which door should be open.
- */
-export interface IWhichDIrectionIsNearby {
-    up: boolean;
-    down: boolean;
-    left: boolean;
-    right: boolean;
 }

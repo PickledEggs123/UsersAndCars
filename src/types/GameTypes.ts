@@ -1,8 +1,6 @@
 /**
  * The base interface for all game objects.
  */
-import {IWhichDIrectionIsNearby} from "../../functions/src/types/GameTypes";
-
 export interface IObject {
     /**
      * The left to right position of the object in the game world.
@@ -14,11 +12,26 @@ export interface IObject {
     y: number;
 }
 
+/**
+ * The type of object being networked. They are drawn differently and behave differently
+ */
+export enum ENetworkObjectType {
+    CHAIR = "CHAIR",
+    TABLE = "TABLE",
+    BOX = "BOX",
+    PERSON = "PERSON",
+    CAR = "CAR"
+}
+
 export interface INetworkObject extends IObject {
     /**
      * The randomly generated unique id of the person. Each person has a unique id for selecting and controlling them.
      */
     id: string;
+    /**
+     * The type of network object.
+     */
+    objectType: ENetworkObjectType;
     /**
      * When the person was last updated. Used to keep track of which version of the person data is more up to date. The
      * local copy sometimes can be more up to date than the network copy, so the network copy has to be modified with
@@ -28,6 +41,10 @@ export interface INetworkObject extends IObject {
      * person will teleport backwards, causing a constant teleport backwards glitch.
      */
     lastUpdate: string;
+    /**
+     * This object is being grabbed by this person. The object will follow around the person's relative movement.
+     */
+    grabbedByPersonId: string | null;
 }
 
 /**
@@ -106,14 +123,6 @@ export interface IRoom extends IObject {
      * The doors of the room.
      */
     doors: IRoomDoors;
-    /**
-     * The chairs in the room.
-     */
-    chairs: IObject[];
-    /**
-     * The tables in the room.
-     */
-    tables: IObject[];
 }
 
 /**
@@ -159,6 +168,16 @@ export enum ERoadDirection {
 }
 
 /**
+ * Stores four directions that are nearby.
+ */
+export interface IWhichDirectionIsNearby {
+    up: boolean;
+    down: boolean;
+    left: boolean;
+    right: boolean;
+}
+
+/**
  * A city has roads to travel between buildings.
  */
 export interface IRoad extends IObject {
@@ -173,7 +192,7 @@ export interface IRoad extends IObject {
     /**
      * Which side of the road is connected.
      */
-    connected: IWhichDIrectionIsNearby;
+    connected: IWhichDirectionIsNearby;
 }
 
 /**
@@ -255,6 +274,10 @@ export interface IApiPersonsGet {
      * A list of cars.
      */
     cars: ICar[];
+    /**
+     * A list of objects.
+     */
+    objects: INetworkObject[];
 }
 
 /**
@@ -283,6 +306,10 @@ export interface IApiPersonsPut {
      * A list of cars.
      */
     cars: ICar[];
+    /**
+     * A list of objects.
+     */
+    objects: INetworkObject[];
 }
 
 /**

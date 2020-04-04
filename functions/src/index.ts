@@ -6,7 +6,16 @@ import * as functions from 'firebase-functions';
 import * as admin from "firebase-admin";
 import * as express from "express";
 import * as cors from "cors";
-import {ECarDirection, IApiPersonsPost, IApiPersonsPut, ICar, IPerson} from "./types/GameTypes";
+import {
+    ECarDirection,
+    ENetworkObjectType,
+    IApiPersonsGet,
+    IApiPersonsPost,
+    IApiPersonsPut,
+    ICar,
+    INetworkObject,
+    IPerson
+} from "./types/GameTypes";
 
 /**
  * Initialize the firebase API.
@@ -145,7 +154,9 @@ interface IPersonDatabase {
     pantColor: string;
     lastUpdate: admin.firestore.Timestamp;
     carId: string | null;
+    grabbedByPersonId: string | null;
     password: string;
+    objectType: ENetworkObjectType;
 }
 
 interface ICarDatabase {
@@ -153,6 +164,20 @@ interface ICarDatabase {
     x: number;
     y: number;
     direction: ECarDirection;
+    lastUpdate: admin.firestore.Timestamp;
+    grabbedByPersonId: string | null;
+    objectType: ENetworkObjectType;
+}
+
+/**
+ * An object that should be networked in multiplayer.
+ */
+interface INetworkObjectDatabase {
+    id: string;
+    x: number;
+    y: number;
+    objectType: ENetworkObjectType;
+    grabbedByPersonId: string | null;
     lastUpdate: admin.firestore.Timestamp;
 }
 
@@ -180,6 +205,7 @@ personsApp.get("/data", (req: any, res: { json: (arg0: any) => void; }, next: (a
         // json response data
         const personsToReturnAsJson = [];
         const carsToReturnAsJson = [];
+        const objectsToReturnAsJson = [];
 
         // get persons
         {
@@ -217,11 +243,26 @@ personsApp.get("/data", (req: any, res: { json: (arg0: any) => void; }, next: (a
             }
         }
 
+        // get objects
+        {
+            const querySnapshot = await admin.firestore().collection("objects").get();
+
+            for (const documentSnapshot of querySnapshot.docs) {
+                const data = documentSnapshot.data() as INetworkObjectDatabase;
+                objectsToReturnAsJson.push({
+                    ...data,
+                    lastUpdate: data.lastUpdate.toDate().toISOString()
+                } as INetworkObject);
+            }
+        }
+
         // return both persons and cars since both can move and both are network objects
-        res.json({
+        const jsonData: IApiPersonsGet = {
             persons: personsToReturnAsJson,
-            cars: carsToReturnAsJson
-        });
+            cars: carsToReturnAsJson,
+            objects: objectsToReturnAsJson
+        };
+        res.json(jsonData);
     })().catch((err) => next(err));
 });
 
@@ -257,7 +298,7 @@ personsApp.post("/login", (req: { body: IApiPersonsPost; }, res: any, next: (arg
             }
         } else {
             // person does not exist, create a new login
-            await admin.firestore().collection("persons").doc(id).set({
+            const data: IPersonDatabase = {
                 id,
                 password,
                 x: 50,
@@ -265,8 +306,11 @@ personsApp.post("/login", (req: { body: IApiPersonsPost; }, res: any, next: (arg
                 pantColor: "blue",
                 shirtColor: "grey",
                 carId: null,
-                lastUpdate: admin.firestore.Timestamp.now()
-            } as IPersonDatabase);
+                grabbedByPersonId: null,
+                lastUpdate: admin.firestore.Timestamp.now(),
+                objectType: ENetworkObjectType.PERSON
+            };
+            await admin.firestore().collection("persons").doc(id).set(data);
 
             // return created
             res.sendStatus(201);
@@ -281,26 +325,42 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
     (async () => {
         // convert data into database format
         const personsToSaveIntoDatabase = req.body.persons.map((person: IPerson): Partial<IPersonDatabase> => {
-            return  {
+            return {
                 id: person.id,
                 x: 50,
                 y: 150,
                 pantColor: "blue",
                 shirtColor: "grey",
+                grabbedByPersonId: null,
                 ...person,
                 // convert ISO string date into firebase firestore Timestamp
-                lastUpdate: person.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(person.lastUpdate)) : admin.firestore.Timestamp.now()
+                lastUpdate: person.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(person.lastUpdate)) : admin.firestore.Timestamp.now(),
+                objectType: ENetworkObjectType.PERSON
             };
         });
         const carsToSaveIntoDatabase = req.body.cars.map((car: ICar): Partial<ICarDatabase> => {
-            return  {
+            return {
                 id: car.id,
                 direction: ECarDirection.DOWN,
                 x: 50,
                 y: 150,
+                grabbedByPersonId: null,
                 ...car,
                 // convert ISO string date into firebase firestore Timestamp
-                lastUpdate: car.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(car.lastUpdate)) : admin.firestore.Timestamp.now()
+                lastUpdate: car.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(car.lastUpdate)) : admin.firestore.Timestamp.now(),
+                objectType: ENetworkObjectType.CAR
+            };
+        });
+        const objectsToSaveIntoDatabase = req.body.objects.map((networkObject: INetworkObject): Partial<INetworkObjectDatabase> => {
+            return {
+                id: networkObject.id,
+                x: 50,
+                y: 150,
+                objectType: ENetworkObjectType.BOX,
+                grabbedByPersonId: null,
+                ...networkObject,
+                // convert ISO string date into firebase firestore Timestamp
+                lastUpdate: networkObject.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(networkObject.lastUpdate)) : admin.firestore.Timestamp.now(),
             };
         });
 
@@ -311,6 +371,9 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
             }),
             ...carsToSaveIntoDatabase.map((car) => {
                 return admin.firestore().collection("personalCars").doc(car.id as string).set(car, {merge: true});
+            }),
+            ...objectsToSaveIntoDatabase.map((networkObject) => {
+                return admin.firestore().collection("objects").doc(networkObject.id as string).set(networkObject, {merge: true});
             })
         ]);
 

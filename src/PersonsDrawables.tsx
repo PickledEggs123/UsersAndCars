@@ -1,11 +1,15 @@
 import {
     ECarDirection,
     EDrawableType,
+    ENetworkObjectType,
     ERoomWallType,
     ICar,
-    IDrawable, ILot,
+    IDrawable,
+    ILot,
+    INetworkObject,
     IObject,
-    IPerson, IRoad,
+    IPerson,
+    IRoad,
     IRoom
 } from "./types/GameTypes";
 import React from "react";
@@ -32,6 +36,10 @@ export interface IPersonsDrawablesState {
      * A list of persons from the network.
      */
     persons: IPerson[];
+    /**
+     * A list of objects in the area.
+     */
+    objects: INetworkObject[];
     /**
      * A list of rooms in the current building.
      */
@@ -154,6 +162,15 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             mask = `url(#room-${roomIndex})`;
         }
 
+        // highlight car white when the current person is nearby
+        let filter = "";
+        const currentPerson = this.getCurrentPerson();
+        if (currentPerson) {
+            if (this.objectNearby(currentPerson)(car)) {
+                filter = "url(#highlight-white)";
+            }
+        }
+
         // return a list of drawable car parts
         switch (car.direction) {
             default:
@@ -165,7 +182,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`car-top-${car.id}`} x="0" y="0" width="100" height="200" mask={mask}>
+                            <g key={`car-top-${car.id}`} x="0" y="0" width="100" height="200" mask={mask} filter={filter}>
                                 <g key={car.id} transform={`translate(${x},${y})`}>
                                     <polygon fill="lightblue" points="-50,-100 50,-100 50,50, -50,50"/>
                                     <polygon fill="grey" stroke="black" strokeWidth={2}
@@ -184,7 +201,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`car-bottom-${car.id}`} x="0" y="0" width="100" height="200" mask={mask}>
+                            <g key={`car-bottom-${car.id}`} x="0" y="0" width="100" height="200" mask={mask} filter={filter}>
                                 <g key={car.id} transform={`translate(${x},${y})`}>
                                     <polygon fill="lightblue" opacity={0.5} points="-40,0 40,0 50,50 -50,50"/>
                                     <polygon fill="lightblue" points="-50,50 50,50 50,100 -50,100"/>
@@ -206,7 +223,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`car-top-${car.id}`} x="0" y="0" width="100" height="200" mask={mask}>
+                            <g key={`car-top-${car.id}`} x="0" y="0" width="100" height="200" mask={mask} filter={filter}>
                                 <g key={car.id} transform={`translate(${x},${y})`}>
                                     <polygon fill="lightblue" opacity={0.5} points="-40,-100 40,-100 50,-80 -50,-80"/>
                                     <polygon fill="lightblue" points="-50,-80 50,-80 50,50 -50,50"/>
@@ -226,7 +243,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`car-bottom-${car.id}`} x="0" y="0" width="100" height="200" mask={mask}>
+                            <g key={`car-bottom-${car.id}`} x="0" y="0" width="100" height="200" mask={mask} filter={filter}>
                                 <g key={car.id} transform={`translate(${x},${y})`}>
                                     <polygon fill="lightblue" points="-50,50 50,50 50,100 -50,100"/>
                                     <polygon fill="red" stroke="black" strokeWidth={2}
@@ -249,7 +266,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`car-top-${car.id}`} x="0" y="0" width="200" height="100" mask={mask}>
+                            <g key={`car-top-${car.id}`} x="0" y="0" width="200" height="100" mask={mask} filter={filter}>
                                 <g key={car.id}
                                    transform={`translate(${x},${y})${car.direction === ECarDirection.RIGHT ? " scale(-1,1)" : ""}`}>
                                     <polygon fill="lightblue" opacity={0.5} points="-40,-50 -40,-20 -50,-20"/>
@@ -268,7 +285,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`car-bottom-${car.id}`} x="0" y="0" width="200" height="100" mask={mask}>
+                            <g key={`car-bottom-${car.id}`} x="0" y="0" width="200" height="100" mask={mask} filter={filter}>
                                 <g key={car.id}
                                    transform={`translate(${x},${y})${car.direction === ECarDirection.RIGHT ? " scale(-1,1)" : ""}`}>
                                     <polygon fill="lightblue" points="-100,25 100,25 100,50 -100,50"/>
@@ -287,13 +304,12 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     /**
      * Draw a table in a room.
      * @param drawable The table to draw.
-     * @param room The room the table is in.
-     * @param index The index of the table.
+     * @param filter An SVG filter to apply to the table.
      */
-    drawTable = (drawable: IObject, room: IRoom, index: number) => {
+    drawTable = (drawable: INetworkObject, filter: string) => {
         const {x, y} = drawable;
         return (
-            <g key={`room-${room.id}-table-${index}`} transform={`translate(${x - 100 + room.x},${y - 50 + room.y})`}>
+            <g key={`table-${drawable.id}`} transform={`translate(${x - 100},${y - 50})`} filter={filter}>
                 <polygon fill="brown" points="0,100 200,100 200,0 0,0"/>
             </g>
         );
@@ -302,13 +318,12 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     /**
      * Draw a chair in a room.
      * @param drawable The chair to draw.
-     * @param room The room that contains the chair.
-     * @param index The index of the chair in the room.
+     * @param filter An SVG filter to apply to the chair.
      */
-    drawChair = (drawable: IObject, room: IRoom, index: number) => {
+    drawChair = (drawable: INetworkObject, filter: string) => {
         const {x, y} = drawable;
         return (
-            <g key={`room-${room.id}-chair-${index}`} transform={`translate(${x - 50 + room.x},${y - 50 + room.y})`}>
+            <g key={`chair-${drawable.id}`} transform={`translate(${x - 50},${y - 50})`} filter={filter}>
                 <polygon fill="brown" points="10,90 20,90 20,10 10,10"/>
                 <polygon fill="brown" points="80,90 90,90 90,10 80,10"/>
                 <polygon fill="brown" points="40,90 60,90 60,10 40,10"/>
@@ -316,6 +331,74 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 <polygon fill="brown" points="10,50 90,50 90,90 10,90"/>
             </g>
         );
+    };
+
+    /**
+     * Draw a box.
+     * @param drawable The position of the box to draw.
+     * @param filter An SVG filter to apply to the box.
+     */
+    drawBox = (drawable: INetworkObject, filter: string) => {
+        const {x, y} = drawable;
+        return (
+            <g key={`chair-${drawable.id}`} transform={`translate(${x - 50},${y - 50})`} filter={filter}>
+                <polygon fill="tan" stroke="black" strokeWidth={2} points="0,0 100,0 100,100 0,100"/>
+                <polygon fill="white" stroke="black" strokeWidth={2} points="30,20 60,20 60,40 30,40"/>
+            </g>
+        );
+    };
+
+    /**
+     * Draw a networked object onto the screen.
+     * @param networkObject The network object to draw.
+     */
+    drawNetworkObject = (networkObject: INetworkObject): IDrawable => {
+        const component = this;
+
+        // highlight objects near current person with a white outline
+        let filter = "";
+        const currentPerson = this.getCurrentPerson();
+        if (currentPerson) {
+            if (this.objectNearby(currentPerson)(networkObject)) {
+                filter = "url(#highlight-white)";
+            }
+        }
+
+        // highlight objects grabbed by current person with a blue outline
+        if (currentPerson && networkObject.grabbedByPersonId === currentPerson.id) {
+            filter = "url(#highlight-blue)";
+        }
+
+        switch (networkObject.objectType) {
+            case ENetworkObjectType.CHAIR: {
+                return {
+                    ...networkObject,
+                    type: EDrawableType.OBJECT,
+                    draw() {
+                        return component.drawChair(networkObject, filter);
+                    }
+                };
+            }
+            case ENetworkObjectType.TABLE: {
+                return {
+                    ...networkObject,
+                    type: EDrawableType.OBJECT,
+                    draw() {
+                        return component.drawTable(networkObject, filter);
+                    }
+                };
+            }
+            default:
+            case ENetworkObjectType.BOX: {
+                return {
+                    ...networkObject,
+                    type: EDrawableType.OBJECT,
+                    draw() {
+                        return component.drawBox(networkObject, filter);
+                    }
+                };
+            }
+        }
     };
 
     /**
@@ -630,35 +713,11 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 ...person
             })),
 
-            // for each room
-            ...this.state.rooms.reduce((arr: IDrawable[], room: IRoom): IDrawable[] => {
+            // for each network object
+            ...this.state.objects.reduce((arr: IDrawable[], networkObject: INetworkObject): IDrawable[] => {
                 return [
                     ...arr,
-
-                    // add all chairs
-                    ...room.chairs.map((chair, index) => ({
-                        draw(this: IObject) {
-                            return component.drawChair(this, room, index);
-                        },
-                        type: EDrawableType.OBJECT,
-                        ...chair
-                    }))
-                ];
-            }, []),
-
-            // for each room
-            ...this.state.rooms.reduce((arr: IDrawable[], room: IRoom): IDrawable[] => {
-                return [
-                    ...arr,
-
-                    // add all tables
-                    ...room.tables.map((table, index) => ({
-                        draw(this: IObject) {
-                            return component.drawTable(this, room, index);
-                        },
-                        type: EDrawableType.OBJECT,
-                        ...table
-                    }))
+                    this.drawNetworkObject(networkObject)
                 ];
             }, []),
 
@@ -699,6 +758,21 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 return heightDifference;
             }
         });
+    };
+
+    /**
+     * Find the current person in the game state.
+     */
+    getCurrentPerson = (): IPerson | undefined => {
+        return this.state.persons.find(person => person.id === this.state.currentPersonId);
+    };
+
+    /**
+     * Determine if a network object is nearby the person.
+     * @param person The person which could be nearby the object.
+     */
+    objectNearby = (person: IPerson) => (object: INetworkObject) => {
+        return Math.abs(object.x - person.x) <= 100 && Math.abs(object.y - person.y) <= 100;
     };
 
     /**

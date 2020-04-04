@@ -17,10 +17,10 @@ import {
     IObject,
     IPerson,
     IRoad,
-    IRoom
+    IRoom,
+    IWhichDirectionIsNearby
 } from "./types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
-import {IWhichDIrectionIsNearby} from "../functions/src/types/GameTypes";
 import {IPersonsDrawablesProps, IPersonsDrawablesState, PersonsDrawables} from "./PersonsDrawables";
 
 /**
@@ -101,6 +101,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         persons: [] as IPerson[],
         rooms: [] as IRoom[],
         cars: [] as ICar[],
+        objects: [] as INetworkObject[],
         roads: [] as IRoad[],
         lots: [] as ILot[],
         currentPersonId: this.randomPersonId(),
@@ -151,15 +152,6 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             id,
             x,
             y,
-            chairs: [
-                {x: 200, y: 50},
-                {x: 300, y: 50},
-                {x: 200, y: 250},
-                {x: 300, y: 250}
-            ],
-            tables: [
-                {x: 250, y: 150}
-            ],
             doors: {
                 left: ERoomWallType.WALL,
                 right: ERoomWallType.WALL,
@@ -180,8 +172,6 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             id,
             x,
             y,
-            chairs: [],
-            tables: [],
             doors: {
                 left: ERoomWallType.WALL,
                 right: ERoomWallType.WALL,
@@ -202,8 +192,6 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             id,
             x,
             y,
-            chairs: [] as IObject[],
-            tables: [] as IObject[],
             doors: {
                 left: ERoomWallType.OPEN,
                 right: ERoomWallType.OPEN,
@@ -242,7 +230,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * @param tile The room which doors should be computed.
      * @param nearbyTiles The array of nearby rooms.
      */
-    whichDirectionIsNearby = (tile: IObject, nearbyTiles: IObject[]): IWhichDIrectionIsNearby => {
+    whichDirectionIsNearby = (tile: IObject, nearbyTiles: IObject[]): IWhichDirectionIsNearby => {
         const up = nearbyTiles.some((nearbyTile) => {
             return Math.abs(nearbyTile.x - tile.x) < 10 && Math.abs(nearbyTile.y - tile.y + 300) < 10;
         });
@@ -261,7 +249,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             down,
             left,
             right
-        } as IWhichDIrectionIsNearby;
+        } as IWhichDirectionIsNearby;
     };
 
     /**
@@ -270,7 +258,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * @param whichDoorsShouldBeOpen The doors to open.
      * @param value The type of wall to be drawn.
      */
-    applyWhichDoorsShouldBeOpen = (room: IRoom, whichDoorsShouldBeOpen: IWhichDIrectionIsNearby, value: ERoomWallType): void => {
+    applyWhichDoorsShouldBeOpen = (room: IRoom, whichDoorsShouldBeOpen: IWhichDirectionIsNearby, value: ERoomWallType): void => {
         if (whichDoorsShouldBeOpen.up) {
             room.doors.top = value;
         }
@@ -290,7 +278,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * @param road The room which should be modified with new doors.
      * @param whichDoorsShouldBeOpen The doors to open.
      */
-    applyRoadConnections = (road: IRoad, whichDoorsShouldBeOpen: IWhichDIrectionIsNearby): void => {
+    applyRoadConnections = (road: IRoad, whichDoorsShouldBeOpen: IWhichDirectionIsNearby): void => {
         road.connected = {
             ...road.connected,
             ...whichDoorsShouldBeOpen
@@ -594,21 +582,26 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * Update the state of the game.
      */
     gameLoop = async () => {
-        // get list of persons and cars that have changed
+        // get list of persons, cars and objects that have changed
         const personsToUpdate = this.state.persons.filter(person => +Date.parse(this.state.lastUpdate) < +Date.parse(person.lastUpdate));
         const carsToUpdate = this.state.cars.filter(car => +Date.parse(this.state.lastUpdate) < +Date.parse(car.lastUpdate));
-
-        // update all changed persons and cars
+        const objectsToUpdate = this.state.objects.filter(networkObject => +Date.parse(this.state.lastUpdate) < +Date.parse(networkObject.lastUpdate));
+        // update all changed persons, cars and objects
         await this.updateGame({
             persons: personsToUpdate,
-            cars: carsToUpdate
+            cars: carsToUpdate,
+            objects: objectsToUpdate
         });
 
         // get a list of persons from the database
         const response = await axios.get<IApiPersonsGet>("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/data");
         if (response && response.data) {
             // get persons data from the server
-            const {persons: serverPersons, cars: serverCars} = response.data;
+            const {
+                persons: serverPersons,
+                cars: serverCars,
+                objects: serverObjects
+            } = response.data;
 
             // modify server data with local data, pick most up to date version of the data
             const persons = serverPersons.reduce((arr: IPerson[], person: IPerson): IPerson[] => {
@@ -617,9 +610,13 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             const cars = serverCars.reduce((arr: ICar[], car: ICar): ICar[] => {
                 return this.updateMergeLocalAndNetworkData(this.state.cars, arr, car);
             }, []);
+            const objects = serverObjects.reduce((arr: INetworkObject[], networkObject: INetworkObject): INetworkObject[] => {
+                return this.updateMergeLocalAndNetworkData(this.state.objects, arr, networkObject);
+            }, []);
             this.setState({
                 persons,
                 cars,
+                objects,
                 lastUpdate: new Date().toISOString()
             });
         }
@@ -638,17 +635,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     };
 
     /**
-     * Find the current person in the game state.
+     * Get the passengers in the current car.
      */
-    getCurrentPerson = (): IPerson | undefined => {
-        return this.state.persons.find(person => person.id === this.state.currentPersonId);
-    };
-
-    /**
-     * Update current person and car passengers in the person array. Return the array to save as a new React state.
-     * @param update The update to perform on current person and car passengers.
-     */
-    updatePersons = (update: (person: IPerson, car?: ICar) => IPerson): IPerson[] => {
+    getCurrentCarPassengers = (): IPerson[] => {
         // get all passengers in the car with the current person
         const passengers = [] as IPerson[];
         const currentPerson = this.getCurrentPerson();
@@ -658,6 +647,16 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 passengers.push(...this.state.persons.filter(person => currentPerson && person.carId === currentCar.id && person.id !== currentPerson.id));
             }
         }
+
+        return passengers;
+    };
+
+    /**
+     * Update current person and car passengers in the person array. Return the array to save as a new React state.
+     * @param update The update to perform on current person and car passengers.
+     */
+    updatePersons = (update: (person: IPerson, car?: ICar) => IPerson): IPerson[] => {
+        const passengers = this.getCurrentCarPassengers();
 
         return this.state.persons.reduce((arr: IPerson[], person: IPerson): IPerson[] => {
             // if current person or passenger in the car with the current person
@@ -694,6 +693,66 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             }, []);
         } else {
             return this.state.cars;
+        }
+    };
+
+    /**
+     * Update the objects array immutably.
+     * @param selectedObject The object to update.
+     * @param update The update to apply on the object.
+     */
+    updateSelectedObject = (selectedObject: INetworkObject, update: (networkObject: INetworkObject) => INetworkObject): INetworkObject[] => {
+        return this.state.objects.reduce((arr: INetworkObject[], networkObject: INetworkObject): INetworkObject[] => {
+            // if the object is the selected object
+            if (networkObject.id === selectedObject.id) {
+                // id match, update that object in the array
+                return [
+                    ...arr,
+                    {
+                        ...update(networkObject),
+                        lastUpdate: new Date().toISOString()
+                    }
+                ];
+            } else {
+                // do nothing
+                return [...arr, networkObject];
+            }
+        }, []);
+    };
+
+    /**
+     * Update the currently selected objects in objects array immutably.
+     * @param update The update to apply on the object.
+     */
+    updateCurrentObjects = (update: (networkObject: INetworkObject, car?: ICar) => INetworkObject): INetworkObject[] => {
+        // get the current person, need current person to grab onto current objects
+        const currentPerson = this.getCurrentPerson();
+        if (currentPerson) {
+            // get the current car
+            const car = this.state.cars.find(car => car.id === currentPerson.carId);
+            // get a list of passengers in the car with the current person
+            const passengers = this.getCurrentCarPassengers();
+
+            // for each object
+            return this.state.objects.reduce((arr: INetworkObject[], networkObject: INetworkObject): INetworkObject[] => {
+                // if the object is grabbed by the current person or passenger in car with current person
+                if (networkObject.grabbedByPersonId && [currentPerson.id, ...passengers.map(passenger => passenger.id)].includes(networkObject.grabbedByPersonId)) {
+                    // id match, update that object in the array
+                    return [
+                        ...arr,
+                        {
+                            ...update(networkObject, car),
+                            lastUpdate: new Date().toISOString()
+                        }
+                    ];
+                } else {
+                    // do nothing
+                    return [...arr, networkObject];
+                }
+            }, []);
+        } else {
+            // no person to hold objects, do nothing
+            return this.state.objects;
         }
     };
 
@@ -791,7 +850,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * @param person The cached copy of a person, used for determining speed of setInterval.
      */
     handleKeyDownMovementPerson = (event: KeyboardEvent, person: IPerson) => (
-        updatePerson: (person: IPerson, car?: ICar) => IPerson,
+        updatePerson: (person: IObject, car?: ICar) => IObject,
         updateCar: (car: ICar) => ICar
     ) => {
         this.keyDownHandlers.push({
@@ -815,15 +874,23 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 // if person is in car, update cars, add to state updates
                 if (currentPersonInCar) {
                     // update person array
-                    const persons = this.updatePersons(updatePerson);
+                    const persons = this.updatePersons(updatePerson as any);
                     stateUpdates.push({persons});
 
+                    // update objects grabbed by person or passengers
+                    const objects = this.updateCurrentObjects(updatePerson as any);
+                    stateUpdates.push({objects});
+
                     // update car array
-                    const cars = this.updateCurrentCar(updateCar);
+                    const cars = this.updateCurrentCar(updateCar as any);
                     stateUpdates.push({cars});
                 } else {
+                    // update objects grabbed by person
+                    const objects = this.updateCurrentObjects(updatePerson as any);
+                    stateUpdates.push({objects});
+
                     // update person array
-                    const persons = this.updatePersons(updatePerson);
+                    const persons = this.updatePersons(updatePerson as any);
                     stateUpdates.push({persons});
                 }
 
@@ -841,6 +908,16 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     handlePersonPropertyChange = (update: (person: IPerson) => IPerson) => {
         const persons = this.updatePersons(update);
         this.setState({persons});
+    };
+
+    /**
+     * Handle a property change on the selected object.
+     * @param networkObject The selected object.
+     * @param update The property change.
+     */
+    handleSelectedObjectPropertyChange = (networkObject: INetworkObject, update: (networkObject: INetworkObject) => INetworkObject) => {
+        const objects = this.updateSelectedObject(networkObject, update);
+        this.setState({objects});
     };
 
     /**
@@ -883,7 +960,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         switch (event.key) {
             case "w":
             case "ArrowUp": {
-                this.handleKeyDownMovementPerson(event, currentPerson)((person: IPerson, car?: ICar): IPerson => {
+                this.handleKeyDownMovementPerson(event, currentPerson)((person: IObject, car?: ICar): IObject => {
                     if (car) {
                         const personOffsetInCar = this.getPersonOffset(person, car);
                         const rotatedPersonOffsetInCar = this.rotatePersonOffset(car.direction, ECarDirection.UP, personOffsetInCar);
@@ -907,7 +984,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             }
             case "s":
             case "ArrowDown": {
-                this.handleKeyDownMovementPerson(event, currentPerson)((person: IPerson, car?: ICar): IPerson => {
+                this.handleKeyDownMovementPerson(event, currentPerson)((person: IObject, car?: ICar): IObject => {
                     if (car) {
                         const personOffsetInCar = this.getPersonOffset(person, car);
                         const rotatedPersonOffsetInCar = this.rotatePersonOffset(car.direction, ECarDirection.DOWN, personOffsetInCar);
@@ -931,7 +1008,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             }
             case "a":
             case "ArrowLeft": {
-                this.handleKeyDownMovementPerson(event, currentPerson)((person: IPerson, car?: ICar): IPerson => {
+                this.handleKeyDownMovementPerson(event, currentPerson)((person: IObject, car?: ICar): IObject => {
                     if (car) {
                         const personOffsetInCar = this.getPersonOffset(person, car);
                         const rotatedPersonOffsetInCar = this.rotatePersonOffset(car.direction, ECarDirection.LEFT, personOffsetInCar);
@@ -955,7 +1032,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             }
             case "d":
             case "ArrowRight": {
-                this.handleKeyDownMovementPerson(event, currentPerson)((person: IPerson, car?: ICar): IPerson => {
+                this.handleKeyDownMovementPerson(event, currentPerson)((person: IObject, car?: ICar): IObject => {
                     if (car) {
                         const personOffsetInCar = this.getPersonOffset(person, car);
                         const rotatedPersonOffsetInCar = this.rotatePersonOffset(car.direction, ECarDirection.RIGHT, personOffsetInCar);
@@ -994,6 +1071,21 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         return person;
                     }
                 });
+                break;
+            }
+            case "g": {
+                const currentPerson = this.getCurrentPerson();
+                if (currentPerson) {
+                    const nearbyObject = this.state.objects.find(this.objectNearby(currentPerson));
+                    if (nearbyObject) {
+                        this.handleSelectedObjectPropertyChange(nearbyObject, (object: INetworkObject): INetworkObject => {
+                            return {
+                                ...object,
+                                grabbedByPersonId: object.grabbedByPersonId === currentPerson.id ? null : currentPerson.id
+                            };
+                        });
+                    }
+                }
                 break;
             }
         }
@@ -1121,7 +1213,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * @param offset The world view to test.
      */
     isNearWorldView = (offset: IObject) => (object: IObject): boolean => {
-        return Math.abs(object.x - offset.x) <= this.state.width && Math.abs(object.y - offset.y) <= this.state.height;
+        return Math.abs(object.x - offset.x) <= this.state.width * 2 && Math.abs(object.y - offset.y) <= this.state.height * 2;
     };
 
     render() {
@@ -1134,11 +1226,17 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             y: 0
         };
 
+        // an svg filter to apply to the world
+        let worldFilter = "";
+
         // if current person exist
         if (currentPerson) {
             // center world around current person, the view should be centered on the person
             worldOffset.x = currentPerson.x - (this.state.width / 2);
             worldOffset.y = currentPerson.y - (this.state.height / 2);
+        } else {
+            // no player, blur the world
+            worldFilter = "url(#blur)";
         }
 
         return (
@@ -1169,6 +1267,36 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         <pattern id="road-white" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
                             <image href="/road-white.png" width="16" height="16"/>
                         </pattern>
+                        <filter id="highlight-white">
+                            {/* https://stackoverflow.com/questions/49693471/svg-border-outline-for-group-of-elements */}
+                            <feMorphology operator="dilate" in="SourceAlpha"
+                                          radius="0" result="e1" />
+                            <feMorphology operator="dilate" in="SourceAlpha"
+                                          radius="2" result="e2" />
+                            <feComposite in="e1" in2="e3" operator="xor"
+                                         result="outline"/>
+                            <feFlood floodColor="white" floodOpacity={0.3} result="color"/>
+                            <feComposite in="color" in2="outline" operator="in" result="white-outline"/>
+                            <feMerge>
+                                <feMergeNode in="white-outline"/>
+                                <feMergeNode in="SourceGraphic"/>
+                            </feMerge>
+                        </filter>
+                        <filter id="highlight-blue">
+                            {/* https://stackoverflow.com/questions/49693471/svg-border-outline-for-group-of-elements */}
+                            <feMorphology operator="dilate" in="SourceAlpha"
+                                          radius="0" result="e1" />
+                            <feMorphology operator="dilate" in="SourceAlpha"
+                                          radius="2" result="e2" />
+                            <feComposite in="e1" in2="e3" operator="xor"
+                                         result="outline"/>
+                            <feFlood floodColor="blue" floodOpacity={0.3} result="color"/>
+                            <feComposite in="color" in2="outline" operator="in" result="white-outline"/>
+                            <feMerge>
+                                <feMergeNode in="white-outline"/>
+                                <feMergeNode in="SourceGraphic"/>
+                            </feMerge>
+                        </filter>
                     </defs>
                     <g transform={`translate(${-worldOffset.x},${-worldOffset.y})`}>
                         {
