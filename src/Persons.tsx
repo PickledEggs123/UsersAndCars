@@ -96,7 +96,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 s: false,
                 d: false
             },
-            driving: true
+            driving: true,
+            grabbing: true
         },
         persons: [] as IPerson[],
         rooms: [] as IRoom[],
@@ -104,6 +105,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         objects: [] as INetworkObject[],
         roads: [] as IRoad[],
         lots: [] as ILot[],
+        nearbyObjects: [] as INetworkObject[],
         currentPersonId: this.randomPersonId(),
         lastUpdate: new Date().toISOString()
     };
@@ -472,6 +474,13 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     };
 
     /**
+     * If the grabbing tutorial should be shown.
+     */
+    showGrabbingTutorial = () => {
+        return this.state.nearbyObjects.length > 0 && this.state.tutorials.grabbing;
+    };
+
+    /**
      * Update the game in the database.
      */
     updateGame = async (data: IApiPersonsPut) => {
@@ -613,10 +622,13 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             const objects = serverObjects.reduce((arr: INetworkObject[], networkObject: INetworkObject): INetworkObject[] => {
                 return this.updateMergeLocalAndNetworkData(this.state.objects, arr, networkObject);
             }, []);
+            const newCurrentPerson = persons.find(person => person.id === this.state.currentPersonId);
+            const nearbyObjects = this.getNearbyObjects(newCurrentPerson, objects);
             this.setState({
                 persons,
                 cars,
                 objects,
+                nearbyObjects,
                 lastUpdate: new Date().toISOString()
             });
         }
@@ -884,6 +896,11 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     // update car array
                     const cars = this.updateCurrentCar(updateCar as any);
                     stateUpdates.push({cars});
+
+                    // get new current person and use new current person to find new nearby objects
+                    const newCurrentPerson = persons.find(person => person.id === this.state.currentPersonId);
+                    const nearbyObjects = this.getNearbyObjects(newCurrentPerson, objects);
+                    stateUpdates.push({nearbyObjects});
                 } else {
                     // update objects grabbed by person
                     const objects = this.updateCurrentObjects(updatePerson as any);
@@ -892,6 +909,11 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     // update person array
                     const persons = this.updatePersons(updatePerson as any);
                     stateUpdates.push({persons});
+
+                    // get new current person and use new current person to find new nearby objects
+                    const newCurrentPerson = persons.find(person => person.id === this.state.currentPersonId);
+                    const nearbyObjects = this.getNearbyObjects(newCurrentPerson, objects);
+                    stateUpdates.push({nearbyObjects});
                 }
 
                 // merge optional state updates into one state update object to perform a single setState.
@@ -935,6 +957,43 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     }
                 }
             });
+        }
+    };
+
+    /**
+     * Get a list of nearby objects.
+     * @param currentPerson Optional current person, used to pass a new copy that is not in state.
+     * @param objects Optional objects array, used to pass a new copy that is not in state.
+     */
+    getNearbyObjects = (currentPerson?: IPerson, objects?: INetworkObject[]): INetworkObject[] => {
+        // no current person given
+        if (!currentPerson) {
+            // find current person
+            currentPerson = this.getCurrentPerson();
+        }
+
+        // nearby objects depend on current person
+        if (currentPerson) {
+            // there is a current person, find objects nearby current person
+            return (objects ? objects : this.state.objects).filter(this.objectNearby(currentPerson));
+        } else {
+            // there is no current person, there are no objects nearby
+            return [];
+        }
+    };
+
+    /**
+     * Get a list of grabbed objects.
+     */
+    getGrabbedObjects = (): INetworkObject[] => {
+        // depending on if there is a current person
+        const currentPerson = this.getCurrentPerson();
+        if (currentPerson) {
+            // there is a current person, find selected objects
+            return this.state.objects.filter(networkObject => networkObject.grabbedByPersonId === currentPerson.id);
+        } else {
+            // there is no current person, there are no objects selected
+            return [];
         }
     };
 
@@ -1076,15 +1135,30 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             case "g": {
                 const currentPerson = this.getCurrentPerson();
                 if (currentPerson) {
-                    const nearbyObject = this.state.objects.find(this.objectNearby(currentPerson));
-                    if (nearbyObject) {
-                        this.handleSelectedObjectPropertyChange(nearbyObject, (object: INetworkObject): INetworkObject => {
+                    const grabbedObjects = this.getGrabbedObjects();
+                    const nearbyObjectsNotGrabbed = this.state.nearbyObjects.filter(nearbyObject => {
+                        return !grabbedObjects.some(grabbedObject => grabbedObject.id === nearbyObject.id);
+                    });
+
+                    // toggle grab state on the union of grabbed and nearby objects
+                    [...grabbedObjects, ...nearbyObjectsNotGrabbed].forEach(networkObject => {
+                        this.handleSelectedObjectPropertyChange(networkObject, (object: INetworkObject): INetworkObject => {
+                            // hide grabbing tutorial after successful grab of an object
+                            if (this.state.tutorials.grabbing) {
+                                this.setState({
+                                    tutorials: {
+                                        ...this.state.tutorials,
+                                        grabbing: false
+                                    }
+                                });
+                            }
+
                             return {
                                 ...object,
                                 grabbedByPersonId: object.grabbedByPersonId === currentPerson.id ? null : currentPerson.id
                             };
                         });
-                    }
+                    });
                 }
                 break;
             }
@@ -1481,25 +1555,40 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     {
                         this.showWalkingTutorial() ? (
                             <g>
-                                <text x="20" y="40" fill="black" opacity={0.5}>Press the WASD keys to walk.</text>
-                                <text x="70" y="60" fill={this.state.tutorials.walking.w ? "blue" : "black"} opacity={0.5}>W</text>
-                                <text x="20" y="110" fill={this.state.tutorials.walking.w ? "blue" : "black"} opacity={0.5}>A</text>
-                                <text x="70" y="110" fill={this.state.tutorials.walking.w ? "blue" : "black"} opacity={0.5}>S</text>
-                                <text x="120" y="110" fill={this.state.tutorials.walking.w ? "blue" : "black"} opacity={0.5}>D</text>
+                                <text x="20" y="40" fill="black" fontSize={18}>Press the WASD keys to walk.</text>
+                                <text x="125" y="130" fill={this.state.tutorials.walking.w ? "blue" : "black"} fontSize={36} textAnchor="middle">W</text>
+                                <text x="45" y="210" fill={this.state.tutorials.walking.a ? "blue" : "black"} fontSize={36} textAnchor="middle">A</text>
+                                <text x="125" y="210" fill={this.state.tutorials.walking.s ? "blue" : "black"} fontSize={36} textAnchor="middle">S</text>
+                                <text x="205" y="210" fill={this.state.tutorials.walking.d ? "blue" : "black"} fontSize={36} textAnchor="middle">D</text>
+                                <rect x="100" y="100" width="50" height="50" fill="white" opacity={0.5}/>
+                                <rect x="20" y="180" width="50" height="50" fill="white" opacity={0.5}/>
+                                <rect x="100" y="180" width="50" height="50" fill="white" opacity={0.5}/>
+                                <rect x="180" y="180" width="50" height="50" fill="white" opacity={0.5}/>
                             </g>
                         ) : null
                     }
                     {
                         this.showDrivingTutorial() ? (
                             <g>
-                                <text x="20" y="40" fill="black">Press the E key to Enter and Exit the car.</text>
+                                <text x="20" y="40" fill="black" fontSize={18}>Press the E key to Enter and Exit the car.</text>
+                                <text x="125" y="210" fill="black" fontSize={36} textAnchor="middle">E</text>
+                                <rect x="100" y="180" width="50" height="50" fill="white" opacity={0.5}/>
                             </g>
                         ) : null
                     }
                     {
                         this.showDrivingText() ? (
                             <g>
-                                <text x="20" y="260" fill="black">Starter</text>
+                                <text x="20" y={this.state.height - 40} fill="black" fontSize={18}>Starter</text>
+                            </g>
+                        ) : null
+                    }
+                    {
+                        this.showGrabbingTutorial() ? (
+                            <g>
+                                <text x="20" y="40" fill="black" fontSize={18}>Press G to Grab an object.</text>
+                                <text x="125" y="210" fill="black" fontSize={36} textAnchor="middle">G</text>
+                                <rect x="100" y="180" width="50" height="50" fill="white" opacity={0.5}/>
                             </g>
                         ) : null
                     }

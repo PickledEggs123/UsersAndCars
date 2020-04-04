@@ -41,6 +41,10 @@ export interface IPersonsDrawablesState {
      */
     objects: INetworkObject[];
     /**
+     * A cached list of nearby objects in the area.
+     */
+    nearbyObjects: INetworkObject[];
+    /**
      * A list of rooms in the current building.
      */
     rooms: IRoom[];
@@ -813,6 +817,16 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                             room.doors.bottom === ERoomWallType.OPEN ?
                                 <rect fill="white" x={x} y={y + 295} width={500} height={205}/> :
                                 null
+                    }
+                    {
+                        room.doors.left === ERoomWallType.OPEN ? (
+                            <rect fill="white" x={x - 200} y={y - 200} width={205} height={700}/>
+                        ) : null
+                    }
+                    {
+                        room.doors.right === ERoomWallType.OPEN ? (
+                            <rect fill="white" x={x + 495} y={y - 200} width={205} height={700}/>
+                        ) : null
                     }
                 </mask>
             );

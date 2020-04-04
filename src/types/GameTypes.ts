@@ -341,4 +341,8 @@ export interface IGameTutorials {
      * If the driving tutorial should be shown.
      */
     driving: boolean;
+    /**
+     * If the grabbing tutorial should be shown.
+     */
+    grabbing: boolean;
 }
