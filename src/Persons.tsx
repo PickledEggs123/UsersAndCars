@@ -30,6 +30,14 @@ interface IPersonsProps {}
  */
 interface IPersonsState {
     /**
+     * The number of pixels of the game screen wide.
+     */
+    width: number;
+    /**
+     * The number of pixels of the game screen is tall.
+     */
+    height: number;
+    /**
      * The tutorials that should be shown.
      */
     tutorials: IGameTutorials;
@@ -99,6 +107,8 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
      * The state of the game.
      */
     state = {
+        width: 1000,
+        height: 600,
         tutorials: {
             walking: {
                 w: false,
@@ -1269,7 +1279,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                            <g key={`room-${index}-wall-top-left`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="0,0 200,0 200,5 0,5"/>
                             </g>
                         );
@@ -1280,7 +1290,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                            <g key={`room-${index}-wall-top-right`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="300,0 500,0 500,5 300,5"/>
                             </g>
                         );
@@ -1296,7 +1306,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                            <g key={`room-${index}-wall-top-left`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="0,0 200,0 200,5 0,5"/>
                             </g>
                         );
@@ -1307,7 +1317,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                            <g key={`room-${index}-wall-top-right`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="300,0 500,0 500,5 300,5"/>
                             </g>
                         );
@@ -1318,7 +1328,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
+                            <g key={`room-${index}-wall-top-door`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="195,0 195,-205 305,-205 305,0 300,0 300,-200 200,-200 200,0"/>
                             </g>
                         );
@@ -1358,7 +1368,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
+                            <g key={`room-${index}-wall-bottom-left`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="0,295 200,295 200,300 0,300"/>
                             </g>
                         );
@@ -1369,7 +1379,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
+                            <g key={`room-${index}-wall-bottom-right`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="300,295 500,295 500,300 300,300"/>
                             </g>
                         );
@@ -1385,7 +1395,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
+                            <g key={`room-${index}-wall-bottom-left`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="0,295 200,295 200,300 0,300"/>
                             </g>
                         );
@@ -1396,7 +1406,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
+                            <g key={`room-${index}-wall-bottom-right`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="300,295 500,295 500,300 300,300"/>
                             </g>
                         );
@@ -1407,7 +1417,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
+                            <g key={`room-${index}-wall-bottom-door`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="195,300 195,95 305,95 305,300 300,300 300,100 200,100 200,300"/>
                             </g>
                         );
@@ -1448,7 +1458,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`room-${index}-wall-left`} transform={`translate(${x},${y})`}>
+                            <g key={`room-${index}-wall-left-top`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="0,0 5,0 5,100 0,100"/>
                             </g>
                         );
@@ -1459,7 +1469,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`room-${index}-wall-left`} transform={`translate(${x},${y})`}>
+                            <g key={`room-${index}-wall-left-bottom`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="0,200 5,200 5,300 0,300"/>
                             </g>
                         );
@@ -1500,7 +1510,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`room-${index}-wall-right`} transform={`translate(${x},${y})`}>
+                            <g key={`room-${index}-wall-right-top`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="495,0 500,0 500,100 495,100"/>
                             </g>
                         );
@@ -1511,7 +1521,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`room-${index}-wall-right`} transform={`translate(${x},${y})`}>
+                            <g key={`room-${index}-wall-right-bottom`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="495,200 500,200 500,300 495,300"/>
                             </g>
                         );
@@ -1631,6 +1641,39 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         });
     };
 
+    /**
+     * Generate a list of grass tiles to draw. The tiles should always be around the world view. Should reduce the
+     * amount of grass drawn in the world.
+     * @param worldOffset The offset of the camera.
+     */
+    generateGrassTile = (worldOffset: IObject): IObject[] => {
+        const tileWidth = 500;
+        const tileHeight = 300;
+
+        // calculate current tile position
+        const tilePosition: IObject = {
+            x: Math.round(worldOffset.x / tileWidth),
+            y: Math.round(worldOffset.y / tileHeight)
+        };
+
+        // calculate a list of tiles around the world view, it should cover the world view
+        const tilePositions = [] as IObject[];
+        // for the x axis, go from most left to most right tile
+        for (let i = -Math.floor(this.state.width / tileWidth); i <= Math.ceil(this.state.width / tileWidth); i++) {
+            // for the y axis, go from most top to most bottom tile
+            for (let j = -Math.floor(this.state.height / tileHeight); j <= Math.ceil(this.state.height / tileHeight); j++) {
+                // add tile
+                tilePositions.push({
+                    x: (tilePosition.x + i) * tileWidth,
+                    y: (tilePosition.y + j) * tileHeight
+                } as IObject);
+            }
+        }
+
+        console.log(tilePositions);
+        return tilePositions;
+    };
+
     render() {
         // find the current person
         const currentPerson = this.getCurrentPerson();
@@ -1642,8 +1685,8 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
         // if current person exist
         if (currentPerson) {
             // center world around current person, the view should be centered on the person
-            worldOffsetX = currentPerson.x - 250;
-            worldOffsetY = currentPerson.y - 150;
+            worldOffsetX = currentPerson.x - (this.state.width / 2);
+            worldOffsetY = currentPerson.y - (this.state.height / 2);
         }
 
         return (
@@ -1654,7 +1697,7 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                 <div>
                     <button onClick={this.beginLogin}>Login</button>
                 </div>
-                <svg className="game" width={500} height={300} style={{border: "1px solid black"}}>
+                <svg className="game" width={this.state.width} height={this.state.height} style={{border: "1px solid black"}}>
                     <defs>
                         {
                             this.state.rooms.map((room: IRoom, index: number) => {
@@ -1708,9 +1751,22 @@ export class Persons extends React.Component<IPersonsProps, IPersonsState> {
                                 );
                             })
                         }
+                        <pattern id="grass" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
+                            <image href="/grass.png" width="16" height="16"/>
+                        </pattern>
                     </defs>
                     <g transform={`translate(${-worldOffsetX},${-worldOffsetY})`}>
                         {
+                            // draw the grass on the bottom of the world
+                            this.generateGrassTile({
+                                x: worldOffsetX,
+                                y: worldOffsetY
+                            }).map(({x, y}: IObject) => {
+                                return <rect key={`grass-tile-${x}-${y}`} x={x} y={y} width="500" height="300" fill="url(#grass)"/>;
+                            })
+                        }
+                        {
+                            // draw persons, cars, and movable objects
                             this.sortDrawables().map(drawable => {
                                 return drawable.draw();
                             })
