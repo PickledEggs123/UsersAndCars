@@ -138,11 +138,29 @@ export enum ELotZone {
  * A city is made of lots. Each lot has locations to place houses, roads, and stores.
  */
 export interface ILot extends IObject {
-    owner: string;
-    format: string;
+    owner: string | null;
+    format: string | null;
     width: number;
     height: number;
     zone: ELotZone;
+}
+
+/**
+ * The type of lot expansion to perform.
+ */
+export enum ELotExpandType {
+    NONE = "NONE",
+    RIGHT = "RIGHT",
+    BOTTOM = "BOTTOM",
+    RIGHT_AND_BOTTOM = "RIGHT_AND_BOTTOM"
+}
+
+/**
+ * The affected lots and lot expand type.
+ */
+export interface ILotExpandTypeAndAffectedLocations {
+    lotExpandType: ELotExpandType;
+    affectedLots: ILot[];
 }
 
 /**

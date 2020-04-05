@@ -3,6 +3,8 @@ import './App.scss';
 import axios from "axios";
 import {
     ECarDirection,
+    ELotExpandType,
+    ELotZone,
     ERoadDirection,
     ERoadType,
     ERoomWallType,
@@ -13,6 +15,7 @@ import {
     IGameTutorials,
     IKeyDownHandler,
     ILot,
+    ILotExpandTypeAndAffectedLocations,
     INetworkObject,
     IObject,
     IPerson,
@@ -356,32 +359,13 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     };
 
     /**
-     * Generate a city from an ASCII map.
-     * @param prefix The name of the city. It's prepended to the [[ILot]] names.
-     * @param format The ASCII map of the city.
-     * @param x The x offset of the city.
-     * @param y The y offset of the city.
+     * Generate roads for a city.
+     * @param format A string containing an ASCII map of the city.
+     * @param x The offset of the city.
+     * @param y The offset of the city.
      */
-    generateCity = ({prefix, format, offset: {x, y}}: {prefix: string, format: string, offset: IObject}): ICity => {
-        format = "" +
-            "|-----|---------------|-----|---------------|-----|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|-----|---------------|-----|---------------|-----|\n" +
-            "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
-            "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
-            "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
-            "|-----|---------------|-----|---------------|-----|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|-----|---------------|-----|---------------|-----|";
-
+    generateRoads = ({format, offset: {x, y}}: {format: string, offset: IObject}): IRoad[] => {
         const roads = [] as IRoad[];
-        const lots = [] as ILot[];
 
         // parse all roads
         const rows = format.split(/\r\n|\r|\n/);
@@ -428,6 +412,234 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             const nearbyRoads = roads.filter(this.tileIsNearbyTile(road));
             const whichDirectionShouldBeConnected = this.whichDirectionIsNearby(road, nearbyRoads);
             this.applyRoadConnections(road, whichDirectionShouldBeConnected);
+        });
+
+        return roads;
+    };
+
+    /**
+     * Lot is at location and zone matches.
+     * @param location The location to check.
+     * @param zone The zone of the located lot.
+     */
+    lotAtLocation = (location: IObject, zone: ELotZone) => (lot: ILot): boolean => {
+        return Math.abs(lot.x - location.x) <= 10 && Math.abs(lot.y - location.y) <= 10 && lot.zone === zone;
+    };
+
+    /**
+     * Determine the type of lot expansion to perform.
+     * @param lot The lot to check.
+     * @param lots The lots to expand into.
+     * @param depth The depth of the expansion.
+     */
+    getLotExpandTypeAndAffectedLocations = (lot: ILot, lots: ILot[], depth: number): ILotExpandTypeAndAffectedLocations => {
+        const x = Math.round(lot.x / 500);
+        const y = Math.round(lot.y / 300);
+
+        // a line on the right side of the square, lot can expand into the right row
+        const rightLocations = new Array(depth).fill(0).map((v, i): IObject => ({
+            x: (x + depth) * 500,
+            y: (y + i) * 300
+        }));
+        // a line on the bottom of the square, lot can expand into the bottom row
+        const bottomLocations = new Array(depth).fill(0).map((v, i): IObject => ({
+            x: (x + i) * 500,
+            y: (y + depth) * 300
+        }));
+        // a corner square, lot can expand into both right and bottom if the corner is filled
+        const cornerLocation: IObject = {
+            x: (x + depth) * 500,
+            y: (y + depth) * 300
+        };
+
+        // determine if positions are filled
+        const isRightFilled = rightLocations.every(location => {
+            return lots.some(this.lotAtLocation(location, lot.zone));
+        });
+        const isBottomFilled = bottomLocations.every(location => {
+            return lots.some(this.lotAtLocation(location, lot.zone));
+        });
+        const isCornerFilled = lots.some(this.lotAtLocation(cornerLocation, lot.zone));
+        if (isRightFilled && isBottomFilled && isCornerFilled) {
+            // return bottom and right affected lots
+            return {
+                lotExpandType: ELotExpandType.RIGHT_AND_BOTTOM,
+                affectedLots: [
+                    ...rightLocations.reduce((arr: ILot[], location: IObject): ILot[] => {
+                        const l = lots.find(this.lotAtLocation(location, lot.zone));
+                        if (l) {
+                            return [...arr, l];
+                        } else {
+                            return arr;
+                        }
+                    }, []),
+                    ...bottomLocations.reduce((arr: ILot[], location: IObject): ILot[] => {
+                        const l = lots.find(this.lotAtLocation(location, lot.zone));
+                        if (l) {
+                            return [...arr, l];
+                        } else {
+                            return arr;
+                        }
+                    }, []),
+                    ...lots.filter(this.lotAtLocation(cornerLocation, lot.zone))
+                ]
+            };
+        } else if (isRightFilled) {
+            // return right affected lots
+            return {
+                lotExpandType: ELotExpandType.RIGHT,
+                affectedLots: [
+                    ...rightLocations.reduce((arr: ILot[], location: IObject): ILot[] => {
+                        const l = lots.find(this.lotAtLocation(location, lot.zone));
+                        if (l) {
+                            return [...arr, l];
+                        } else {
+                            return arr;
+                        }
+                    }, [])
+                ]
+            };
+        } else if (isBottomFilled) {
+            // return bottom affected lots
+            return {
+                lotExpandType: ELotExpandType.BOTTOM,
+                affectedLots: [
+                    ...bottomLocations.reduce((arr: ILot[], location: IObject): ILot[] => {
+                        const l = lots.find(this.lotAtLocation(location, lot.zone));
+                        if (l) {
+                            return [...arr, l];
+                        } else {
+                            return arr;
+                        }
+                    }, [])
+                ]
+            };
+        } else {
+            return {
+                lotExpandType: ELotExpandType.NONE,
+                affectedLots: []
+            };
+        }
+    };
+
+    /**
+     * Generate a city from an ASCII map.
+     * @param prefix The name of the city. It's prepended to the [[ILot]] names.
+     * @param format The ASCII map of the city.
+     * @param x The x offset of the city.
+     * @param y The y offset of the city.
+     */
+    generateCity = ({prefix, format, offset: {x, y}}: {prefix: string, format: string, offset: IObject}): ICity => {
+        format = "" +
+            "|-----|---------------|-----|---------------|-----|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|-----|---------------|-----|---------------|-----|\n" +
+            "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
+            "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
+            "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
+            "|-----|---------------|-----|---------------|-----|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|-----|---------------|-----|---------------|-----|";
+
+        const roads = this.generateRoads({format, offset: {x, y}});
+        let lots = [] as ILot[];
+
+        // generate a lot for each zoning character
+        const rows = format.split(/\r\n|\r|\n/);
+        rows.forEach((row, rowIndex) => {
+            const zones = row.split("");
+            zones.forEach((zone, columnIndex) => {
+                switch (zone) {
+                    case "R": {
+                        const lot: ILot = {
+                            owner: null,
+                            format: null,
+                            width: 500,
+                            height: 300,
+                            x: x + columnIndex * 500,
+                            y: y + rowIndex * 300,
+                            zone: ELotZone.RESIDENTIAL
+                        };
+                        lots.push(lot);
+                        break;
+                    }
+                    case "C": {
+                        const lot: ILot = {
+                            owner: null,
+                            format: null,
+                            width: 500,
+                            height: 300,
+                            x: x + columnIndex * 500,
+                            y: y + rowIndex * 300,
+                            zone: ELotZone.COMMERCIAL
+                        };
+                        lots.push(lot);
+                        break;
+                    }
+                }
+            });
+        });
+
+        // merge lots into their neighbors
+        for (let i = 0; i < lots.length; i++) {
+            const firstLot = lots[i];
+            let exitLoop = false;
+            for (let depth = 1; depth < 5 && !exitLoop; depth++) {
+                const {affectedLots, lotExpandType} = this.getLotExpandTypeAndAffectedLocations(firstLot, lots, depth);
+                switch (lotExpandType) {
+                    case ELotExpandType.RIGHT_AND_BOTTOM: {
+                        // expand lot both right and bottom
+                        firstLot.width += 500;
+                        firstLot.height += 300;
+
+                        // remove affected lots
+                        lots = lots.filter(lot => !affectedLots.some(this.lotAtLocation(lot, firstLot.zone)));
+                        break;
+                    }
+                    case ELotExpandType.RIGHT: {
+                        // expand lot to the right
+                        firstLot.width += 500;
+
+                        // remove affected lots
+                        lots = lots.filter(lot => !affectedLots.some(this.lotAtLocation(lot, firstLot.zone)));
+                        break;
+                    }
+                    case ELotExpandType.BOTTOM: {
+                        // expand lot to the bottom
+                        firstLot.height += 300;
+
+                        // remove affected lots
+                        lots = lots.filter(lot => !affectedLots.some(this.lotAtLocation(lot, firstLot.zone)));
+                        break;
+                    }
+                    case ELotExpandType.NONE: {
+                        exitLoop = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // generate rooms per lot
+        lots = lots.map((lot): ILot => {
+            if (lot.width === 2500 && lot.height === 1200 && lot.zone === ELotZone.RESIDENTIAL) {
+                return {
+                    ...lot,
+                    format: "" +
+                        "  E  \n" +
+                        "OHHO \n" +
+                        "OHOH \n" +
+                        " E   "
+                };
+            } else {
+                return lot;
+            }
         });
 
         return {
@@ -508,26 +720,29 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         this.intervalGameLoop = setTimeout(this.gameLoop, this.gameRefreshSpeed);
         this.intervalHeartbeat = setInterval(this.heartbeat, this.heartbeatRefreshSpeed);
 
-        // generate some houses
-        const format = "" +
-            "  E  \n" +
-            "OHHO \n" +
-            "OHOH \n" +
-            " E   ";
-        const rooms = [format, format, format].reduce((arr: IRoom[], f: string, index: number): IRoom[] => {
-            return [
-                ...arr,
-                ...this.generateHouse({
-                    prefix: `house-${index}`,
-                    format,
-                    offset: {
-                        x: index * 2500,
-                        y: 0
-                    }
-                })
-            ];
-        }, []);
+        // generate roads and lots
         const {roads, lots} = this.generateCity({prefix: "city1", format: "", offset: {x: 0, y: 0}});
+
+        // generate houses
+        const rooms = lots.reduce((arr: IRoom[], lot: ILot, index: number): IRoom[] => {
+            const {x, y, format} = lot;
+            if (format) {
+                return [
+                    ...arr,
+                    ...this.generateHouse({
+                        prefix: `house-${index}`,
+                        format,
+                        offset: {
+                            x,
+                            y
+                        }
+                    })
+                ];
+            } else {
+                return arr;
+            }
+        }, []);
+
         this.setState({rooms, roads, lots});
     };
 
