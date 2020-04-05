@@ -50,6 +50,16 @@ interface IPersonsState extends IPersonsDrawablesState {
 }
 
 /**
+ * A list of lot fillers. They fill the lot with a format string given a dimension and zone type.
+ */
+export interface ILotFiller {
+    width: number;
+    height: number;
+    zone: ELotZone;
+    fillLot(lot: ILot): ILot;
+}
+
+/**
  * A React Component which renders the Persons game.
  */
 export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
@@ -430,26 +440,29 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * Determine the type of lot expansion to perform.
      * @param lot The lot to check.
      * @param lots The lots to expand into.
-     * @param depth The depth of the expansion.
      */
-    getLotExpandTypeAndAffectedLocations = (lot: ILot, lots: ILot[], depth: number): ILotExpandTypeAndAffectedLocations => {
-        const x = Math.round(lot.x / 500);
-        const y = Math.round(lot.y / 300);
+    getLotExpandTypeAndAffectedLocations = (lot: ILot, lots: ILot[]): ILotExpandTypeAndAffectedLocations => {
+        // the tile position of the lot
+        const lotXInTiles = Math.round(lot.x / 500);
+        const lotYInTiles = Math.round(lot.y / 300);
+        // the lot width and height in tiles
+        const lotWidthInTiles = Math.round(lot.width / 500);
+        const lotHeightInTitles = Math.round(lot.height / 300);
 
         // a line on the right side of the square, lot can expand into the right row
-        const rightLocations = new Array(depth).fill(0).map((v, i): IObject => ({
-            x: (x + depth) * 500,
-            y: (y + i) * 300
+        const rightLocations = new Array(lotHeightInTitles).fill(0).map((v, i): IObject => ({
+            x: (lotXInTiles + lotWidthInTiles) * 500,
+            y: (lotYInTiles + i) * 300
         }));
         // a line on the bottom of the square, lot can expand into the bottom row
-        const bottomLocations = new Array(depth).fill(0).map((v, i): IObject => ({
-            x: (x + i) * 500,
-            y: (y + depth) * 300
+        const bottomLocations = new Array(lotWidthInTiles).fill(0).map((v, i): IObject => ({
+            x: (lotXInTiles + i) * 500,
+            y: (lotYInTiles + lotHeightInTitles) * 300
         }));
         // a corner square, lot can expand into both right and bottom if the corner is filled
         const cornerLocation: IObject = {
-            x: (x + depth) * 500,
-            y: (y + depth) * 300
+            x: (lotXInTiles + lotWidthInTiles) * 500,
+            y: (lotYInTiles + lotHeightInTitles) * 300
         };
 
         // determine if positions are filled
@@ -460,6 +473,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             return lots.some(this.lotAtLocation(location, lot.zone));
         });
         const isCornerFilled = lots.some(this.lotAtLocation(cornerLocation, lot.zone));
+
+        // depending on which tile positions are filled
         if (isRightFilled && isBottomFilled && isCornerFilled) {
             // return bottom and right affected lots
             return {
@@ -522,6 +537,75 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         }
     };
 
+    lotFillers: ILotFiller[] = [{
+        width: 2500,
+        height: 1200,
+        zone: ELotZone.RESIDENTIAL,
+        fillLot(lot: ILot): ILot {
+            return {
+                ...lot,
+                format: "" +
+                    "  E  \n" +
+                    "OHHO \n" +
+                    "OHOH \n" +
+                    " E   "
+            };
+        }
+    }, {
+        width: 2500,
+        height: 900,
+        zone: ELotZone.RESIDENTIAL,
+        fillLot(lot: ILot): ILot {
+            return {
+                ...lot,
+                format: "" +
+                    "OE EO\n" +
+                    "HH HH\n" +
+                    "OE EO"
+            };
+        }
+    }, {
+        width: 2500,
+        height: 1200,
+        zone: ELotZone.COMMERCIAL,
+        fillLot(lot: ILot): ILot {
+            return {
+                ...lot,
+                format: "" +
+                    "  E  \n" +
+                    "OHHHH\n" +
+                    "OHHHH\n" +
+                    "  E  "
+            };
+        }
+    }, {
+        width: 2500,
+        height: 900,
+        zone: ELotZone.COMMERCIAL,
+        fillLot(lot: ILot): ILot {
+            return {
+                ...lot,
+                format: "" +
+                    "  E  \n" +
+                    "OHHHO\n" +
+                    "  E  "
+            };
+        }
+    }];
+
+    /**
+     * Fill a lot with rooms.
+     * @param lot The lot to fill.
+     */
+    fillLot = (lot: ILot): ILot => {
+        const lotFiller = this.lotFillers.find(l => l.width === lot.width && l.height === lot.height && l.zone === lot.zone);
+        if (lotFiller) {
+            return lotFiller.fillLot(lot);
+        } else {
+            return lot;
+        }
+    };
+
     /**
      * Generate a city from an ASCII map.
      * @param prefix The name of the city. It's prepended to the [[ILot]] names.
@@ -532,19 +616,19 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     generateCity = ({prefix, format, offset: {x, y}}: {prefix: string, format: string, offset: IObject}): ICity => {
         format = "" +
             "|-----|---------------|-----|---------------|-----|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
             "|-----|---------------|-----|---------------|-----|\n" +
             "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
             "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
             "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
             "|-----|---------------|-----|---------------|-----|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|RRRRR|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
             "|-----|---------------|-----|---------------|-----|";
 
         const roads = this.generateRoads({format, offset: {x, y}});
@@ -591,31 +675,22 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             const firstLot = lots[i];
             let exitLoop = false;
             for (let depth = 1; depth < 5 && !exitLoop; depth++) {
-                const {affectedLots, lotExpandType} = this.getLotExpandTypeAndAffectedLocations(firstLot, lots, depth);
+                const {affectedLots, lotExpandType} = this.getLotExpandTypeAndAffectedLocations(firstLot, lots);
                 switch (lotExpandType) {
                     case ELotExpandType.RIGHT_AND_BOTTOM: {
                         // expand lot both right and bottom
                         firstLot.width += 500;
                         firstLot.height += 300;
-
-                        // remove affected lots
-                        lots = lots.filter(lot => !affectedLots.some(this.lotAtLocation(lot, firstLot.zone)));
                         break;
                     }
                     case ELotExpandType.RIGHT: {
                         // expand lot to the right
                         firstLot.width += 500;
-
-                        // remove affected lots
-                        lots = lots.filter(lot => !affectedLots.some(this.lotAtLocation(lot, firstLot.zone)));
                         break;
                     }
                     case ELotExpandType.BOTTOM: {
                         // expand lot to the bottom
                         firstLot.height += 300;
-
-                        // remove affected lots
-                        lots = lots.filter(lot => !affectedLots.some(this.lotAtLocation(lot, firstLot.zone)));
                         break;
                     }
                     case ELotExpandType.NONE: {
@@ -623,24 +698,14 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         break;
                     }
                 }
+
+                // remove affected lots
+                lots = lots.filter(lot => !affectedLots.some(this.lotAtLocation(lot, firstLot.zone)));
             }
         }
 
         // generate rooms per lot
-        lots = lots.map((lot): ILot => {
-            if (lot.width === 2500 && lot.height === 1200 && lot.zone === ELotZone.RESIDENTIAL) {
-                return {
-                    ...lot,
-                    format: "" +
-                        "  E  \n" +
-                        "OHHO \n" +
-                        "OHOH \n" +
-                        " E   "
-                };
-            } else {
-                return lot;
-            }
-        });
+        lots = lots.map(this.fillLot);
 
         return {
             roads,
@@ -1497,14 +1562,6 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         return tilePositions;
     };
 
-    /**
-     * Determine if the object is near the world view.
-     * @param offset The world view to test.
-     */
-    isNearWorldView = (offset: IObject) => (object: IObject): boolean => {
-        return Math.abs(object.x - offset.x) <= this.state.width * 2 && Math.abs(object.y - offset.y) <= this.state.height * 2;
-    };
-
     render() {
         // find the current person
         const currentPerson = this.getCurrentPerson();
@@ -1761,7 +1818,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         }
                         {
                             // draw persons, cars, and movable objects
-                            this.sortDrawables().filter(this.isNearWorldView(worldOffset)).map(drawable => {
+                            this.sortDrawables(worldOffset).filter(this.isNearWorldView(worldOffset)).filter(this.isNearWorldView(worldOffset)).map(drawable => {
                                 return drawable.draw();
                             })
                         }

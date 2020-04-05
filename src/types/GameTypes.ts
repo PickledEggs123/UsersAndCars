@@ -76,7 +76,11 @@ export enum EDrawableType {
     /**
      * The [[IDrawable]] is a normal object.
      */
-    OBJECT = "OBJECT"
+    OBJECT = "OBJECT",
+    /**
+     * A wall. Walls are hidden when below the current person and visible when above the current person.
+     */
+    WALL = "WALL"
 }
 
 /**

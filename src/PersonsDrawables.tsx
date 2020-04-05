@@ -440,6 +440,18 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                             </g>
                         );
                     }
+                }, {
+                    x,
+                    y: y + 30,
+                    type: EDrawableType.WALL,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`room-${index}-wall-top-wall`} transform={`translate(${x},${y})`}>
+                                <polygon fill="tan" points="0,-200 200,-200 200,0 0,0"/>
+                                <polygon fill="tan" points="300,-200 500,-200 500,0 300,0"/>
+                            </g>
+                        );
+                    }
                 });
                 break;
             }
@@ -496,6 +508,17 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                             </g>
                         );
                     }
+                }, {
+                    x,
+                    y: y + 30,
+                    type: EDrawableType.WALL,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`room-${index}-wall-top-wall`} transform={`translate(${x},${y})`}>
+                                <polygon fill="tan" points="0,-200 500,-200 500,0 0,0"/>
+                            </g>
+                        );
+                    }
                 });
                 break;
             }
@@ -527,6 +550,18 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                         return (
                             <g key={`room-${index}-wall-bottom-right`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="300,295 500,295 500,300 300,300"/>
+                            </g>
+                        );
+                    }
+                }, {
+                    x,
+                    y: y + 330,
+                    type: EDrawableType.WALL,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`room-${index}-wall-bottom-wall`} transform={`translate(${x},${y})`}>
+                                <polygon fill="tan" points="0,100 200,100 200,300 0,300"/>
+                                <polygon fill="tan" points="300,100 500,100 500,300 300,300"/>
                             </g>
                         );
                     }
@@ -583,6 +618,17 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                         return (
                             <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
                                 <polygon fill="brown" points="0,295 500,295 500,300 0,300"/>
+                            </g>
+                        );
+                    }
+                }, {
+                    x,
+                    y: y + 330,
+                    type: EDrawableType.WALL,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`room-${index}-wall-bottom-wall`} transform={`translate(${x},${y})`}>
+                                <polygon fill="tan" points="0,100 500,100 500,300 0,300"/>
                             </g>
                         );
                     }
@@ -705,11 +751,11 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * above them to create a 2D Stereographic Projection, like a 2D with 3D movement arcade game. Sort [[IDrawable]]s
      * from top to bottom so bottom is drawn last, on top of the [[IDrawable]] above it.
      */
-    sortDrawables = (): IDrawable[] => {
+    sortDrawables = (worldOffset: IObject): IDrawable[] => {
         const component = this;
         const drawables = [
             // add all persons
-            ...this.state.persons.map(person => ({
+            ...this.state.persons.filter(this.isNearWorldView(worldOffset)).map(person => ({
                 draw(this: IDrawable) {
                     return component.drawPerson(this as unknown as IPerson);
                 },
@@ -718,7 +764,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             })),
 
             // for each network object
-            ...this.state.objects.reduce((arr: IDrawable[], networkObject: INetworkObject): IDrawable[] => {
+            ...this.state.objects.filter(this.isNearWorldView(worldOffset)).reduce((arr: IDrawable[], networkObject: INetworkObject): IDrawable[] => {
                 return [
                     ...arr,
                     this.drawNetworkObject(networkObject)
@@ -726,7 +772,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             }, []),
 
             // for each room
-            ...this.state.rooms.reduce((arr: IDrawable[], room: IRoom, index: number): IDrawable[] => {
+            ...this.state.rooms.filter(this.isNearWorldView(worldOffset)).reduce((arr: IDrawable[], room: IRoom, index: number): IDrawable[] => {
                 return [
                     ...arr,
 
@@ -736,7 +782,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             }, []),
 
             // for each car
-            ...this.state.cars.reduce((arr: IDrawable[], car: ICar): IDrawable[] => {
+            ...this.state.cars.filter(this.isNearWorldView(worldOffset)).reduce((arr: IDrawable[], car: ICar): IDrawable[] => {
                 return [
                     ...arr,
 
@@ -761,6 +807,19 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 // sort by height differences
                 return heightDifference;
             }
+        }).filter((a) => {
+            if (a.type === EDrawableType.WALL) {
+                // check if the wall is near the current person horizontally
+                if (a.x >= worldOffset.x && a.x <= worldOffset.x + 500) {
+                    // remove walls that are below current person
+                    return a.y <= worldOffset.y + (this.state.height / 2);
+                } else {
+                    return true;
+                }
+            } else {
+                // keep other drawables that are not walls
+                return true;
+            }
         });
     };
 
@@ -777,6 +836,14 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      */
     objectNearby = (person: IPerson) => (object: INetworkObject) => {
         return Math.abs(object.x - person.x) <= 100 && Math.abs(object.y - person.y) <= 100;
+    };
+
+    /**
+     * Determine if the object is near the world view.
+     * @param offset The world view to test.
+     */
+    isNearWorldView = (offset: IObject) => (object: IObject): boolean => {
+        return Math.abs(object.x - offset.x) <= this.state.width * 2 && Math.abs(object.y - offset.y) <= this.state.height * 2;
     };
 
     /**
