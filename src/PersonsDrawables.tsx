@@ -64,6 +64,33 @@ export interface IPersonsDrawablesState {
      * The randomly generated ID of the current person shown.
      */
     currentPersonId: string;
+    /**
+     * Previous copies of networked data. Used for interpolating the drawing of networked objects. The game updates every
+     * 2 seconds. We don't want to draw a position change every 2 seconds. Instead we want a smooth animation between two
+     * positions from present to future using the present and previous positions.
+     */
+    previousNetworkObjects: {
+        /**
+         * A list of previous persons.
+         */
+        persons: IPerson[];
+        /**
+         * A list of previous cars.
+         */
+        cars: ICar[];
+        /**
+         * A list of previous network objects such as chairs and boxes.
+         */
+        objects: INetworkObject[];
+        /**
+         * The time of the last get that returned the previous positions.
+         */
+        fetchTime: Date;
+    }
+    /**
+     * The time of the current get that returned the current positions.
+     */
+    fetchTime: Date;
 }
 
 /**
@@ -99,11 +126,46 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
+     * Interpolate x and y using previous position and time since last two positions to compute the current object position.
+     * @param networkObject The last object position
+     * @param previousNetworkObject The second last object position
+     */
+    interpolateObjectPosition = <T extends INetworkObject>(networkObject: T, previousNetworkObject?: T): T => {
+        let {x, y} = networkObject;
+
+        if (previousNetworkObject) {
+            // get previous positions
+            const previousX = previousNetworkObject.x;
+            const previousY = previousNetworkObject.y;
+            // get time step difference in seconds
+            const stepSize = (+this.state.fetchTime - +this.state.previousNetworkObjects.fetchTime) / 1000;
+            const timeDiff = (+new Date() - +this.state.fetchTime) / 1000;
+            // compute interpolation terms
+            // size of x axis single step
+            const dx = x - previousX;
+            // size of y axis single step
+            const dy = y - previousY;
+            // position of time relative to last two positions
+            const dt = timeDiff / stepSize;
+            // interpolate position
+            x += dx * dt;
+            y += dy * dt;
+        }
+
+        return {
+            ...networkObject,
+            x,
+            y
+        };
+    };
+
+    /**
      * Draw a person as some SVG elements.
      * @param person The person to draw.
+     * @param previousPerson The previous position used for interpolation.
      */
-    drawPerson = (person: IPerson) => {
-        const {x, y} = person;
+    drawPerson = (person: IPerson, previousPerson?: IPerson) => {
+        const {x, y} = this.interpolateObjectPosition(person, previousPerson);
 
         // the mask property which will mask the person's body so the bottom half of the person does not appear below a wall
         let roomMask: string = "";
@@ -153,9 +215,10 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     /**
      * Draw a person as some SVG elements.
      * @param car The person to draw.
+     * @param previousCar The previous position used for interpolation.
      */
-    drawCar = (car: ICar): IDrawable[] => {
-        const {x, y} = car;
+    drawCar = (car: ICar, previousCar?: ICar): IDrawable[] => {
+        const {x, y} = this.interpolateObjectPosition(car, previousCar);
 
         // the mask property which will mask the car so the bottom half of the car does not appear below a wall
         let mask: string = "";
@@ -309,9 +372,10 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * Draw a table in a room.
      * @param drawable The table to draw.
      * @param filter An SVG filter to apply to the table.
+     * @param previousNetworkObject The previous table position used for interpolation.
      */
-    drawTable = (drawable: INetworkObject, filter: string) => {
-        const {x, y} = drawable;
+    drawTable = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject) => {
+        const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
             <g key={`table-${drawable.id}`} transform={`translate(${x - 100},${y - 50})`} filter={filter}>
                 <polygon fill="brown" points="0,100 200,100 200,0 0,0"/>
@@ -323,9 +387,10 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * Draw a chair in a room.
      * @param drawable The chair to draw.
      * @param filter An SVG filter to apply to the chair.
+     * @param previousNetworkObject The previous position of the chair used for interpolation.
      */
-    drawChair = (drawable: INetworkObject, filter: string) => {
-        const {x, y} = drawable;
+    drawChair = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject) => {
+        const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
             <g key={`chair-${drawable.id}`} transform={`translate(${x - 50},${y - 50})`} filter={filter}>
                 <polygon fill="brown" points="10,90 20,90 20,10 10,10"/>
@@ -341,9 +406,10 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * Draw a box.
      * @param drawable The position of the box to draw.
      * @param filter An SVG filter to apply to the box.
+     * @param previousNetworkObject The previous position of the box used for interpolation.
      */
-    drawBox = (drawable: INetworkObject, filter: string) => {
-        const {x, y} = drawable;
+    drawBox = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject) => {
+        const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
             <g key={`chair-${drawable.id}`} transform={`translate(${x - 50},${y - 50})`} filter={filter}>
                 <polygon fill="tan" stroke="black" strokeWidth={2} points="0,0 100,0 100,100 0,100"/>
@@ -355,8 +421,9 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     /**
      * Draw a networked object onto the screen.
      * @param networkObject The network object to draw.
+     * @param previousNetworkObject The previous network object used for interpolation.
      */
-    drawNetworkObject = (networkObject: INetworkObject): IDrawable => {
+    drawNetworkObject = (networkObject: INetworkObject, previousNetworkObject?: INetworkObject): IDrawable => {
         const component = this;
 
         // highlight objects near current person with a white outline
@@ -379,7 +446,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     ...networkObject,
                     type: EDrawableType.OBJECT,
                     draw() {
-                        return component.drawChair(networkObject, filter);
+                        return component.drawChair(networkObject, filter, previousNetworkObject);
                     }
                 };
             }
@@ -388,7 +455,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     ...networkObject,
                     type: EDrawableType.OBJECT,
                     draw() {
-                        return component.drawTable(networkObject, filter);
+                        return component.drawTable(networkObject, filter, previousNetworkObject);
                     }
                 };
             }
@@ -398,7 +465,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     ...networkObject,
                     type: EDrawableType.OBJECT,
                     draw() {
-                        return component.drawBox(networkObject, filter);
+                        return component.drawBox(networkObject, filter, previousNetworkObject);
                     }
                 };
             }
@@ -753,11 +820,15 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      */
     sortDrawables = (worldOffset: IObject): IDrawable[] => {
         const component = this;
+        const currentPerson = this.getCurrentPerson();
         const drawables = [
             // add all persons
             ...this.state.persons.filter(this.isNearWorldView(worldOffset)).map(person => ({
                 draw(this: IDrawable) {
-                    return component.drawPerson(this as unknown as IPerson);
+                    const previousPerson = component.state.previousNetworkObjects.persons.find(p => {
+                        return p.id === person.id && person.id !== component.state.currentPersonId;
+                    });
+                    return component.drawPerson(person, previousPerson);
                 },
                 type: EDrawableType.PERSON,
                 ...person
@@ -765,9 +836,12 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
 
             // for each network object
             ...this.state.objects.filter(this.isNearWorldView(worldOffset)).reduce((arr: IDrawable[], networkObject: INetworkObject): IDrawable[] => {
+                const previousNetworkObject = component.state.previousNetworkObjects.objects.find(p => {
+                    return p.id === networkObject.id && networkObject.grabbedByPersonId !== component.state.currentPersonId;
+                });
                 return [
                     ...arr,
-                    this.drawNetworkObject(networkObject)
+                    this.drawNetworkObject(networkObject, previousNetworkObject)
                 ];
             }, []),
 
@@ -783,11 +857,14 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
 
             // for each car
             ...this.state.cars.filter(this.isNearWorldView(worldOffset)).reduce((arr: IDrawable[], car: ICar): IDrawable[] => {
+                const previousCar = component.state.previousNetworkObjects.cars.find(c => {
+                    return c.id === car.id && car.id && !(currentPerson && car.id === currentPerson.carId);
+                });
                 return [
                     ...arr,
 
                     // add all car parts
-                    ...component.drawCar(car)
+                    ...component.drawCar(car, previousCar)
                 ];
             }, [])
         ];

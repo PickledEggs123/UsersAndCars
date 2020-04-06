@@ -69,6 +69,21 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     intervalGameLoop: any = null;
 
     /**
+     * The interval containing the animation loop.
+     */
+    intervalAnimationLoop: any = null;
+
+    /**
+     * The timeout containing the animation loop
+     */
+    timeoutAnimationLoop: any = null;
+
+    /**
+     * The animation refresh rate. It is in milliseconds.
+     */
+    animationRefreshRate: number = 200;
+
+    /**
      * Heartbeat interval which keeps the person logged in.
      */
     intervalHeartbeat: any = null;
@@ -118,9 +133,16 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         objects: [] as INetworkObject[],
         roads: [] as IRoad[],
         lots: [] as ILot[],
+        previousNetworkObjects: {
+            persons: [] as IPerson[],
+            cars: [] as ICar[],
+            objects: [] as INetworkObject[],
+            fetchTime: new Date()
+        },
         nearbyObjects: [] as INetworkObject[],
         currentPersonId: this.randomPersonId(),
-        lastUpdate: new Date().toISOString()
+        lastUpdate: new Date().toISOString(),
+        fetchTime: new Date()
     };
 
     /**
@@ -809,6 +831,28 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         }, []);
 
         this.setState({rooms, roads, lots});
+
+        // begin animation loop
+        this.intervalAnimationLoop = requestAnimationFrame(this.animationLoop);
+    };
+
+    /**
+     * Animate the React scene.
+     */
+    animationLoop = () => {
+        // animation begun, clear animation loop interval, cannot cancel the loop now
+        this.intervalAnimationLoop = null;
+
+        // force react to update, creating the animation. The objects will move across the screen due to network interpolation.
+        this.forceUpdate(() => {
+            // react render is done, request another animation frame
+            this.timeoutAnimationLoop = setTimeout(() => {
+                // set timeout cannot be cleared now, it started.
+                this.timeoutAnimationLoop = null;
+
+                this.intervalAnimationLoop = requestAnimationFrame(this.animationLoop);
+            }, this.animationRefreshRate);
+        });
     };
 
     /**
@@ -823,6 +867,16 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         if (this.intervalHeartbeat) {
             clearTimeout(this.intervalHeartbeat);
             this.intervalGameLoop = null;
+        }
+
+        // stop animation loop
+        if (this.intervalAnimationLoop) {
+            cancelAnimationFrame(this.intervalAnimationLoop);
+            this.intervalAnimationLoop = null;
+        }
+        if (this.timeoutAnimationLoop) {
+            clearTimeout(this.timeoutAnimationLoop);
+            this.timeoutAnimationLoop = null;
         }
 
         // stop game loop
@@ -892,6 +946,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 objects: serverObjects
             } = response.data;
 
+            // record the current fetch time of the data. Used for interplating the drawings of networked objects.
+            const fetchTime = new Date();
+
             // modify server data with local data, pick most up to date version of the data
             const persons = serverPersons.reduce((arr: IPerson[], person: IPerson): IPerson[] => {
                 return this.updateMergeLocalAndNetworkData(this.state.persons, arr, person);
@@ -909,7 +966,14 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 cars,
                 objects,
                 nearbyObjects,
-                lastUpdate: new Date().toISOString()
+                lastUpdate: new Date().toISOString(),
+                fetchTime,
+                previousNetworkObjects: {
+                    persons: this.state.persons,
+                    cars: this.state.cars,
+                    objects: this.state.objects,
+                    fetchTime: this.state.fetchTime
+                }
             });
         }
 
