@@ -89,7 +89,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * The heartbeat refresh rate. 1000 means 1 second. Decreasing this value will increase how often the game sends
      * a heartbeat for the current user. The heartbeat function will keep the user logged in until the browser is closed.
      */
-    heartbeatRefreshSpeed: number = 25000;
+    heartbeatRefreshSpeed: number = 20000;
 
     /**
      * The reference to the login component.
@@ -1849,18 +1849,32 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         ) : null
                     }
                     {
-                        this.showDrivingText() ? (
-                            <g>
-                                <text x="20" y={this.state.height - 40} fill="black" fontSize={18}>Starter</text>
-                            </g>
-                        ) : null
-                    }
-                    {
                         this.showGrabbingTutorial() ? (
                             <g>
                                 <text x="20" y="40" fill="black" fontSize={18}>Press G to Grab an object.</text>
                                 <text x="125" y="210" fill="black" fontSize={36} textAnchor="middle">G</text>
                                 <rect x="100" y="180" width="50" height="50" fill="white" opacity={0.5}/>
+                            </g>
+                        ) : null
+                    }
+                    {
+                        this.showDrivingText() ? (
+                            <g>
+                                <text x="20" y={this.state.height - 60} fill="black" fontSize={18}>Starter</text>
+                            </g>
+                        ) : null
+                    }
+                    {
+                        currentPerson && typeof currentPerson.cash === "number" ? (
+                            <g>
+                                <text x="20" y={this.state.height - 40} fill="black" fontSize={18}>Cash: {currentPerson.cash}</text>
+                            </g>
+                        ) : null
+                    }
+                    {
+                        currentPerson && typeof currentPerson.creditLimit === "number" ? (
+                            <g>
+                                <text x="20" y={this.state.height - 20} fill="black" fontSize={18}>Credit: {currentPerson?.creditLimit}</text>
                             </g>
                         ) : null
                     }

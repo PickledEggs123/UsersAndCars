@@ -63,6 +63,14 @@ export interface IPerson extends INetworkObject {
      * The car the person is currently in.
      */
     carId: string | null;
+    /**
+     * The amount of money the person has.
+     */
+    cash: number;
+    /**
+     * The amount of credit the person has.
+     */
+    creditLimit: number;
 }
 
 /**
@@ -76,7 +84,11 @@ export enum EDrawableType {
     /**
      * The [[IDrawable]] is a normal object.
      */
-    OBJECT = "OBJECT"
+    OBJECT = "OBJECT",
+    /**
+     * A wall. Walls are hidden when below the current person and visible when above the current person.
+     */
+    WALL = "WALL"
 }
 
 /**
@@ -138,11 +150,29 @@ export enum ELotZone {
  * A city is made of lots. Each lot has locations to place houses, roads, and stores.
  */
 export interface ILot extends IObject {
-    owner: string;
-    format: string;
+    owner: string | null;
+    format: string | null;
     width: number;
     height: number;
     zone: ELotZone;
+}
+
+/**
+ * The type of lot expansion to perform.
+ */
+export enum ELotExpandType {
+    NONE = "NONE",
+    RIGHT = "RIGHT",
+    BOTTOM = "BOTTOM",
+    RIGHT_AND_BOTTOM = "RIGHT_AND_BOTTOM"
+}
+
+/**
+ * The affected lots and lot expand type.
+ */
+export interface ILotExpandTypeAndAffectedLocations {
+    lotExpandType: ELotExpandType;
+    affectedLots: ILot[];
 }
 
 /**

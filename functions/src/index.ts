@@ -157,6 +157,8 @@ interface IPersonDatabase {
     grabbedByPersonId: string | null;
     password: string;
     objectType: ENetworkObjectType;
+    cash: number;
+    creditLimit: number;
 }
 
 interface ICarDatabase {
@@ -308,6 +310,8 @@ personsApp.post("/login", (req: { body: IApiPersonsPost; }, res: any, next: (arg
                 carId: null,
                 grabbedByPersonId: null,
                 lastUpdate: admin.firestore.Timestamp.now(),
+                cash: 1000,
+                creditLimit: 1000,
                 objectType: ENetworkObjectType.PERSON
             };
             await admin.firestore().collection("persons").doc(id).set(data);
@@ -325,6 +329,12 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
     (async () => {
         // convert data into database format
         const personsToSaveIntoDatabase = req.body.persons.map((person: IPerson): Partial<IPersonDatabase> => {
+            // remove cash and credit limit information from person before updating database
+            // do not want the client to set their own cash or credit limit
+            const personWithoutSensitiveInformation = {...person};
+            delete personWithoutSensitiveInformation.cash;
+            delete personWithoutSensitiveInformation.creditLimit;
+
             return {
                 id: person.id,
                 x: 50,
@@ -332,7 +342,7 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
                 pantColor: "blue",
                 shirtColor: "grey",
                 grabbedByPersonId: null,
-                ...person,
+                ...personWithoutSensitiveInformation,
                 // convert ISO string date into firebase firestore Timestamp
                 lastUpdate: person.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(person.lastUpdate)) : admin.firestore.Timestamp.now(),
                 objectType: ENetworkObjectType.PERSON
@@ -384,3 +394,22 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
 
 // export the express app as a firebase function
 export const persons = functions.https.onRequest(personsApp);
+
+// every minute, run a tick to update all persons
+export const personsTick = functions.pubsub.schedule("every 1 minutes").onRun(() => {
+    // give every person cash
+    return (async () => {
+        const personsQuery = await admin.firestore().collection("persons").get();
+        for (const personDocument of personsQuery.docs) {
+            const data = personDocument.data() as IPerson;
+            const cash = data.cash;
+            if (typeof cash === "number") {
+                await personDocument.ref.set({cash: cash + 100}, {merge: true});
+            } else {
+                await personDocument.ref.set({cash: 1000}, {merge: true});
+            }
+        }
+    })().catch((err) => {
+        throw err;
+    });
+});

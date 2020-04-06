@@ -63,6 +63,14 @@ export interface IPerson extends INetworkObject {
      * The car the person is currently in.
      */
     carId: string | null;
+    /**
+     * The amount of money the person has.
+     */
+    cash: number;
+    /**
+     * The amount of credit the person has.
+     */
+    creditLimit: number;
 }
 
 /**
