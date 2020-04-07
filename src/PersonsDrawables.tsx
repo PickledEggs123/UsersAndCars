@@ -163,6 +163,24 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         };
     };
 
+    drawHealthBar = (networkObject: INetworkObject, offset?: IObject) => {
+        let healthPixel = 100;
+        if (networkObject.health) {
+            const {value, max} = networkObject.health;
+            healthPixel = Math.round(value / max * 100);
+        }
+
+        const x = offset ? offset.x : 0;
+        const y = offset ? offset.y : 0;
+
+        return (
+            <g transform={`translate(${x},${y})`}>
+                <polygon fill="red" points="0,-10 100,-10 100,0 0,0"/>
+                <polygon fill="green" points={`0,-10 ${healthPixel},-10 ${healthPixel},0 0,0`}/>
+            </g>
+        );
+    };
+
     /**
      * Draw a person as some SVG elements.
      * @param person The person to draw.
@@ -205,6 +223,9 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             <g key={person.id} x="0" y="0" width="500" height="300" mask={roomMask}>
                 <g key={person.id} x="0" y="0" width="500" height="300" mask={carMask}>
                     <g key={person.id} transform={`translate(${x - 50},${y - 100})`}>
+                        {
+                            this.drawHealthBar(person)
+                        }
                         <polygon fill="yellow" points="40,10 60,10 60,30 40,30"/>
                         <polygon fill={person.shirtColor} points="20,30 80,30 80,100 20,100"/>
                         <polygon fill={person.pantColor} points="20,100 80,100 80,120 20,120"/>
@@ -241,6 +262,9 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 filter = "url(#highlight-white)";
             }
         }
+
+        // make a local copy of component, to use inside drawables
+        const component = this;
 
         // return a list of drawable car parts
         switch (car.direction) {
@@ -281,6 +305,25 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                                     <polyline stroke="black" strokeWidth={2} points="-20,70 -20,90"/>
                                     <polyline stroke="black" strokeWidth={2} points="0,70 0,90"/>
                                     <polyline stroke="black" strokeWidth={2} points="20,70 20,90"/>
+                                </g>
+                            </g>
+                        );
+                    }
+                }, {
+                    // draw the front of the car
+                    x,
+                    y,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`car-health-bar-${car.id}`} x="0" y="0" width="100" height="200" mask={mask} filter={filter}>
+                                <g key={car.id} transform={`translate(${x},${y})`}>
+                                    {
+                                        component.drawHealthBar(car, {
+                                            x: -50,
+                                            y: -50
+                                        })
+                                    }
                                 </g>
                             </g>
                         );
@@ -327,6 +370,25 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                             </g>
                         );
                     }
+                }, {
+                    // draw the front of the car
+                    x,
+                    y,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`car-health-bar-${car.id}`} x="0" y="0" width="100" height="200" mask={mask} filter={filter}>
+                                <g key={car.id} transform={`translate(${x},${y})`}>
+                                    {
+                                        component.drawHealthBar(car, {
+                                            x: -50,
+                                            y: -50
+                                        })
+                                    }
+                                </g>
+                            </g>
+                        );
+                    }
                 }];
             case ECarDirection.RIGHT:
             case ECarDirection.LEFT:
@@ -368,6 +430,25 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                             </g>
                         );
                     }
+                }, {
+                    // draw the front of the car
+                    x,
+                    y,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
+                        return (
+                            <g key={`car-health-bar-${car.id}`} x="0" y="0" width="100" height="200" mask={mask} filter={filter}>
+                                <g key={car.id} transform={`translate(${x},${y})`}>
+                                    {
+                                        component.drawHealthBar(car, {
+                                            x: -50,
+                                            y: -50
+                                        })
+                                    }
+                                </g>
+                            </g>
+                        );
+                    }
                 }];
         }
     };
@@ -381,7 +462,13 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     drawTable = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
-            <g key={`table-${drawable.id}`} transform={`translate(${x - 100},${y - 50})`} filter={filter}>
+            <g key={`table-${drawable.id}-health-bar`} transform={`translate(${x - 100},${y - 50})`} filter={filter}>
+                {
+                    this.drawHealthBar(drawable, {
+                        x: -50,
+                        y: -20
+                    })
+                }
                 <polygon fill="brown" points="0,100 200,100 200,0 0,0"/>
             </g>
         );
@@ -397,6 +484,12 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
             <g key={`chair-${drawable.id}`} transform={`translate(${x - 50},${y - 50})`} filter={filter}>
+                {
+                    this.drawHealthBar(drawable, {
+                        x: 0,
+                        y: -20
+                    })
+                }
                 <polygon fill="brown" points="10,90 20,90 20,10 10,10"/>
                 <polygon fill="brown" points="80,90 90,90 90,10 80,10"/>
                 <polygon fill="brown" points="40,90 60,90 60,10 40,10"/>
@@ -416,6 +509,12 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
             <g key={`chair-${drawable.id}`} transform={`translate(${x - 50},${y - 50})`} filter={filter}>
+                {
+                    this.drawHealthBar(drawable, {
+                        x: 0,
+                        y: -20
+                    })
+                }
                 <polygon fill="tan" stroke="black" strokeWidth={2} points="0,0 100,0 100,100 0,100"/>
                 <polygon fill="white" stroke="black" strokeWidth={2} points="30,20 60,20 60,40 30,40"/>
             </g>

@@ -14,7 +14,7 @@ import {
     IApiPersonsPut,
     IApiPersonsVendPost,
     ICar,
-    INetworkObject,
+    INetworkObject, IObjectHealth,
     IPerson
 } from "./types/GameTypes";
 
@@ -160,6 +160,7 @@ interface IPersonDatabase {
     objectType: ENetworkObjectType;
     cash: number;
     creditLimit: number;
+    health: IObjectHealth;
 }
 
 interface ICarDatabase {
@@ -170,6 +171,7 @@ interface ICarDatabase {
     lastUpdate: admin.firestore.Timestamp;
     grabbedByPersonId: string | null;
     objectType: ENetworkObjectType;
+    health: IObjectHealth;
 }
 
 /**
@@ -182,7 +184,36 @@ interface INetworkObjectDatabase {
     objectType: ENetworkObjectType;
     grabbedByPersonId: string | null;
     lastUpdate: admin.firestore.Timestamp;
+    health: IObjectHealth;
 }
+
+/**
+ * The default value for person health.
+ */
+const defaultPersonHealthObject: IObjectHealth = {
+    max: 10,
+    value: 10,
+    rate: 1
+};
+
+/**
+ * The default value for car health.
+ */
+const defaultCarHealthObject: IObjectHealth = {
+    max: 24,
+    value: 24,
+    // car aging
+    rate: -0.002
+};
+
+/**
+ * The default value for object health.
+ */
+const defaultObjectHealthObject: IObjectHealth = {
+    max: 1,
+    value: 1,
+    rate: 0
+};
 
 const personsApp = express();
 
@@ -226,10 +257,11 @@ personsApp.get("/data", (req: any, res: { json: (arg0: any) => void; }, next: (a
                 delete dataWithoutPassword.password;
 
                 // save database record into json array
-                personsToReturnAsJson.push({
+                const personToReturnAsJson: IPerson = {
                     ...dataWithoutPassword,
                     lastUpdate: dataWithoutPassword.lastUpdate.toDate().toISOString()
-                } as IPerson);
+                };
+                personsToReturnAsJson.push(personToReturnAsJson);
             }
         }
 
@@ -239,10 +271,11 @@ personsApp.get("/data", (req: any, res: { json: (arg0: any) => void; }, next: (a
 
             for (const documentSnapshot of querySnapshot.docs) {
                 const data = documentSnapshot.data() as ICarDatabase;
-                carsToReturnAsJson.push({
+                const carToReturnAsJson: ICar = {
                     ...data,
                     lastUpdate: data.lastUpdate.toDate().toISOString()
-                } as ICar);
+                };
+                carsToReturnAsJson.push(carToReturnAsJson);
             }
         }
 
@@ -252,10 +285,11 @@ personsApp.get("/data", (req: any, res: { json: (arg0: any) => void; }, next: (a
 
             for (const documentSnapshot of querySnapshot.docs) {
                 const data = documentSnapshot.data() as INetworkObjectDatabase;
-                objectsToReturnAsJson.push({
+                const objectToReturnAsJson: INetworkObject = {
                     ...data,
                     lastUpdate: data.lastUpdate.toDate().toISOString()
-                } as INetworkObject);
+                };
+                objectsToReturnAsJson.push(objectToReturnAsJson);
             }
         }
 
@@ -313,7 +347,8 @@ personsApp.post("/login", (req: { body: IApiPersonsLoginPost; }, res: any, next:
                 lastUpdate: admin.firestore.Timestamp.now(),
                 cash: 1000,
                 creditLimit: 1000,
-                objectType: ENetworkObjectType.PERSON
+                objectType: ENetworkObjectType.PERSON,
+                health: defaultPersonHealthObject
             };
             await admin.firestore().collection("persons").doc(id).set(data);
 
@@ -351,7 +386,8 @@ personsApp.post("/vend", (req: { body: IApiPersonsVendPost; }, res: any, next: (
                         grabbedByPersonId: null,
                         lastUpdate: admin.firestore.Timestamp.now(),
                         objectType,
-                        direction: ECarDirection.RIGHT
+                        direction: ECarDirection.RIGHT,
+                        health: defaultCarHealthObject
                     };
 
                     // update two database objects
@@ -374,7 +410,8 @@ personsApp.post("/vend", (req: { body: IApiPersonsVendPost; }, res: any, next: (
                         y,
                         grabbedByPersonId: null,
                         lastUpdate: admin.firestore.Timestamp.now(),
-                        objectType
+                        objectType,
+                        health: defaultObjectHealthObject
                     };
 
                     // update two database objects
@@ -477,20 +514,69 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
 // export the express app as a firebase function
 export const persons = functions.https.onRequest(personsApp);
 
-// every minute, run a tick to update all persons
-export const personsTick = functions.pubsub.schedule("every 1 minutes").onRun(() => {
-    // give every person cash
-    return (async () => {
-        const personsQuery = await admin.firestore().collection("persons").get();
-        for (const personDocument of personsQuery.docs) {
-            const data = personDocument.data() as IPerson;
-            const cash = data.cash;
-            if (typeof cash === "number") {
-                await personDocument.ref.set({cash: cash + 100}, {merge: true});
+/**
+ * Give every person cash.
+ */
+const giveEveryoneCash = async () => {
+    const personsQuery = await admin.firestore().collection("persons").get();
+    for (const personDocument of personsQuery.docs) {
+        const data = personDocument.data() as IPerson;
+        const cash = data.cash;
+        if (typeof cash === "number") {
+            const newData: Partial<IPersonDatabase> = {
+                cash: cash + 100
+            };
+            await personDocument.ref.set(newData, {merge: true});
+        } else {
+            const newData: Partial<IPersonDatabase> = {
+                cash: 1000
+            };
+            await personDocument.ref.set(newData, {merge: true});
+        }
+    }
+};
+
+/**
+ * Perform health updates on a database collection of [[INetworkObject]] objects.
+ * @param collectionName The name of the collection to update.
+ */
+const performHealthTickOnCollectionOfNetworkObjects = async (collectionName: string, defaultHealthObject: IObjectHealth) => {
+    const collectionQuery = await admin.firestore().collection(collectionName).get();
+    for (const doc of collectionQuery.docs) {
+        const data = doc.data() as INetworkObjectDatabase;
+        // use existing or default health object
+        const healthData: IObjectHealth = data.health || defaultHealthObject;
+        // compute new health value
+        const newValue = Math.max(0, Math.min(healthData.value + healthData.rate, healthData.max));
+
+        // if health object does not exist, or health value changed, or object is dead, update health object
+        if (!data.health || newValue !== healthData.value || newValue === 0) {
+            if (newValue === 0) {
+                // 0 health, death of person or destruction of object
+                await doc.ref.delete();
             } else {
-                await personDocument.ref.set({cash: 1000}, {merge: true});
+                // change person or object health
+                const newData: Partial<INetworkObjectDatabase> = {
+                    health: {
+                        ...healthData,
+                        value: newValue
+                    }
+                };
+                await doc.ref.set(newData, {merge: true});
             }
         }
+    }
+};
+
+// every minute, run a tick to update all persons
+export const personsTick = functions.pubsub.schedule("every 1 minutes").onRun(() => {
+    return (async () => {
+        await giveEveryoneCash();
+
+        // health regeneration or deprecation
+        await performHealthTickOnCollectionOfNetworkObjects("persons", defaultPersonHealthObject);
+        await performHealthTickOnCollectionOfNetworkObjects("personalCars", defaultCarHealthObject);
+        await performHealthTickOnCollectionOfNetworkObjects("objects", defaultObjectHealthObject);
     })().catch((err) => {
         throw err;
     });

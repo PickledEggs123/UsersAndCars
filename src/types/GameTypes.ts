@@ -24,6 +24,24 @@ export enum ENetworkObjectType {
     VENDING_MACHINE = "VENDING_MACHINE"
 }
 
+/**
+ * Contains all health related information for an object.
+ */
+export interface IObjectHealth {
+    /**
+     * The current amount of health.
+     */
+    value: number;
+    /**
+     * The maximum amount of health.
+     */
+    max: number;
+    /**
+     * The rate of healing per server tick.
+     */
+    rate: number;
+}
+
 export interface INetworkObject extends IObject {
     /**
      * The randomly generated unique id of the person. Each person has a unique id for selecting and controlling them.
@@ -46,6 +64,10 @@ export interface INetworkObject extends IObject {
      * This object is being grabbed by this person. The object will follow around the person's relative movement.
      */
     grabbedByPersonId: string | null;
+    /**
+     * Contains the health related information of the object.
+     */
+    health: IObjectHealth;
 }
 
 /**
