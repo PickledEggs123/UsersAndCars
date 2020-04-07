@@ -1,6 +1,6 @@
 import * as React from "react";
 import axios from "axios";
-import {IApiPersonsPost} from "./types/GameTypes";
+import {IApiPersonsLoginPost} from "./types/GameTypes";
 
 /**
  * The props for [[PersonsLogin]].
@@ -102,10 +102,11 @@ export class PersonsLogin extends React.Component<IPersonsLoginProps, IPersonsLo
 
         try {
             // make login attempt
-            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/login", {
+            const data: IApiPersonsLoginPost = {
                 id: this.state.username,
                 password: this.state.password
-            } as IApiPersonsPost);
+            };
+            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/login", data);
 
             // save credentials to local storage
             localStorage.setItem("username", this.state.username);

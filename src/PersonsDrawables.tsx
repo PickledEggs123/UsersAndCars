@@ -1,7 +1,7 @@
 import {
     ECarDirection,
     EDrawableType,
-    ENetworkObjectType,
+    ENetworkObjectType, ERoadDirection,
     ERoomWallType,
     ICar,
     IDrawable,
@@ -10,7 +10,7 @@ import {
     IObject,
     IPerson,
     IRoad,
-    IRoom
+    IRoom, IVendor, IVendorInventoryItem
 } from "./types/GameTypes";
 import React from "react";
 
@@ -91,6 +91,10 @@ export interface IPersonsDrawablesState {
      * The time of the current get that returned the current positions.
      */
     fetchTime: Date;
+    /**
+     * The inventory to render.
+     */
+    vendingInventory: IVendorInventoryItem[];
 }
 
 /**
@@ -419,6 +423,35 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
+     * Open the inventory of a vendor.
+     * @param vendor The vendor to check inventory for.
+     */
+    selectVendingOption = (vendor: IVendor) => () => {
+        this.setState({
+            vendingInventory: vendor.inventory
+        });
+    };
+
+    /**
+     * Draw a vending machine.
+     * @param drawable The position of the vending machine to draw.
+     * @param filter An SVG filter to apply to the vending machine.
+     * @param previousNetworkObject The previous position of the vending machine used for interpolation.
+     */
+    drawVendingMachine = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject) => {
+        const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        return (
+            <g key={`chair-${drawable.id}`} transform={`translate(${x - 50},${y - 100})`} filter={filter} onClick={this.selectVendingOption(drawable as IVendor)}>
+                <polygon fill="blue" stroke="black" strokeWidth={2} points="-50,-100 50,-100 50,100, -50,100"/>
+                <polygon fill="black" points="-30,20 30,20, 30,40 -30,40"/>
+                <polygon fill="white" stroke="black" strokeWidth={2} points="20,-40 40,-40 40,-30 20,-30"/>
+                <polygon fill="white" stroke="black" strokeWidth={2} points="20,-20 40,-20 40,-10 20,-10"/>
+                <polygon fill="white" stroke="black" strokeWidth={2} points="20,0 40,0 40,10 20,10"/>
+            </g>
+        );
+    };
+
+    /**
      * Draw a networked object onto the screen.
      * @param networkObject The network object to draw.
      * @param previousNetworkObject The previous network object used for interpolation.
@@ -456,6 +489,15 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawTable(networkObject, filter, previousNetworkObject);
+                    }
+                };
+            }
+            case ENetworkObjectType.VENDING_MACHINE: {
+                return {
+                    ...networkObject,
+                    type: EDrawableType.OBJECT,
+                    draw() {
+                        return component.drawVendingMachine(networkObject, filter, previousNetworkObject);
                     }
                 };
             }
@@ -811,6 +853,174 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             }
         }
         return drawables;
+    };
+
+    /**
+     * Draw the roads on the svg world.
+     */
+    drawRoads = (worldOffset: IObject) => {
+        return this.state.roads.filter(this.isNearWorldView(worldOffset)).map(({connected, direction, x, y}) => {
+            switch (direction) {
+                case ERoadDirection.HORIZONTAL: {
+                    return (
+                        <g key={`road-tile-${x}-${y}`} transform={`translate(${x}, ${y})`}>
+                            <rect x="0" y="0" width="500" height="300" fill="url(#road)"/>
+                            <rect x="0" y="135" width="500" height="10" fill="url(#road-yellow)"/>
+                            <rect x="0" y="155" width="500" height="10" fill="url(#road-yellow)"/>
+                            <rect x="0" y="0" width="500" height="10" fill="url(#road-white)"/>
+                            <rect x="0" y="290" width="500" height="10" fill="url(#road-white)"/>
+                        </g>
+                    );
+                }
+                case ERoadDirection.VERTICAL: {
+                    return (
+                        <g key={`road-tile-${x}-${y}`} transform={`translate(${x}, ${y})`}>
+                            <rect x="100" y="0" width="300" height="300" fill="url(#road)"/>
+                            {
+                                // if not connected left and right, draw yellow line in the middle
+                                !connected.left && !connected.right ? (
+                                        <>
+                                            <rect x="235" y="0" width="10" height="300" fill="url(#road-yellow)"/>
+                                            <rect x="255" y="0" width="10" height="300" fill="url(#road-yellow)"/>
+                                        </>
+                                    ) :
+                                    null
+                            }
+                            {
+                                // draw left connection of road if connected on left side
+                                connected.left ? (
+                                    <>
+                                        <rect x="0" y="0" width="100" height="300" fill="url(#road)"/>
+                                        <rect x="0" y="0" width="100" height="10" fill="url(#road-white)"/>
+                                        <rect x="0" y="290" width="100" height="10" fill="url(#road-white)"/>
+                                        <rect x="0" y="135" width="100" height="10" fill="url(#road-yellow)"/>
+                                        <rect x="0" y="155" width="100" height="10" fill="url(#road-yellow)"/>
+                                    </>
+                                ) : null
+                            }
+                            {
+                                // draw right section of road if connected on the right side
+                                connected.right ? (
+                                    <>
+                                        <rect x="400" y="0" width="100" height="300" fill="url(#road)"/>
+                                        <rect x="400" y="0" width="100" height="10" fill="url(#road-white)"/>
+                                        <rect x="400" y="290" width="100" height="10" fill="url(#road-white)"/>
+                                        <rect x="400" y="135" width="100" height="10" fill="url(#road-yellow)"/>
+                                        <rect x="400" y="155" width="100" height="10" fill="url(#road-yellow)"/>
+                                    </>
+                                ) : null
+                            }
+                            {
+                                // draw left white line if no connection
+                                !connected.left ? (
+                                    <rect x="100" y="0" width="10" height="300" fill="url(#road-white)"/>
+                                ) : null
+                            }
+                            {
+                                // draw right white line if no connection
+                                !connected.right ? (
+                                    <rect x="390" y="0" width="10" height="300" fill="url(#road-white)"/>
+                                ) : null
+                            }
+                            {
+                                // draw top white line if no connection
+                                !connected.up ? (
+                                    <rect x="100" y="0" width="300" height="10" fill="url(#road-white)"/>
+                                ) : null
+                            }
+                            {
+                                // draw bottom white line if no connection
+                                !connected.down ? (
+                                    <rect x="100" y="290" width="300" height="10" fill="url(#road-white)"/>
+                                ) : null
+                            }
+                            {
+
+                                // draw top left corner
+                                !connected.up && !connected.left && connected.down && connected.right ? (
+                                    <g>
+                                        <rect x="245" y="135" width="155" height="10" fill="url(#road-yellow)"/>
+                                        <rect x="255" y="155" width="145" height="10" fill="url(#road-yellow)"/>
+                                        <rect x="235" y="135" width="10" height="165" fill="url(#road-yellow)"/>
+                                        <rect x="255" y="155" width="10" height="150" fill="url(#road-yellow)"/>
+                                        <rect x="390" y="290" width="10" height="10" fill="url(#road-white)"/>
+                                    </g>
+                                ) : null
+                            }
+                            {
+                                // draw bottom left corner
+                                connected.up && !connected.left && !connected.down && connected.right ? (
+                                    <g>
+                                        <rect x="255" y="135" width="150" height="10" fill="url(#road-yellow)"/>
+                                        <rect x="245" y="155" width="165" height="10" fill="url(#road-yellow)"/>
+                                        <rect x="235" y="0" width="10" height="165" fill="url(#road-yellow)"/>
+                                        <rect x="255" y="0" width="10" height="145" fill="url(#road-yellow)"/>
+                                        <rect x="390" y="0" width="10" height="10" fill="url(#road-white)"/>
+                                    </g>
+                                ) : null
+                            }
+                            {
+                                // draw bottom right corner
+                                connected.up && connected.left && !connected.down && !connected.right ? (
+                                    <g>
+                                        <rect x="100" y="135" width="145" height="10" fill="url(#road-yellow)"/>
+                                        <rect x="100" y="155" width="165" height="10" fill="url(#road-yellow)"/>
+                                        <rect x="235" y="0" width="10" height="145" fill="url(#road-yellow)"/>
+                                        <rect x="255" y="0" width="10" height="155" fill="url(#road-yellow)"/>
+                                        <rect x="100" y="0" width="10" height="10" fill="url(#road-white)"/>
+                                    </g>
+                                ) : null
+                            }
+                            {
+                                // draw top right corner
+                                !connected.up && connected.left && connected.down && !connected.right ? (
+                                    <g>
+                                        <rect x="100" y="135" width="165" height="10" fill="url(#road-yellow)"/>
+                                        <rect x="100" y="155" width="145" height="10" fill="url(#road-yellow)"/>
+                                        <rect x="255" y="135" width="10" height="165" fill="url(#road-yellow)"/>
+                                        <rect x="235" y="155" width="10" height="145" fill="url(#road-yellow)"/>
+                                        <rect x="100" y="0" width="10" height="10" fill="url(#road-white)"/>
+                                    </g>
+                                ) : null
+                            }
+                            {
+                                // draw bottom right corner box
+                                connected.down && connected.right ? (
+                                    <g>
+                                        <rect x="390" y="290" width="10" height="10" fill="url(#road-white)"/>
+                                    </g>
+                                ) : null
+                            }
+                            {
+                                // draw top right corner box
+                                connected.up && connected.right ? (
+                                    <g>
+                                        <rect x="390" y="0" width="10" height="10" fill="url(#road-white)"/>
+                                    </g>
+                                ) : null
+                            }
+                            {
+                                // draw top left corner box
+                                connected.up && connected.left ? (
+                                    <g>
+                                        <rect x="100" y="0" width="10" height="10" fill="url(#road-white)"/>
+                                    </g>
+                                ) : null
+                            }
+                            {
+                                // draw bottom left corner box
+                                connected.down && connected.left ? (
+                                    <g>
+                                        <rect x="100" y="290" width="10" height="10" fill="url(#road-white)"/>
+                                    </g>
+                                ) : null
+                            }
+                        </g>
+                    );
+                }
+                default: return null;
+            }
+        })
     };
 
     /**

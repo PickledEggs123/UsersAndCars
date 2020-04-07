@@ -5,11 +5,12 @@ import {
     ECarDirection,
     ELotExpandType,
     ELotZone,
+    ENetworkObjectType,
     ERoadDirection,
     ERoadType,
     ERoomWallType,
     IApiPersonsGet,
-    IApiPersonsPut,
+    IApiPersonsPut, IApiPersonsVendPost,
     ICar,
     ICity,
     IGameTutorials,
@@ -21,6 +22,7 @@ import {
     IPerson,
     IRoad,
     IRoom,
+    IVendor, IVendorInventoryItem,
     IWhichDirectionIsNearby
 } from "./types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
@@ -49,6 +51,11 @@ interface IPersonsState extends IPersonsDrawablesState {
     lastUpdate: string;
 }
 
+export interface ILotFillerLotAndObjects {
+    lot: ILot;
+    objects: INetworkObject[];
+}
+
 /**
  * A list of lot fillers. They fill the lot with a format string given a dimension and zone type.
  */
@@ -56,7 +63,7 @@ export interface ILotFiller {
     width: number;
     height: number;
     zone: ELotZone;
-    fillLot(lot: ILot): ILot;
+    fillLot(lot: ILot): ILotFillerLotAndObjects;
 }
 
 /**
@@ -142,7 +149,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         nearbyObjects: [] as INetworkObject[],
         currentPersonId: this.randomPersonId(),
         lastUpdate: new Date().toISOString(),
-        fetchTime: new Date()
+        fetchTime: new Date(),
+        vendingInventory: [] as IVendorInventoryItem[]
     };
 
     /**
@@ -158,6 +166,20 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     componentWillUnmount(): void {
         this.endGameLoop();
     }
+
+    vendInventoryItem = (inventoryItem: IVendorInventoryItem) => {
+        const currentPerson = this.getCurrentPerson();
+        if (currentPerson) {
+            const personId = currentPerson.id;
+            const data: IApiPersonsVendPost = {
+                ...inventoryItem,
+                personId
+            };
+            axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/vend", data).then(() => {
+                this.setState({vendingInventory: []});
+            }).catch((err) => console.log(err));
+        }
+    };
 
     /**
      * Begin the login process.
@@ -563,54 +585,80 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         width: 2500,
         height: 1200,
         zone: ELotZone.RESIDENTIAL,
-        fillLot(lot: ILot): ILot {
+        fillLot(lot: ILot): ILotFillerLotAndObjects {
             return {
-                ...lot,
-                format: "" +
-                    "  E  \n" +
-                    "OHHO \n" +
-                    "OHOH \n" +
-                    " E   "
+                lot: {
+                    ...lot,
+                    format: "" +
+                        "  E  \n" +
+                        "OHHO \n" +
+                        "OHOH \n" +
+                        " E   "
+                },
+                objects: []
             };
         }
     }, {
         width: 2500,
         height: 900,
         zone: ELotZone.RESIDENTIAL,
-        fillLot(lot: ILot): ILot {
+        fillLot(lot: ILot): ILotFillerLotAndObjects {
             return {
-                ...lot,
-                format: "" +
-                    "OE EO\n" +
-                    "HH HH\n" +
-                    "OE EO"
+                lot: {
+                    ...lot,
+                    format: "" +
+                        "OE EO\n" +
+                        "HH HH\n" +
+                        "OE EO"
+                },
+                objects: []
             };
         }
     }, {
         width: 2500,
         height: 1200,
         zone: ELotZone.COMMERCIAL,
-        fillLot(lot: ILot): ILot {
+        fillLot(lot: ILot): ILotFillerLotAndObjects {
             return {
-                ...lot,
-                format: "" +
-                    "  E  \n" +
-                    "OHHHH\n" +
-                    "OHHHH\n" +
-                    "  E  "
+                lot: {
+                    ...lot,
+                    format: "" +
+                        "  E  \n" +
+                        "OHHHH\n" +
+                        "OHHHH\n" +
+                        "  E  "
+                },
+                objects: [{
+                    x: lot.x + 1250,
+                    y: lot.y + 600,
+                    objectType: ENetworkObjectType.VENDING_MACHINE,
+                    grabbedByPersonId: null,
+                    id: `lot-${lot.x}-${lot.y}-vending-machine`,
+                    lastUpdate: new Date().toISOString(),
+                    inventory: [{
+                        price: 3000,
+                        objectType: ENetworkObjectType.CAR
+                    }, {
+                        price: 10,
+                        objectType: ENetworkObjectType.BOX
+                    }]
+                } as IVendor] as INetworkObject[]
             };
         }
     }, {
         width: 2500,
         height: 900,
         zone: ELotZone.COMMERCIAL,
-        fillLot(lot: ILot): ILot {
+        fillLot(lot: ILot): ILotFillerLotAndObjects {
             return {
-                ...lot,
-                format: "" +
-                    "  E  \n" +
-                    "OHHHO\n" +
-                    "  E  "
+                lot: {
+                    ...lot,
+                    format: "" +
+                        "  E  \n" +
+                        "OHHHO\n" +
+                        "  E  "
+                },
+                objects: []
             };
         }
     }];
@@ -619,12 +667,15 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * Fill a lot with rooms.
      * @param lot The lot to fill.
      */
-    fillLot = (lot: ILot): ILot => {
+    fillLot = (lot: ILot): ILotFillerLotAndObjects => {
         const lotFiller = this.lotFillers.find(l => l.width === lot.width && l.height === lot.height && l.zone === lot.zone);
         if (lotFiller) {
             return lotFiller.fillLot(lot);
         } else {
-            return lot;
+            return {
+                lot,
+                objects: [] as INetworkObject[]
+            };
         }
     };
 
@@ -726,12 +777,26 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             }
         }
 
-        // generate rooms per lot
-        lots = lots.map(this.fillLot);
+        // generate rooms and objects per lot
+        const lotAndObjects = lots.map(this.fillLot);
+
+        // merge into two lists
+        const lotAndObjectsMerge = lotAndObjects.reduce(({lotArr, objectsArr}: {lotArr: ILot[], objectsArr: INetworkObject[]}, lotAndObjectsItem): {lotArr: ILot[], objectsArr: INetworkObject[]} => {
+            return {
+                lotArr: [...lotArr, lotAndObjectsItem.lot],
+                objectsArr: [...objectsArr, ...lotAndObjectsItem.objects]
+            };
+        }, {
+            lotArr: [],
+            objectsArr: []
+        });
+        lots = lotAndObjectsMerge.lotArr;
+        const objects = lotAndObjectsMerge.objectsArr;
 
         return {
             roads,
-            lots
+            lots,
+            objects
         };
     };
 
@@ -808,7 +873,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         this.intervalHeartbeat = setInterval(this.heartbeat, this.heartbeatRefreshSpeed);
 
         // generate roads and lots
-        const {roads, lots} = this.generateCity({prefix: "city1", format: "", offset: {x: 0, y: 0}});
+        const {roads, lots, objects} = this.generateCity({prefix: "city1", format: "", offset: {x: 0, y: 0}});
 
         // generate houses
         const rooms = lots.reduce((arr: IRoom[], lot: ILot, index: number): IRoom[] => {
@@ -830,7 +895,12 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             }
         }, []);
 
-        this.setState({rooms, roads, lots});
+        this.setState({
+            rooms,
+            roads,
+            lots,
+            objects
+        });
 
         // begin animation loop
         this.intervalAnimationLoop = requestAnimationFrame(this.animationLoop);
@@ -1260,6 +1330,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     stateUpdates.push({nearbyObjects});
                 }
 
+                // close vending inventory list
+                stateUpdates.push({vendingInventory: []});
+
                 // merge optional state updates into one state update object to perform a single setState.
                 const stateUpdate: IPersonsState = Object.assign.apply({}, [{}, ...stateUpdates]);
                 this.setState(stateUpdate);
@@ -1639,6 +1712,11 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         // an svg filter to apply to the world
         let worldFilter = "";
 
+        // blur the world if the inventory screen is open
+        if (this.state.vendingInventory.length > 0) {
+            worldFilter = "url(#blur)";
+        }
+
         // if current person exist
         if (currentPerson) {
             // center world around current person, the view should be centered on the person
@@ -1677,6 +1755,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         <pattern id="road-white" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
                             <image href="/road-white.png" width="16" height="16"/>
                         </pattern>
+                        <filter id="blur">
+                            <feGaussianBlur stdDeviation={5}/>
+                        </filter>
                         <filter id="highlight-white">
                             {/* https://stackoverflow.com/questions/49693471/svg-border-outline-for-group-of-elements */}
                             <feMorphology operator="dilate" in="SourceAlpha"
@@ -1708,7 +1789,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                             </feMerge>
                         </filter>
                     </defs>
-                    <g transform={`translate(${-worldOffset.x},${-worldOffset.y})`}>
+                    <g transform={`translate(${-worldOffset.x},${-worldOffset.y})`} filter={worldFilter}>
                         {
                             // draw the grass on the bottom of the world
                             this.generateGrassTile(worldOffset).map(({x, y}: IObject) => {
@@ -1716,169 +1797,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                             })
                         }
                         {
-                            // draw a road
-                            this.state.roads.filter(this.isNearWorldView(worldOffset)).map(({connected, direction, x, y}) => {
-                                switch (direction) {
-                                    case ERoadDirection.HORIZONTAL: {
-                                        return (
-                                            <g key={`road-tile-${x}-${y}`} transform={`translate(${x}, ${y})`}>
-                                                <rect x="0" y="0" width="500" height="300" fill="url(#road)"/>
-                                                <rect x="0" y="135" width="500" height="10" fill="url(#road-yellow)"/>
-                                                <rect x="0" y="155" width="500" height="10" fill="url(#road-yellow)"/>
-                                                <rect x="0" y="0" width="500" height="10" fill="url(#road-white)"/>
-                                                <rect x="0" y="290" width="500" height="10" fill="url(#road-white)"/>
-                                            </g>
-                                        );
-                                    }
-                                    case ERoadDirection.VERTICAL: {
-                                        return (
-                                            <g key={`road-tile-${x}-${y}`} transform={`translate(${x}, ${y})`}>
-                                                <rect x="100" y="0" width="300" height="300" fill="url(#road)"/>
-                                                {
-                                                    // if not connected left and right, draw yellow line in the middle
-                                                    !connected.left && !connected.right ? (
-                                                        <>
-                                                            <rect x="235" y="0" width="10" height="300" fill="url(#road-yellow)"/>
-                                                            <rect x="255" y="0" width="10" height="300" fill="url(#road-yellow)"/>
-                                                        </>
-                                                    ) :
-                                                        null
-                                                }
-                                                {
-                                                    // draw left connection of road if connected on left side
-                                                    connected.left ? (
-                                                        <>
-                                                            <rect x="0" y="0" width="100" height="300" fill="url(#road)"/>
-                                                            <rect x="0" y="0" width="100" height="10" fill="url(#road-white)"/>
-                                                            <rect x="0" y="290" width="100" height="10" fill="url(#road-white)"/>
-                                                            <rect x="0" y="135" width="100" height="10" fill="url(#road-yellow)"/>
-                                                            <rect x="0" y="155" width="100" height="10" fill="url(#road-yellow)"/>
-                                                        </>
-                                                    ) : null
-                                                }
-                                                {
-                                                    // draw right section of road if connected on the right side
-                                                    connected.right ? (
-                                                        <>
-                                                            <rect x="400" y="0" width="100" height="300" fill="url(#road)"/>
-                                                            <rect x="400" y="0" width="100" height="10" fill="url(#road-white)"/>
-                                                            <rect x="400" y="290" width="100" height="10" fill="url(#road-white)"/>
-                                                            <rect x="400" y="135" width="100" height="10" fill="url(#road-yellow)"/>
-                                                            <rect x="400" y="155" width="100" height="10" fill="url(#road-yellow)"/>
-                                                        </>
-                                                    ) : null
-                                                }
-                                                {
-                                                    // draw left white line if no connection
-                                                    !connected.left ? (
-                                                        <rect x="100" y="0" width="10" height="300" fill="url(#road-white)"/>
-                                                    ) : null
-                                                }
-                                                {
-                                                    // draw right white line if no connection
-                                                    !connected.right ? (
-                                                        <rect x="390" y="0" width="10" height="300" fill="url(#road-white)"/>
-                                                    ) : null
-                                                }
-                                                {
-                                                    // draw top white line if no connection
-                                                    !connected.up ? (
-                                                        <rect x="100" y="0" width="300" height="10" fill="url(#road-white)"/>
-                                                    ) : null
-                                                }
-                                                {
-                                                    // draw bottom white line if no connection
-                                                    !connected.down ? (
-                                                        <rect x="100" y="290" width="300" height="10" fill="url(#road-white)"/>
-                                                    ) : null
-                                                }
-                                                {
-
-                                                    // draw top left corner
-                                                    !connected.up && !connected.left && connected.down && connected.right ? (
-                                                        <g>
-                                                            <rect x="245" y="135" width="155" height="10" fill="url(#road-yellow)"/>
-                                                            <rect x="255" y="155" width="145" height="10" fill="url(#road-yellow)"/>
-                                                            <rect x="235" y="135" width="10" height="165" fill="url(#road-yellow)"/>
-                                                            <rect x="255" y="155" width="10" height="150" fill="url(#road-yellow)"/>
-                                                            <rect x="390" y="290" width="10" height="10" fill="url(#road-white)"/>
-                                                        </g>
-                                                    ) : null
-                                                }
-                                                {
-                                                    // draw bottom left corner
-                                                    connected.up && !connected.left && !connected.down && connected.right ? (
-                                                        <g>
-                                                            <rect x="255" y="135" width="150" height="10" fill="url(#road-yellow)"/>
-                                                            <rect x="245" y="155" width="165" height="10" fill="url(#road-yellow)"/>
-                                                            <rect x="235" y="0" width="10" height="165" fill="url(#road-yellow)"/>
-                                                            <rect x="255" y="0" width="10" height="145" fill="url(#road-yellow)"/>
-                                                            <rect x="390" y="0" width="10" height="10" fill="url(#road-white)"/>
-                                                        </g>
-                                                    ) : null
-                                                }
-                                                {
-                                                    // draw bottom right corner
-                                                    connected.up && connected.left && !connected.down && !connected.right ? (
-                                                        <g>
-                                                            <rect x="100" y="135" width="145" height="10" fill="url(#road-yellow)"/>
-                                                            <rect x="100" y="155" width="165" height="10" fill="url(#road-yellow)"/>
-                                                            <rect x="235" y="0" width="10" height="145" fill="url(#road-yellow)"/>
-                                                            <rect x="255" y="0" width="10" height="155" fill="url(#road-yellow)"/>
-                                                            <rect x="100" y="0" width="10" height="10" fill="url(#road-white)"/>
-                                                        </g>
-                                                    ) : null
-                                                }
-                                                {
-                                                    // draw top right corner
-                                                    !connected.up && connected.left && connected.down && !connected.right ? (
-                                                        <g>
-                                                            <rect x="100" y="135" width="165" height="10" fill="url(#road-yellow)"/>
-                                                            <rect x="100" y="155" width="145" height="10" fill="url(#road-yellow)"/>
-                                                            <rect x="255" y="135" width="10" height="165" fill="url(#road-yellow)"/>
-                                                            <rect x="235" y="155" width="10" height="145" fill="url(#road-yellow)"/>
-                                                            <rect x="100" y="0" width="10" height="10" fill="url(#road-white)"/>
-                                                        </g>
-                                                    ) : null
-                                                }
-                                                {
-                                                    // draw bottom right corner box
-                                                    connected.down && connected.right ? (
-                                                        <g>
-                                                            <rect x="390" y="290" width="10" height="10" fill="url(#road-white)"/>
-                                                        </g>
-                                                    ) : null
-                                                }
-                                                {
-                                                    // draw top right corner box
-                                                    connected.up && connected.right ? (
-                                                        <g>
-                                                            <rect x="390" y="0" width="10" height="10" fill="url(#road-white)"/>
-                                                        </g>
-                                                    ) : null
-                                                }
-                                                {
-                                                    // draw top left corner box
-                                                    connected.up && connected.left ? (
-                                                        <g>
-                                                            <rect x="100" y="0" width="10" height="10" fill="url(#road-white)"/>
-                                                        </g>
-                                                    ) : null
-                                                }
-                                                {
-                                                    // draw bottom left corner box
-                                                    connected.down && connected.left ? (
-                                                        <g>
-                                                            <rect x="100" y="290" width="10" height="10" fill="url(#road-white)"/>
-                                                        </g>
-                                                    ) : null
-                                                }
-                                            </g>
-                                        );
-                                    }
-                                    default: return null;
-                                }
-                            })
+                            // draw roads
+                            this.drawRoads(worldOffset)
                         }
                         {
                             // draw persons, cars, and movable objects
@@ -1939,6 +1859,20 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         currentPerson && typeof currentPerson.creditLimit === "number" ? (
                             <g>
                                 <text x="20" y={this.state.height - 20} fill="black" fontSize={18}>Credit: {currentPerson?.creditLimit}</text>
+                            </g>
+                        ) : null
+                    }
+                    {
+                        currentPerson && this.state.vendingInventory.length > 0 ? (
+                            <g>
+                                <rect x="0" y="0" width={this.state.width} height={this.state.height} fill="white" opacity="0.3"/>
+                                {
+                                    this.state.vendingInventory.map((inventoryItem, index) => {
+                                        return <text key={`inventory-item-${index}`} x="20" y={100 + index * 40} fontSize="24" onClick={() => {
+                                            this.vendInventoryItem(inventoryItem);
+                                        }}>{inventoryItem.objectType} ${inventoryItem.price}</text>;
+                                    })
+                                }
                             </g>
                         ) : null
                     }

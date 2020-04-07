@@ -10,8 +10,9 @@ import {
     ECarDirection,
     ENetworkObjectType,
     IApiPersonsGet,
-    IApiPersonsPost,
+    IApiPersonsLoginPost,
     IApiPersonsPut,
+    IApiPersonsVendPost,
     ICar,
     INetworkObject,
     IPerson
@@ -271,7 +272,7 @@ personsApp.get("/data", (req: any, res: { json: (arg0: any) => void; }, next: (a
 /**
  * The login method.
  */
-personsApp.post("/login", (req: { body: IApiPersonsPost; }, res: any, next: (arg0: any) => any) => {
+personsApp.post("/login", (req: { body: IApiPersonsLoginPost; }, res: any, next: (arg0: any) => any) => {
     (async () => {
         // check to see if person exists in the database
         const {id, password} = req.body;
@@ -318,6 +319,87 @@ personsApp.post("/login", (req: { body: IApiPersonsPost; }, res: any, next: (arg
 
             // return created
             res.sendStatus(201);
+        }
+    })().catch((err) => next(err));
+});
+
+/**
+ * The vend method.
+ */
+personsApp.post("/vend", (req: { body: IApiPersonsVendPost; }, res: any, next: (arg0: any) => any) => {
+    (async () => {
+        // check to see if person exists in the database
+        const {price, objectType, personId} = req.body;
+
+        const person = await admin.firestore().collection("persons").doc(personId).get();
+        if (person.exists) {
+            const personData = person.data() as IPersonDatabase;
+            const cash = personData.cash || 0;
+            const credit = personData.creditLimit || 0;
+            const x = personData.x || 50;
+            const y = personData.y || 150;
+
+            // enough money to buy
+            if (cash - price >= -credit) {
+                // object does not exist, create it
+                const id = new Array(10).fill(0).map(() => Math.round(36 * Math.random()).toString(36)).join("");
+                if (objectType === ENetworkObjectType.CAR) {
+                    const car: ICarDatabase = {
+                        id,
+                        x,
+                        y,
+                        grabbedByPersonId: null,
+                        lastUpdate: admin.firestore.Timestamp.now(),
+                        objectType,
+                        direction: ECarDirection.RIGHT
+                    };
+
+                    // update two database objects
+                    await Promise.all([
+                        // subtract person's money
+                        person.ref.set({
+                            cash: cash - price,
+                            lastUpdate: admin.firestore.Timestamp.now()
+                        }, {merge: true}),
+                        // create object
+                        admin.firestore().collection("personalCars").doc(id).set(car)
+                    ]);
+
+                    // return created
+                    res.sendStatus(201);
+                } else {
+                    const data: INetworkObjectDatabase = {
+                        id,
+                        x,
+                        y,
+                        grabbedByPersonId: null,
+                        lastUpdate: admin.firestore.Timestamp.now(),
+                        objectType
+                    };
+
+                    // update two database objects
+                    await Promise.all([
+                        // subtract person's money
+                        person.ref.set({
+                            cash: cash - price,
+                            lastUpdate: admin.firestore.Timestamp.now()
+                        }, {merge: true}),
+                        // create object
+                        admin.firestore().collection("objects").doc(id).set(data)
+                    ]);
+
+                    // return created
+                    res.sendStatus(201);
+                }
+            } else {
+                res.status(401).json({
+                    message: "Not enough cash to buy this item."
+                } as any);
+            }
+        } else {
+            res.status(404).json({
+                message: "No user found to buy item."
+            } as any);
         }
     })().catch((err) => next(err));
 });

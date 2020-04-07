@@ -20,7 +20,8 @@ export enum ENetworkObjectType {
     TABLE = "TABLE",
     BOX = "BOX",
     PERSON = "PERSON",
-    CAR = "CAR"
+    CAR = "CAR",
+    VENDING_MACHINE = "VENDING_MACHINE"
 }
 
 export interface INetworkObject extends IObject {
@@ -71,6 +72,27 @@ export interface IPerson extends INetworkObject {
      * The amount of credit the person has.
      */
     creditLimit: number;
+}
+
+/**
+ * An item in the inventory list of a [[IVendor]].
+ */
+export interface IVendorInventoryItem {
+    /**
+     * The type of object being sold.
+     */
+    objectType: ENetworkObjectType;
+    /**
+     * The price of the object.
+     */
+    price: number;
+}
+
+/**
+ * An object that sells other objects.
+ */
+export interface IVendor extends INetworkObject {
+    inventory: IVendorInventoryItem[];
 }
 
 /**
@@ -237,6 +259,10 @@ export interface ICity {
      * A list of roads in the city.
      */
     roads: IRoad[];
+    /**
+     * A list of objects in the city.
+     */
+    objects: INetworkObject[];
 }
 
 
@@ -313,7 +339,7 @@ export interface IApiPersonsGet {
 /**
  * The login method.
  */
-export interface IApiPersonsPost {
+export interface IApiPersonsLoginPost {
     /**
      * The id of the person to login as.
      */
@@ -322,6 +348,24 @@ export interface IApiPersonsPost {
      * The password of the person to login as.
      */
     password: string;
+}
+
+/**
+ * The vend method.
+ */
+export interface IApiPersonsVendPost {
+    /**
+     * The price of the item being vended.
+     */
+    price: number;
+    /**
+     * The type of item being vended.
+     */
+    objectType: ENetworkObjectType;
+    /**
+     * The id of the person buying the item.
+     */
+    personId: string;
 }
 
 /**
