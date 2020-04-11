@@ -6,7 +6,7 @@ import {
     ICar,
     IDrawable,
     ILot,
-    INetworkObject,
+    INetworkObject, INpc,
     IObject,
     IPerson,
     IRoad,
@@ -36,6 +36,10 @@ export interface IPersonsDrawablesState {
      * A list of persons from the network.
      */
     persons: IPerson[];
+    /**
+     * A list of NPCs from the network.
+     */
+    npcs: INpc[];
     /**
      * A list of objects in the area.
      */
@@ -1143,6 +1147,70 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
+     * Interpolate path data onto the npc position.
+     * @param npc The npc with path data.
+     */
+    applyPathToNpc = (npc: INpc): INpc => {
+        // get the current time, used to interpolate the npc
+        const now = new Date();
+
+        // determine if there is path data
+        const firstPoint = npc.path[0];
+        if (firstPoint && +now > Date.parse(firstPoint.time)) {
+            // there is path information and the path started
+
+            // a path is made of an array of points. We want to interpolate two points forming a line segment.
+            // find point b in array of points, it's the second point
+            const indexOfPointB = npc.path.findIndex(p => Date.parse(p.time) > +now);
+            if (indexOfPointB >= 0) {
+                // not past last path yet, interpolate point a to point b
+                const a = npc.path[indexOfPointB - 1];
+                const b = npc.path[indexOfPointB];
+                if (a && b) {
+                    const pointA = a.location;
+                    const pointB = b.location;
+                    const timeA = Date.parse(a.time);
+                    const timeB = Date.parse(b.time);
+
+                    const dx = pointB.x - pointA.x;
+                    const dy = pointB.y - pointA.y;
+                    const dt = timeB - timeA;
+                    const t = (+now - timeA) / dt;
+                    const x = pointA.x + dx * t;
+                    const y = pointA.y + dy * t;
+
+                    return {
+                        ...npc,
+                        x,
+                        y
+                    };
+                } else {
+                    // missing points a and b
+                    return npc;
+                }
+            } else {
+                // past last point, path data is over
+                const lastPoint = npc.path[npc.path.length - 1];
+                if (lastPoint) {
+                    // draw npc at last location
+                    const {x, y} = lastPoint.location;
+                    return {
+                        ...npc,
+                        x,
+                        y
+                    };
+                } else {
+                    // cannot find last location, return original npc
+                    return npc;
+                }
+            }
+        } else {
+            // no path information, return original npc
+            return npc;
+        }
+    };
+
+    /**
      * Create a sorted list of all drawable objects for final rendering. Objects at the bottom should overlap objects
      * above them to create a 2D Stereographic Projection, like a 2D with 3D movement arcade game. Sort [[IDrawable]]s
      * from top to bottom so bottom is drawn last, on top of the [[IDrawable]] above it.
@@ -1161,6 +1229,15 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 },
                 type: EDrawableType.PERSON,
                 ...person
+            })),
+
+            // add all npcs
+            ...this.state.npcs.map(this.applyPathToNpc).filter(this.isNearWorldView(worldOffset)).map(npc => ({
+                draw(this: IDrawable) {
+                    return component.drawPerson(npc);
+                },
+                type: EDrawableType.PERSON,
+                ...npc
             })),
 
             // for each network object
