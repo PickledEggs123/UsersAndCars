@@ -9,8 +9,14 @@ import {
     ERoadDirection,
     ERoadType,
     ERoomWallType,
-    IApiPersonsGet,
-    IApiPersonsPut, IApiPersonsVendPost,
+    IApiPersonsGetResponse,
+    IApiPersonsPut,
+    IApiPersonsVendPost,
+    IApiPersonsVoiceAnswerMessage, IApiPersonsVoiceAnswerPost,
+    IApiPersonsVoiceCandidateMessage,
+    IApiPersonsVoiceCandidatePost,
+    IApiPersonsVoiceOfferMessage,
+    IApiPersonsVoiceOfferPost,
     ICar,
     ICity,
     IGameTutorials,
@@ -22,11 +28,13 @@ import {
     IPerson,
     IRoad,
     IRoom,
-    IVendor, IVendorInventoryItem,
+    IVendor,
+    IVendorInventoryItem,
     IWhichDirectionIsNearby
 } from "./types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
 import {IPersonsDrawablesProps, IPersonsDrawablesState, PersonsDrawables} from "./PersonsDrawables";
+import {applyAudioFilters, rtcPeerConnectionConfiguration, userMediaConfig} from "./config";
 
 /**
  * The input to the [[Persons]] component that changes how the game is rendered.
@@ -49,6 +57,10 @@ interface IPersonsState extends IPersonsDrawablesState {
      * to a previous position.
      */
     lastUpdate: string;
+    /**
+     * A list of nearest persons for voice audio chat.
+     */
+    nearestPersons: string[];
 }
 
 export interface ILotFillerLotAndObjects {
@@ -64,6 +76,15 @@ export interface ILotFiller {
     height: number;
     zone: ELotZone;
     fillLot(lot: ILot): ILotFillerLotAndObjects;
+}
+
+/**
+ * Data structure for storing all audio chat information per peer.
+ */
+interface IAudioChatPeerData {
+    peerConnection: RTCPeerConnection;
+    ref: React.RefObject<HTMLAudioElement>;
+    senders: RTCRtpSender[];
 }
 
 /**
@@ -119,6 +140,11 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     loginRef = React.createRef<PersonsLogin>();
 
     /**
+     * Data for each audio chat peer.
+     */
+    audioChatPeerData: {[id: string]: IAudioChatPeerData} = {};
+
+    /**
      * The state of the game.
      */
     state = {
@@ -150,7 +176,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         currentPersonId: this.randomPersonId(),
         lastUpdate: new Date().toISOString(),
         fetchTime: new Date(),
-        vendingInventory: [] as IVendorInventoryItem[]
+        vendingInventory: [] as IVendorInventoryItem[],
+        nearestPersons: [] as string[],
+        connectedVoiceChats: [] as string[]
     };
 
     /**
@@ -160,6 +188,43 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         this.beginGameLoop();
     }
 
+    componentDidUpdate(prevProps: Readonly<IPersonsProps>, prevState: Readonly<IPersonsState>, snapshot?: any): void {
+        // audio stream changed
+        if (prevState.nearestPersons !== this.state.nearestPersons) {
+            const createVoiceChatWithPersons = this.state.nearestPersons.filter(newNearestPerson => !prevState.nearestPersons.includes(newNearestPerson));
+            const endingVoiceChatWithPersons = prevState.nearestPersons.filter(oldNearestPerson => !this.state.nearestPersons.includes(oldNearestPerson));
+
+            // create voice chat with people who are now within range
+            createVoiceChatWithPersons.forEach(personId => {
+                (async () => {
+                    // if statement is used so one person will offer to the other and the other person will answer.
+                    // the voice chat handshake must happen in a predetermined direction.
+                    if (personId < this.state.currentPersonId) {
+                        // begin offer of voice chat to other person
+                        this.audioChatPeerData[personId] = await this.createVoiceChatChannelForPerson(personId);
+                        console.log("VOICE CHAT WITH", personId, "STARTED");
+                        this.forceUpdate();
+                    }
+                })().catch((err) => {
+                    console.log(err);
+                });
+            });
+
+            // end voice chat with people who are out of range
+            endingVoiceChatWithPersons.forEach(personId => {
+                const peerData = this.audioChatPeerData[personId];
+                if (peerData) {
+                    peerData.senders.forEach(sender => {
+                        peerData.peerConnection.removeTrack(sender);
+                    });
+                    peerData.peerConnection.close();
+                    delete this.audioChatPeerData[personId];
+                    console.log("VOICE CHAT WITH", personId, "ENDED");
+                }
+            });
+        }
+    }
+
     /**
      * Stop the game.
      */
@@ -167,6 +232,199 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         this.endGameLoop();
     }
 
+    /**
+     * Add all connection handlers for a peer connection.
+     * @param peerConnection The peer connection to modify.
+     * @param personId The person id the peer connection is for.
+     * @param peerData The peer data containing the peer connection.
+     */
+    addPeerConnectionHandlers = (peerConnection: RTCPeerConnection, personId: string, peerData: IAudioChatPeerData) => {
+        peerConnection.onicecandidate = (event) => {
+            const {candidate} = event;
+            const data: IApiPersonsVoiceCandidatePost = {
+                from: this.state.currentPersonId,
+                to: personId,
+                candidate
+            };
+            axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/voice/candidate", data).catch((err) => {
+                console.log(err);
+            });
+            console.log("ICE Candidate", candidate);
+        };
+
+        peerConnection.ontrack = (event) => {
+            // get new track
+            const newTrack = event.track;
+
+            // find stream containing new track, the remote stream, not the local stream
+            const stream = event.streams.find(s => {
+                return !!s.getTrackById(newTrack.id);
+            });
+
+            // if found stream
+            if (stream) {
+                // find audio element
+                const audioElement: HTMLAudioElement | null = peerData.ref.current;
+                if (audioElement) {
+                    // apply stream to audio element
+                    audioElement.srcObject = stream;
+                }
+            }
+        };
+
+        peerConnection.onnegotiationneeded = () => {
+            (async () => {
+                const localDescription = await peerConnection.createOffer({offerToReceiveAudio: true, offerToReceiveVideo: false, voiceActivityDetection: false});
+                await peerConnection.setLocalDescription(localDescription);
+                const data: IApiPersonsVoiceOfferPost = {
+                    from: this.state.currentPersonId,
+                    to: personId,
+                    description: peerConnection.localDescription
+                };
+                await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/voice/offer", data);
+            })().catch((err) => {
+                console.log(err);
+            });
+        };
+
+        peerConnection.onconnectionstatechange = () => {
+            console.log("Connection State", personId, peerConnection.connectionState);
+            if (peerConnection.connectionState === "connected") {
+                // now connected with that person, add them to list of connected voice chats
+                this.setState({
+                    connectedVoiceChats: [
+                        ...this.state.connectedVoiceChats,
+                        personId
+                    ]
+                });
+            } else {
+                // not connected to that person, remove them from the list of connected voice chats
+                this.setState({
+                    connectedVoiceChats: this.state.connectedVoiceChats.filter(id => id !== personId)
+                });
+            }
+        };
+
+        peerConnection.oniceconnectionstatechange = () => {
+            console.log("ICE Connection State", personId, peerConnection.iceConnectionState);
+        };
+
+        peerConnection.onicegatheringstatechange = () => {
+            console.log("ICE Gathering State", personId, peerConnection.iceGatheringState);
+        };
+
+        peerConnection.onicecandidateerror = (event) => {
+            console.log("ICE Candidate Error", personId, event.errorText);
+        };
+    };
+
+    /**
+     * Begin the voice chat loop.
+     */
+    createVoiceChatChannelForPerson = async (personId: string): Promise<IAudioChatPeerData> => {
+        // voice chat connection
+        const peerConnection: RTCPeerConnection = new RTCPeerConnection(rtcPeerConnectionConfiguration);
+
+        // data for the audio chat channel
+        const peerData: IAudioChatPeerData = {
+            peerConnection,
+            senders: [],
+            ref: React.createRef<HTMLAudioElement>()
+        };
+        this.addPeerConnectionHandlers(peerConnection, personId, peerData);
+
+        // request voice permission
+        const stream = await navigator.mediaDevices.getUserMedia(userMediaConfig);
+        applyAudioFilters(stream);
+
+        // add local voice audio tracks to peer connection
+        const audioTracks = stream.getAudioTracks();
+        audioTracks.forEach(audioTrack => {
+            peerData.senders = [
+                ...peerData.senders,
+                peerConnection.addTrack(audioTrack, stream)
+            ];
+        });
+
+        return peerData;
+    };
+
+    /**
+     * Handle the WebRTC voice chat candidate message.
+     * @param message The candidate message.
+     */
+    handleVoiceCandidateMessage = (message: IApiPersonsVoiceCandidateMessage) => {
+        const {from, candidate} = message;
+        const peerData = this.audioChatPeerData[from];
+        if (peerData) {
+            peerData.peerConnection.addIceCandidate(candidate).catch((err) => {
+                console.log(err);
+            });
+        }
+    };
+
+    /**
+     * Handle the WebRTC voice chat candidate message.
+     * @param message The candidate message.
+     */
+    handleVoiceOfferMessage = (message: IApiPersonsVoiceOfferMessage) => {
+        const {from, description} = message;
+        (async () => {
+            // create new peer connection
+            const peerConnection: RTCPeerConnection = new RTCPeerConnection(rtcPeerConnectionConfiguration);
+            const peerData: IAudioChatPeerData = {
+                peerConnection,
+                senders: [],
+                ref: React.createRef<HTMLAudioElement>()
+            };
+            this.addPeerConnectionHandlers(peerConnection, from, peerData);
+
+            // set offer remote description
+            await peerConnection.setRemoteDescription(description);
+
+            // load audio stream into peer connection
+            const stream = await navigator.mediaDevices.getUserMedia(userMediaConfig);
+            applyAudioFilters(stream);
+            stream.getAudioTracks().forEach(audioTrack => {
+                peerData.senders = [
+                    ...peerData.senders,
+                    peerConnection.addTrack(audioTrack, stream)
+                ];
+            });
+            this.audioChatPeerData[from] = peerData;
+            const localDescription = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(localDescription);
+
+            // send answer response back to original person
+            const data: IApiPersonsVoiceAnswerPost = {
+                from: this.state.currentPersonId,
+                to: from,
+                description: peerConnection.localDescription
+            };
+            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/voice/answer", data);
+        })().catch((err) => {
+            console.log(err);
+        });
+    };
+
+    /**
+     * Handle the WebRTC voice chat candidate message.
+     * @param message The candidate message.
+     */
+    handleVoiceAnswerMessage = (message: IApiPersonsVoiceAnswerMessage) => {
+        const {from, description} = message;
+        const peerData = this.audioChatPeerData[from];
+        if (peerData) {
+            peerData.peerConnection.setRemoteDescription(description).catch((err) => {
+                console.log(err);
+            });
+        }
+    };
+
+    /**
+     * Create a new item in the game world by buying it.
+     * @param inventoryItem The item to buy.
+     */
     vendInventoryItem = (inventoryItem: IVendorInventoryItem) => {
         const currentPerson = this.getCurrentPerson();
         if (currentPerson) {
@@ -1007,14 +1265,26 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         });
 
         // get a list of persons from the database
-        const response = await axios.get<IApiPersonsGet>("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/data");
+        const getRequestUrlSearchParams = new URLSearchParams();
+        getRequestUrlSearchParams.append("id", this.state.currentPersonId);
+        const response = await axios.get<IApiPersonsGetResponse>(`https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/data?${getRequestUrlSearchParams}`);
         if (response && response.data) {
             // get persons data from the server
             const {
                 persons: serverPersons,
                 cars: serverCars,
-                objects: serverObjects
+                objects: serverObjects,
+                voiceMessages: {
+                    candidates,
+                    offers,
+                    answers
+                }
             } = response.data;
+
+            // handle voice metadata messages
+            candidates.forEach(this.handleVoiceCandidateMessage);
+            offers.forEach(this.handleVoiceOfferMessage);
+            answers.forEach(this.handleVoiceAnswerMessage);
 
             // record the current fetch time of the data. Used for interplating the drawings of networked objects.
             const fetchTime = new Date();
@@ -1031,6 +1301,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             }, []);
             const newCurrentPerson = persons.find(person => person.id === this.state.currentPersonId);
             const nearbyObjects = this.getNearbyObjects(newCurrentPerson, objects);
+            const nearestPersons = this.getCurrentPerson() ?
+                persons.filter(person => person.id !== this.state.currentPersonId).slice(0, 10).map(person => person.id) :
+                [];
             this.setState({
                 persons,
                 cars,
@@ -1043,7 +1316,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     cars: this.state.cars,
                     objects: this.state.objects,
                     fetchTime: this.state.fetchTime
-                }
+                },
+                nearestPersons
             });
         }
 
@@ -1900,6 +2174,16 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         <option>green</option>
                     </select>
                 </div>
+                {
+                    this.state.nearestPersons.map(personId => {
+                        const peerData = this.audioChatPeerData[personId];
+                        if (peerData) {
+                            return <audio key={personId} ref={peerData.ref} autoPlay/>;
+                        } else {
+                            return null;
+                        }
+                    })
+                }
             </div>
         );
     }

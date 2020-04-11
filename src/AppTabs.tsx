@@ -24,6 +24,9 @@ const appTabs: IAppTab[] = [{
     path: "/persons",
     name: "Persons"
 }, {
+    path: "/audio",
+    name: "Audio Test"
+}, {
     path: "/users",
     name: "Users"
 }, {
@@ -37,7 +40,7 @@ const appTabs: IAppTab[] = [{
 export class AppTabs extends React.Component<IAppTabsProps> {
     render() {
         return (
-            <div style={{gridTemplateRows: "repeat(1fr, 3)", width: 500}}>
+            <div style={{gridTemplateRows: "repeat(1fr, 4)", width: 500}}>
                 {
                     appTabs.map(tab => {
                         return (

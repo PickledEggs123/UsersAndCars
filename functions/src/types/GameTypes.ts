@@ -343,7 +343,7 @@ export interface IKeyDownHandler {
 /**
  * The HTTP GET /persons response.
  */
-export interface IApiPersonsGet {
+export interface IApiPersonsGetResponse {
     /**
      * A list of people.
      */
@@ -356,6 +356,23 @@ export interface IApiPersonsGet {
      * A list of objects.
      */
     objects: INetworkObject[];
+    /**
+     * A list of voice messages.
+     */
+    voiceMessages: {
+        /**
+         * A list of new WebRTC ICE candidates to share voice data.
+         */
+        candidates: IApiPersonsVoiceCandidateMessage[];
+        /**
+         * A list of offers.
+         */
+        offers: IApiPersonsVoiceOfferMessage[];
+        /**
+         * A list of answers.
+         */
+        answers: IApiPersonsVoiceAnswerMessage[];
+    }
 }
 
 /**
@@ -407,6 +424,65 @@ export interface IApiPersonsPut {
      */
     objects: INetworkObject[];
 }
+
+/**
+ * Base voice message format.
+ */
+export interface IApiVoiceMessage {
+    /**
+     * Sending WebRTC data from person.
+     */
+    from: string;
+    /**
+     * Sending WebRTC data to person.
+     */
+    to: string;
+}
+
+/**
+ * The Voice Candidate message format.
+ */
+export interface IApiPersonsVoiceCandidateMessage extends IApiVoiceMessage {
+    /**
+     * The candidate information.
+     */
+    candidate: any;
+}
+
+/**
+ * The HTTP POST /persons/voice/candidate request.
+ */
+export interface IApiPersonsVoiceCandidatePost extends IApiPersonsVoiceCandidateMessage {}
+
+/**
+ * The HTTP POST /persons/voice/offer request.
+ */
+export interface IApiPersonsVoiceOfferMessage extends IApiVoiceMessage {
+    /**
+     * The socket description information.
+     */
+    description: any;
+}
+
+/**
+ * The HTTP POST /persons/voice/offer request.
+ */
+export interface IApiPersonsVoiceOfferPost extends IApiPersonsVoiceOfferMessage {}
+
+/**
+ * The HTTP POST /persons/voice/answer request.
+ */
+export interface IApiPersonsVoiceAnswerMessage extends IApiVoiceMessage {
+    /**
+     * The socket description information.
+     */
+    description: any;
+}
+
+/**
+ * The HTTP POST /persons/voice/answer request.
+ */
+export interface IApiPersonsVoiceAnswerPost extends IApiPersonsVoiceAnswerMessage {}
 
 /**
  * A list of game tutorials that should be shown.

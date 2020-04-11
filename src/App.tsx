@@ -8,6 +8,7 @@ import {Persons} from "./Persons";
 import {Cars} from "./Cars";
 import {Users} from "./Users";
 import {AppTabs} from "./AppTabs";
+import {AudioTest} from "./AudioTest";
 
 interface IAppProps {}
 
@@ -22,12 +23,6 @@ interface IAppState {}
 class App extends React.Component<IAppProps, IAppState> {
     state = {} as IAppState;
 
-    /**
-     * Draw the selected tab onto the page.
-     */
-    renderTab = () => {
-    };
-
     render() {
         return (
             <BrowserRouter>
@@ -37,6 +32,7 @@ class App extends React.Component<IAppProps, IAppState> {
                     <Route path="/persons" component={Persons}/>
                     <Route path="/users" component={Users}/>
                     <Route path="/cars" component={Cars}/>
+                    <Route path="/audio" component={AudioTest}/>
                     <Route component={Persons}/>
                 </Switch>
             </BrowserRouter>

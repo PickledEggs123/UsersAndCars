@@ -95,6 +95,10 @@ export interface IPersonsDrawablesState {
      * The inventory to render.
      */
     vendingInventory: IVendorInventoryItem[];
+    /**
+     * A list of persons that are connected by voice chat.
+     */
+    connectedVoiceChats: string[];
 }
 
 /**
@@ -219,12 +223,28 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             }
         }
 
+        // if the person is connected via voice chat, useful for determining if voice chat is working or if voice chat is on
+        const isConnectedByVoiceChat = this.state.connectedVoiceChats.some(id => id === person.id);
+
+        // highlight the current person in blue
+        const isCurrentPerson = person.id === this.state.currentPersonId;
+        const personFilter = isCurrentPerson ? "url(#highlight-blue)" : "";
+
         return (
             <g key={person.id} x="0" y="0" width="500" height="300" mask={roomMask}>
                 <g key={person.id} x="0" y="0" width="500" height="300" mask={carMask}>
-                    <g key={person.id} transform={`translate(${x - 50},${y - 100})`}>
+                    <g key={person.id} transform={`translate(${x - 50},${y - 100})`} filter={personFilter}>
                         {
                             this.drawHealthBar(person)
+                        }
+                        {
+                            isConnectedByVoiceChat ? (
+                                <>
+                                    <polygon fill="white" stroke="black" strokeWidth={2} points="20,-30 20,-40 30,-40 40,-50 40,-20 30,-30"/>
+                                    <path d=" M 50 -56 A 30 30 0 0 1 50 -15" fill="white" stroke="black" strokeWidth={2} />
+                                    <path d=" M 65 -60 A 30 30 0 0 1 65 -10" fill="white" stroke="black" strokeWidth={2} />
+                                </>
+                            ) : null
                         }
                         <polygon fill="yellow" points="40,10 60,10 60,30 40,30"/>
                         <polygon fill={person.shirtColor} points="20,30 80,30 80,100 20,100"/>

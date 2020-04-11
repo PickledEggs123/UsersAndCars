@@ -9,12 +9,17 @@ import * as cors from "cors";
 import {
     ECarDirection,
     ENetworkObjectType,
-    IApiPersonsGet,
+    IApiPersonsGetResponse,
     IApiPersonsLoginPost,
     IApiPersonsPut,
     IApiPersonsVendPost,
+    IApiPersonsVoiceAnswerMessage,
+    IApiPersonsVoiceCandidateMessage,
+    IApiPersonsVoiceOfferMessage,
     ICar,
-    INetworkObject, IObjectHealth,
+    INetworkObject,
+    IObject,
+    IObjectHealth,
     IPerson
 } from "./types/GameTypes";
 
@@ -161,6 +166,7 @@ interface IPersonDatabase {
     cash: number;
     creditLimit: number;
     health: IObjectHealth;
+    cell: string;
 }
 
 interface ICarDatabase {
@@ -172,6 +178,7 @@ interface ICarDatabase {
     grabbedByPersonId: string | null;
     objectType: ENetworkObjectType;
     health: IObjectHealth;
+    cell: string;
 }
 
 /**
@@ -185,6 +192,7 @@ interface INetworkObjectDatabase {
     grabbedByPersonId: string | null;
     lastUpdate: admin.firestore.Timestamp;
     health: IObjectHealth;
+    cell: string;
 }
 
 /**
@@ -232,20 +240,128 @@ const getThirtySecondsAgo = (): admin.firestore.Timestamp => {
 };
 
 /**
+ * The size of each cell in the game world.
+ */
+const cellSize = 2000;
+
+/**
+ * The intermediate world cell type.
+ */
+interface INetworkObjectCellPosition {
+    /**
+     * X axis cell number.
+     */
+    x: number;
+    /**
+     * Y axis cell number.
+     */
+    y: number;
+}
+
+/**
+ * Get the cell tile position of a network object.
+ * @param networkObject The object to compute position for.
+ */
+const getNetworkObjectWorldCellPosition = (networkObject: IObject): INetworkObjectCellPosition => {
+    const x = Math.round(networkObject.x / cellSize);
+    const y = Math.round(networkObject.y / cellSize);
+    return {
+        x,
+        y
+    };
+};
+
+/**
+ * Get the cell string of a cell position.
+ * @param position The cell position to convert into a string.
+ */
+const networkObjectCellPositionToCellString = (position: INetworkObjectCellPosition): string => {
+    return `cell:${position.x},${position.y}`;
+};
+
+/**
+ * Get the cell string of a network object.
+ * @param networkObject The network object to convert into a cell string.
+ */
+const getNetworkObjectCellString = (networkObject: IObject): string => {
+    return networkObjectCellPositionToCellString(getNetworkObjectWorldCellPosition(networkObject));
+};
+
+/**
+ * Get a list of relevant world cells to filter by.
+ * @param networkObject The network object to filter by.
+ */
+const getRelevantNetworkObjectCells = (networkObject: IObject): string[] => {
+    // gt network object world cell position
+    const {x, y} = getNetworkObjectWorldCellPosition(networkObject);
+
+    // which corner of the cell is the object nearest to
+    const left = networkObject.x <= x * cellSize;
+    const top = networkObject.y <= y * cellSize;
+
+    // pick the current cell and the 3 other cells around the nearest corner, return 4 cells
+    return [{
+        x,
+        y
+    }, {
+        x: left ? x - 1 : x + 1,
+        y
+    }, {
+        x: left ? x - 1 : x + 1,
+        y: top ? y - 1 : y + 1
+    }, {
+        x,
+        y: top ? y - 1 : y + 1
+    }].map(networkObjectCellPositionToCellString);
+};
+
+/**
  * Get a list of persons.
  */
-personsApp.get("/data", (req: any, res: { json: (arg0: any) => void; }, next: (arg0: any) => any) => {
+personsApp.get("/data", (req: express.Request, res: express.Response, next: express.NextFunction) => {
     (async () => {
         // json response data
-        const personsToReturnAsJson = [];
-        const carsToReturnAsJson = [];
-        const objectsToReturnAsJson = [];
+        const personsToReturnAsJson: IPerson[] = [];
+        const carsToReturnAsJson: ICar[] = [];
+        const objectsToReturnAsJson: INetworkObject[] = [];
+        const candidates: IApiPersonsVoiceCandidateMessage[] = [];
+        const offers: IApiPersonsVoiceOfferMessage[] = [];
+        const answers: IApiPersonsVoiceAnswerMessage[] = [];
+
+        const {id} = req.query;
+
+        if (!id) {
+            res.status(404).json({message: "require id parameter"});
+            return;
+        }
+
+        // get current person, render data relative to current person's position
+        const currentPerson = await admin.firestore().collection("persons").doc(id).get();
+        const currentPersonData = currentPerson.exists ? currentPerson.data() as IPersonDatabase : {x: 0, y: 0} as IPersonDatabase;
+
+        /**
+         * The distance from the object to the current person.
+         * @param networkObject The object to compute distance for.
+         */
+        const distanceFromCurrentPerson = (networkObject: INetworkObject): number => {
+            return Math.sqrt((networkObject.x - currentPersonData.x) ** 2 + (networkObject.y - currentPersonData.y) ** 2);
+        };
+
+        /**
+         * Sort network objects by distance from player from nearest to farthest.
+         * @param a Object to sort.
+         * @param b Object to sort.
+         */
+        const sortNetworkObjectsByDistance = (a: INetworkObject, b: INetworkObject): number => {
+            return distanceFromCurrentPerson(a) - distanceFromCurrentPerson(b);
+        };
 
         // get persons
         {
             // get a list of all people who have updated within the last thirty seconds
             const querySnapshot = await admin.firestore().collection("persons")
                 .where("lastUpdate", ">=", getThirtySecondsAgo())
+                .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData))
                 .get();
 
             // add to json list
@@ -263,11 +379,16 @@ personsApp.get("/data", (req: any, res: { json: (arg0: any) => void; }, next: (a
                 };
                 personsToReturnAsJson.push(personToReturnAsJson);
             }
+
+            // get sorted list of nearest persons
+            personsToReturnAsJson.sort(sortNetworkObjectsByDistance);
         }
 
         // get cars
         {
-            const querySnapshot = await admin.firestore().collection("personalCars").get();
+            const querySnapshot = await admin.firestore().collection("personalCars")
+                .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData))
+                .get();
 
             for (const documentSnapshot of querySnapshot.docs) {
                 const data = documentSnapshot.data() as ICarDatabase;
@@ -277,11 +398,16 @@ personsApp.get("/data", (req: any, res: { json: (arg0: any) => void; }, next: (a
                 };
                 carsToReturnAsJson.push(carToReturnAsJson);
             }
+
+            // get sorted list of nearest cars
+            carsToReturnAsJson.sort(sortNetworkObjectsByDistance);
         }
 
         // get objects
         {
-            const querySnapshot = await admin.firestore().collection("objects").get();
+            const querySnapshot = await admin.firestore().collection("objects")
+                .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData))
+                .get();
 
             for (const documentSnapshot of querySnapshot.docs) {
                 const data = documentSnapshot.data() as INetworkObjectDatabase;
@@ -291,13 +417,66 @@ personsApp.get("/data", (req: any, res: { json: (arg0: any) => void; }, next: (a
                 };
                 objectsToReturnAsJson.push(objectToReturnAsJson);
             }
+
+            // get sorted list of nearest objects
+            objectsToReturnAsJson.sort(sortNetworkObjectsByDistance);
+        }
+
+        // a list of WebRTC ICE candidates to add
+        {
+            const querySnapshot = await admin.firestore().collection("voiceCandidates")
+                .where("to", "==", id)
+                .get();
+
+            for (const documentSnapshot of querySnapshot.docs) {
+                const message = documentSnapshot.data() as IApiPersonsVoiceCandidateMessage;
+
+                await documentSnapshot.ref.delete();
+
+                candidates.push(message);
+            }
+        }
+
+        // list of WebRTC socket descriptions to add
+        {
+            const querySnapshot = await admin.firestore().collection("voiceOffers")
+                .where("to", "==", id)
+                .get();
+
+            for (const documentSnapshot of querySnapshot.docs) {
+                const message = documentSnapshot.data() as IApiPersonsVoiceOfferMessage;
+
+                await documentSnapshot.ref.delete();
+
+                offers.push(message);
+            }
+        }
+
+        // list of WebRTC socket descriptions to add
+        {
+            const querySnapshot = await admin.firestore().collection("voiceAnswers")
+                .where("to", "==", id)
+                .get();
+
+            for (const documentSnapshot of querySnapshot.docs) {
+                const message = documentSnapshot.data() as IApiPersonsVoiceAnswerMessage;
+
+                await documentSnapshot.ref.delete();
+
+                answers.push(message);
+            }
         }
 
         // return both persons and cars since both can move and both are network objects
-        const jsonData: IApiPersonsGet = {
+        const jsonData: IApiPersonsGetResponse = {
             persons: personsToReturnAsJson,
             cars: carsToReturnAsJson,
-            objects: objectsToReturnAsJson
+            objects: objectsToReturnAsJson,
+            voiceMessages: {
+                candidates,
+                offers,
+                answers
+            }
         };
         res.json(jsonData);
     })().catch((err) => next(err));
@@ -348,7 +527,11 @@ personsApp.post("/login", (req: { body: IApiPersonsLoginPost; }, res: any, next:
                 cash: 1000,
                 creditLimit: 1000,
                 objectType: ENetworkObjectType.PERSON,
-                health: defaultPersonHealthObject
+                health: defaultPersonHealthObject,
+                cell: getNetworkObjectCellString({
+                    x: 50,
+                    y: 150
+                })
             };
             await admin.firestore().collection("persons").doc(id).set(data);
 
@@ -387,7 +570,11 @@ personsApp.post("/vend", (req: { body: IApiPersonsVendPost; }, res: any, next: (
                         lastUpdate: admin.firestore.Timestamp.now(),
                         objectType,
                         direction: ECarDirection.RIGHT,
-                        health: defaultCarHealthObject
+                        health: defaultCarHealthObject,
+                        cell: getNetworkObjectCellString({
+                            x,
+                            y
+                        })
                     };
 
                     // update two database objects
@@ -411,7 +598,11 @@ personsApp.post("/vend", (req: { body: IApiPersonsVendPost; }, res: any, next: (
                         grabbedByPersonId: null,
                         lastUpdate: admin.firestore.Timestamp.now(),
                         objectType,
-                        health: defaultObjectHealthObject
+                        health: defaultObjectHealthObject,
+                        cell: getNetworkObjectCellString({
+                            x,
+                            y
+                        })
                     };
 
                     // update two database objects
@@ -442,6 +633,36 @@ personsApp.post("/vend", (req: { body: IApiPersonsVendPost; }, res: any, next: (
 });
 
 /**
+ * Add a WebRTC ICE candidate message for another user.
+ */
+personsApp.post("/voice/candidate", (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    (async () => {
+        await admin.firestore().collection("voiceCandidates").add(req.body);
+        res.sendStatus(201);
+    })().catch((err) => next(err));
+});
+
+/**
+ * Add a WebRTC offer message for another user.
+ */
+personsApp.post("/voice/offer", (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    (async () => {
+        await admin.firestore().collection("voiceOffers").add(req.body);
+        res.sendStatus(201);
+    })().catch((err) => next(err));
+});
+
+/**
+ * Add a WebRTC answer message for another user.
+ */
+personsApp.post("/voice/answer", (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    (async () => {
+        await admin.firestore().collection("voiceAnswers").add(req.body);
+        res.sendStatus(201);
+    })().catch((err) => next(err));
+});
+
+/**
  * Update game state.
  */
 personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: any) => any) => {
@@ -464,7 +685,12 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
                 ...personWithoutSensitiveInformation,
                 // convert ISO string date into firebase firestore Timestamp
                 lastUpdate: person.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(person.lastUpdate)) : admin.firestore.Timestamp.now(),
-                objectType: ENetworkObjectType.PERSON
+                objectType: ENetworkObjectType.PERSON,
+                cell: getNetworkObjectCellString({
+                    x: 50,
+                    y: 150,
+                    ...personWithoutSensitiveInformation
+                })
             };
         });
         const carsToSaveIntoDatabase = req.body.cars.map((car: ICar): Partial<ICarDatabase> => {
@@ -477,7 +703,12 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
                 ...car,
                 // convert ISO string date into firebase firestore Timestamp
                 lastUpdate: car.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(car.lastUpdate)) : admin.firestore.Timestamp.now(),
-                objectType: ENetworkObjectType.CAR
+                objectType: ENetworkObjectType.CAR,
+                cell: getNetworkObjectCellString({
+                    x: 50,
+                    y: 150,
+                    ...car
+                })
             };
         });
         const objectsToSaveIntoDatabase = req.body.objects.map((networkObject: INetworkObject): Partial<INetworkObjectDatabase> => {
@@ -490,6 +721,11 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
                 ...networkObject,
                 // convert ISO string date into firebase firestore Timestamp
                 lastUpdate: networkObject.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(networkObject.lastUpdate)) : admin.firestore.Timestamp.now(),
+                cell: getNetworkObjectCellString({
+                    x: 50,
+                    y: 150,
+                    ...networkObject
+                })
             };
         });
 
@@ -568,15 +804,40 @@ const performHealthTickOnCollectionOfNetworkObjects = async (collectionName: str
     }
 };
 
+/**
+ * Add cell string to blank cell objects.
+ * @param collectionName The collection to process.
+ */
+const addCellStringToBlankCellObjects = async (collectionName: string) => {
+    const collectionQuery = await admin.firestore().collection(collectionName).get();
+    for (const doc of collectionQuery.docs) {
+        const data = doc.data() as INetworkObjectDatabase;
+
+        // if object does not have a cell string
+        if (!data.cell) {
+            // add cell string to object
+            const newData: Partial<INetworkObjectDatabase> = {
+                cell: getNetworkObjectCellString(data)
+            };
+            await doc.ref.set(newData, {merge: true});
+        }
+    }
+};
+
 // every minute, run a tick to update all persons
 export const personsTick = functions.pubsub.schedule("every 1 minutes").onRun(() => {
     return (async () => {
         await giveEveryoneCash();
 
-        // health regeneration or deprecation
+        // health regeneration or object depreciation
         await performHealthTickOnCollectionOfNetworkObjects("persons", defaultPersonHealthObject);
         await performHealthTickOnCollectionOfNetworkObjects("personalCars", defaultCarHealthObject);
         await performHealthTickOnCollectionOfNetworkObjects("objects", defaultObjectHealthObject);
+
+        // add cell string to objects with no cell string
+        await addCellStringToBlankCellObjects("persons");
+        await addCellStringToBlankCellObjects("personalCars");
+        await addCellStringToBlankCellObjects("objects");
     })().catch((err) => {
         throw err;
     });
