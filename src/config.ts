@@ -36,12 +36,21 @@ export const applyAudioFilters = (stream: MediaStream) => {
     const audioContext = new AudioContext();
     const source = audioContext.createMediaStreamSource(stream);
     const gainNode = new GainNode(audioContext, {
-        gain: -10
+        gain: -20
     });
     const biquadFilterNode = new BiquadFilterNode(audioContext, {
         frequency: 1000
     });
+    const compressorNode = new DynamicsCompressorNode(audioContext, {
+        threshold: -50,
+        knee: 20,
+        ratio: 12,
+        attack: 0,
+        release: 0.25
+    });
+    source.disconnect();
     source.connect(gainNode);
     gainNode.connect(biquadFilterNode);
-    biquadFilterNode.connect(audioContext.destination);
+    biquadFilterNode.connect(compressorNode);
+    compressorNode.connect(audioContext.destination);
 };
