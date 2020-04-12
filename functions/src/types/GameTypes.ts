@@ -349,6 +349,10 @@ export interface IApiPersonsGetResponse {
      */
     persons: IPerson[];
     /**
+     * A list of npcs.
+     */
+    npcs: INpc[],
+    /**
      * A list of cars.
      */
     cars: ICar[];
@@ -517,4 +521,28 @@ export interface IGameTutorials {
      * If the grabbing tutorial should be shown.
      */
     grabbing: boolean;
+}
+
+/**
+ * A path point of an [[INpc]] character that moves along a path.
+ */
+export interface INpcPathPoint {
+    /**
+     * The time of the Path point.
+     */
+    time: string;
+    /**
+     * The location of the path point.
+     */
+    location: IObject;
+}
+
+/**
+ * A non playable character that moves along preplanned routes.
+ */
+export interface INpc extends IPerson {
+    /**
+     * The preplanned route of movement through the server.
+     */
+    path: INpcPathPoint[];
 }

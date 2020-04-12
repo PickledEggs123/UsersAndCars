@@ -349,6 +349,10 @@ export interface IApiPersonsGetResponse {
      */
     persons: IPerson[];
     /**
+     * A list of npcs.
+     */
+    npcs: INpc[],
+    /**
      * A list of cars.
      */
     cars: ICar[];

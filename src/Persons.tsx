@@ -1156,75 +1156,11 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             }
         }, []);
 
-        // generate npcs
-        const npcs: INpc[] = [];
-        const pathWalkSquare = (now: Date): INpcPathPoint[] => {
-            return [{
-                time: now.toISOString(),
-                location: {
-                    x: 0,
-                    y: 0
-                }
-            }, {
-                time: (new Date(+now + 10000)).toISOString(),
-                location: {
-                    x: 1000,
-                    y: 0
-                }
-            }, {
-                time: (new Date(+now + 20000)).toISOString(),
-                location: {
-                    x: 1000,
-                    y: 1000
-                }
-            }, {
-                time: (new Date(+now + 30000)).toISOString(),
-                location: {
-                    x: 0,
-                    y: 1000
-                }
-            }, {
-                time: (new Date(+now + 40000)).toISOString(),
-                location: {
-                    x: 0,
-                    y: 0
-                }
-            }];
-        };
-        {
-            const now = new Date();
-
-            npcs.push({
-                x: 0,
-                y: 0,
-                id: "npc-1",
-                pantColor: "brown",
-                shirtColor: "green",
-                carId: null,
-                cash: 1000,
-                creditLimit: 0,
-                health: {
-                    value: 10,
-                    max: 10,
-                    rate: 1
-                },
-                objectType: ENetworkObjectType.PERSON,
-                grabbedByPersonId: null,
-                lastUpdate: now.toISOString(),
-                path: [
-                    ...pathWalkSquare(now),
-                    ...pathWalkSquare(new Date(+now + 40000)),
-                    ...pathWalkSquare(new Date(+now + 80000))
-                ]
-            });
-        }
-
         this.setState({
             rooms,
             roads,
             lots,
-            objects,
-            npcs
+            objects
         });
 
         // begin animation loop
@@ -1339,6 +1275,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             // get persons data from the server
             const {
                 persons: serverPersons,
+                npcs,
                 cars: serverCars,
                 objects: serverObjects,
                 voiceMessages: {
@@ -1373,6 +1310,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 [];
             this.setState({
                 persons,
+                npcs,
                 cars,
                 objects,
                 nearbyObjects,

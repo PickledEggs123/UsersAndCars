@@ -18,6 +18,7 @@ import {
     IApiPersonsVoiceOfferMessage,
     ICar,
     INetworkObject,
+    INpc, INpcPathPoint,
     IObject,
     IObjectHealth,
     IPerson
@@ -167,6 +168,23 @@ interface IPersonDatabase {
     creditLimit: number;
     health: IObjectHealth;
     cell: string;
+}
+
+interface INpcDatabase {
+    id: string;
+    x: number;
+    y: number;
+    shirtColor: string;
+    pantColor: string;
+    lastUpdate: admin.firestore.Timestamp;
+    carId: string | null;
+    grabbedByPersonId: string | null;
+    password: string;
+    objectType: ENetworkObjectType;
+    cash: number;
+    creditLimit: number;
+    health: IObjectHealth;
+    path: INpcPathPoint[];
 }
 
 interface ICarDatabase {
@@ -322,6 +340,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
     (async () => {
         // json response data
         const personsToReturnAsJson: IPerson[] = [];
+        const npcsToReturnAsJson: INpc[] = [];
         const carsToReturnAsJson: ICar[] = [];
         const objectsToReturnAsJson: INetworkObject[] = [];
         const candidates: IApiPersonsVoiceCandidateMessage[] = [];
@@ -382,6 +401,32 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
 
             // get sorted list of nearest persons
             personsToReturnAsJson.sort(sortNetworkObjectsByDistance);
+        }
+
+        // get npcs
+        {
+            // get a list of all people who have updated within the last thirty seconds
+            const querySnapshot = await admin.firestore().collection("npcs")
+                .get();
+
+            // add to json list
+            for (const documentSnapshot of querySnapshot.docs) {
+                const data = documentSnapshot.data() as INpcDatabase;
+
+                // delete password so it does not reach the frontend
+                const dataWithoutPassword = {...data};
+                delete dataWithoutPassword.password;
+
+                // save database record into json array
+                const npcToReturnAsJson: INpc = {
+                    ...dataWithoutPassword,
+                    lastUpdate: dataWithoutPassword.lastUpdate.toDate().toISOString()
+                };
+                npcsToReturnAsJson.push(npcToReturnAsJson);
+            }
+
+            // get sorted list of nearest persons
+            npcsToReturnAsJson.sort(sortNetworkObjectsByDistance);
         }
 
         // get cars
@@ -470,6 +515,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
         // return both persons and cars since both can move and both are network objects
         const jsonData: IApiPersonsGetResponse = {
             persons: personsToReturnAsJson,
+            npcs: npcsToReturnAsJson,
             cars: carsToReturnAsJson,
             objects: objectsToReturnAsJson,
             voiceMessages: {
@@ -824,6 +870,133 @@ const addCellStringToBlankCellObjects = async (collectionName: string) => {
     }
 };
 
+const streetWalkerPath = (streetX: number, streetY: number, streetLength: number): INpcPathPoint[] => {
+    const now = new Date();
+
+    const worldUnitsWalkedPerSecond = 100;
+    const millisecondsToWalkOneWay = streetLength / worldUnitsWalkedPerSecond * 1000;
+    const path = [] as INpcPathPoint[];
+
+    // add initial location
+    path.push({
+        time: now.toISOString(),
+        location: {
+            x: streetX + 250,
+            y: streetY + 150
+        }
+    });
+
+    // add end of walking one way
+    path.push({
+        time: (new Date(+now + millisecondsToWalkOneWay)).toISOString(),
+        location: {
+            x: streetX + 250 + streetLength,
+            y: streetY + 150
+        }
+    });
+
+    // return back to original location
+    path.push({
+        time: (new Date(+now + (millisecondsToWalkOneWay * 2))).toISOString(),
+        location: {
+            x: streetX + 250,
+            y: streetY + 150
+        }
+    });
+
+    return path;
+};
+
+/**
+ * Return if the npc is done walking it's path.
+ * @param npcData The data of the npc, contains the path data.
+ */
+const npcDoneWalking = (npcData: INpcDatabase): boolean => {
+    // find last path point
+    const lastPathPoint = npcData.path[npcData.path.length - 1];
+    if (lastPathPoint) {
+        // return if the current time is greater than the last path point, end of path reached.
+        const now = new Date();
+        return +now > Date.parse(lastPathPoint.time);
+    } else {
+        // no path data, no walking needed to be done, return no more walking.
+        return true;
+    }
+};
+
+/**
+ * Handle the path generation for a single street walking npc.
+ * @param id The id of the npc.
+ * @param streetX The top left corner of the street.
+ * @param streetY The top left corner of the street.
+ * @param streetLength The length of the street to walk.
+ */
+const handleStreetWalkingNpc = async ({id, streetX, streetY, streetLength}: {
+    id: string,
+    streetX: number,
+    streetY: number,
+    streetLength: number
+}) => {
+    const npc = await admin.firestore().collection("npcs").doc(id).get();
+    if (npc.exists) {
+        // npc exist, check to see if the npc will need a new path
+        const npcData = npc.data() as INpcDatabase;
+        if (npcDoneWalking(npcData)) {
+            const data: INpcDatabase = {
+                ...npcData,
+                path: streetWalkerPath(streetX, streetY, streetLength)
+            };
+            await npc.ref.set(data, {merge: true});
+        }
+    } else {
+        // npc does not exist, create one from scratch
+        const data: INpcDatabase = {
+            id,
+            x: streetX + 250,
+            y: streetY + 150,
+            shirtColor: "green",
+            pantColor: "brown",
+            carId: null,
+            grabbedByPersonId: null,
+            cash: 1000,
+            creditLimit: 0,
+            objectType: ENetworkObjectType.PERSON,
+            lastUpdate: admin.firestore.Timestamp.now(),
+            password: "",
+            health: defaultPersonHealthObject,
+            path: streetWalkerPath(streetX, streetY, streetLength)
+        };
+        await npc.ref.set(data);
+    }
+};
+
+const performNpcTick = async () => {
+    await handleStreetWalkingNpc({
+        id: "1st-street-walker-1",
+        streetX: 0,
+        streetY: 0,
+        streetLength: 2000
+    });
+    await handleStreetWalkingNpc({
+        id: "1st-street-walker-2",
+        streetX: 0,
+        streetY: 50,
+        streetLength: 5000
+    });
+    await handleStreetWalkingNpc({
+        id: "1st-street-walker-3",
+        streetX: 0,
+        streetY: -50,
+        streetLength: 10000
+    });
+    await handleStreetWalkingNpc({
+        id: "1st-street-walker-4",
+        streetX: 50,
+        streetY: 0,
+        streetLength: 12000
+    });
+};
+
 // every minute, run a tick to update all persons
 export const personsTick = functions.pubsub.schedule("every 1 minutes").onRun(() => {
     return (async () => {
@@ -838,6 +1011,8 @@ export const personsTick = functions.pubsub.schedule("every 1 minutes").onRun(()
         await addCellStringToBlankCellObjects("persons");
         await addCellStringToBlankCellObjects("personalCars");
         await addCellStringToBlankCellObjects("objects");
+
+        await performNpcTick();
     })().catch((err) => {
         throw err;
     });
