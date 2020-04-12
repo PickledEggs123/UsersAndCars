@@ -18,7 +18,8 @@
     "express": "^4.17.1",
     "firebase": "^7.10.0",
     "firebase-admin": "^8.6.0",
-    "firebase-functions": "^3.3.0"
+    "firebase-functions": "^3.3.0",
+    "string.prototype.matchall": "^4.0.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.6",

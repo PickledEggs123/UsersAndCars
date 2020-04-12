@@ -941,31 +941,12 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     };
 
     /**
-     * Generate a city from an ASCII map.
-     * @param prefix The name of the city. It's prepended to the [[ILot]] names.
-     * @param format The ASCII map of the city.
+     * Generate lots and objects within the lots.
+     * @param format The format string of the city. Lots will populate an ASCII map of the city.
      * @param x The x offset of the city.
      * @param y The y offset of the city.
      */
-    generateCity = ({prefix, format, offset: {x, y}}: {prefix: string, format: string, offset: IObject}): ICity => {
-        format = "" +
-            "|-----|---------------|-----|---------------|-----|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|-----|---------------|-----|---------------|-----|\n" +
-            "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
-            "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
-            "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
-            "|-----|---------------|-----|---------------|-----|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
-            "|-----|---------------|-----|---------------|-----|";
-
-        const roads = this.generateRoads({format, offset: {x, y}});
+    generateLots = ({format, offset: {x, y}}: {format: string, offset: IObject}): {lots: ILot[], objects: INetworkObject[]} => {
         let lots = [] as ILot[];
 
         // generate a lot for each zoning character
@@ -1053,6 +1034,40 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         });
         lots = lotAndObjectsMerge.lotArr;
         const objects = lotAndObjectsMerge.objectsArr;
+
+        return {
+            lots,
+            objects
+        };
+    };
+
+    /**
+     * Generate a city from an ASCII map.
+     * @param prefix The name of the city. It's prepended to the [[ILot]] names.
+     * @param format The ASCII map of the city.
+     * @param x The x offset of the city.
+     * @param y The y offset of the city.
+     */
+    generateCity = ({prefix, format, offset: {x, y}}: {prefix: string, format: string, offset: IObject}): ICity => {
+        format = "" +
+            "|-----|---------------|-----|---------------|-----|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|-----|---------------|-----|---------------|-----|\n" +
+            "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
+            "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
+            "|CCCCC|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|CCCCC|\n" +
+            "|-----|---------------|-----|---------------|-----|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
+            "|-----|---------------|-----|---------------|-----|";
+
+        const roads = this.generateRoads({format, offset: {x, y}});
+        const {lots, objects} = this.generateLots({format, offset: {x, y}});
 
         return {
             roads,

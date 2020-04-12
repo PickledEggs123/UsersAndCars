@@ -5,6 +5,7 @@
       <w>drawables</w>
       <w>multiplayer</w>
       <w>npcs</w>
+      <w>pathfinding</w>
       <w>teleport</w>
       <w>teleporting</w>
     </words>
