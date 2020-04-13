@@ -103,6 +103,10 @@ export interface IPersonsDrawablesState {
      * A list of persons that are connected by voice chat.
      */
     connectedVoiceChats: string[];
+    /**
+     * An NPC being viewed.
+     */
+    npc: INpc | null;
 }
 
 /**
@@ -190,11 +194,22 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
+     * Select an NPC to view.
+     * @param npc The NPC to view.
+     */
+    selectNpc = (npc: INpc) => () => {
+        this.setState({
+            npc
+        });
+    };
+
+    /**
      * Draw a person as some SVG elements.
      * @param person The person to draw.
      * @param previousPerson The previous position used for interpolation.
+     * @param isNpc The person is an NPC.
      */
-    drawPerson = (person: IPerson, previousPerson?: IPerson) => {
+    drawPerson = (person: IPerson, previousPerson?: IPerson, isNpc?: boolean) => {
         const {x, y} = this.interpolateObjectPosition(person, previousPerson);
 
         // the mask property which will mask the person's body so the bottom half of the person does not appear below a wall
@@ -237,7 +252,11 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         return (
             <g key={person.id} x="0" y="0" width="500" height="300" mask={roomMask}>
                 <g key={person.id} x="0" y="0" width="500" height="300" mask={carMask}>
-                    <g key={person.id} transform={`translate(${x - 50},${y - 100})`} filter={personFilter}>
+                    <g key={person.id}
+                       transform={`translate(${x - 50},${y - 100})`}
+                       filter={personFilter}
+                       onClick={this.selectNpc(person as INpc)}
+                    >
                         {
                             this.drawHealthBar(person)
                         }
@@ -1234,7 +1253,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             // add all npcs
             ...this.state.npcs.map(this.applyPathToNpc).filter(this.isNearWorldView(worldOffset)).map(npc => ({
                 draw(this: IDrawable) {
-                    return component.drawPerson(npc);
+                    return component.drawPerson(npc, undefined, true);
                 },
                 type: EDrawableType.PERSON,
                 ...npc

@@ -181,7 +181,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         fetchTime: new Date(),
         vendingInventory: [] as IVendorInventoryItem[],
         nearestPersons: [] as string[],
-        connectedVoiceChats: [] as string[]
+        connectedVoiceChats: [] as string[],
+        npc: null as INpc | null
     };
 
     /**
@@ -1624,8 +1625,12 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     stateUpdates.push({nearbyObjects});
                 }
 
-                // close vending inventory list
-                stateUpdates.push({vendingInventory: []});
+                stateUpdates.push({
+                    // close vending inventory list
+                    vendingInventory: [],
+                    // close npc viewer
+                    npc: null
+                });
 
                 // merge optional state updates into one state update object to perform a single setState.
                 const stateUpdate: IPersonsState = Object.assign.apply({}, [{}, ...stateUpdates]);
@@ -2006,8 +2011,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         // an svg filter to apply to the world
         let worldFilter = "";
 
-        // blur the world if the inventory screen is open
-        if (this.state.vendingInventory.length > 0) {
+        // blur the world if the inventory screen is open or if viewing an NPC
+        if (this.state.vendingInventory.length > 0 || this.state.npc) {
             worldFilter = "url(#blur)";
         }
 
@@ -2165,6 +2170,19 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                         return <text key={`inventory-item-${index}`} x="20" y={100 + index * 40} fontSize="24" onClick={() => {
                                             this.vendInventoryItem(inventoryItem);
                                         }}>{inventoryItem.objectType} ${inventoryItem.price}</text>;
+                                    })
+                                }
+                            </g>
+                        ) : null
+                    }
+                    {
+                        this.state.npc ? (
+                            <g>
+                                <rect x="0" y="0" width={this.state.width} height={this.state.height} fill="white" opacity="0.3"/>
+                                <text x="20" y="60" fontSize="24">NPC id: {this.state.npc.id}</text>
+                                {
+                                    this.state.npc.directionMap.split(/\r|\n|\r\n/).map((row, rowIndex) => {
+                                        return <text x="20" y={80 + rowIndex * 20} fontSize="24" fontFamily="monospace">{row}</text>
                                     })
                                 }
                             </g>

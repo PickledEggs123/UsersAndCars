@@ -545,4 +545,8 @@ export interface INpc extends IPerson {
      * The preplanned route of movement through the server.
      */
     path: INpcPathPoint[];
+    /**
+     * A map of the pathfinding map used by the NPC.
+     */
+    directionMap: string;
 }
