@@ -119,6 +119,16 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     intervalHeartbeat: any = null;
 
     /**
+     * The interval for the follow npc script.
+     */
+    intervalFollow: any = null;
+
+    /**
+     * The distance to stop pressing the key when following an npc.
+     */
+    followDistance: number = 100;
+
+    /**
      * Set Intervals that move the user across the screen.
      */
     keyDownHandlers: IKeyDownHandler[] = [];
@@ -145,6 +155,11 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * Data for each audio chat peer.
      */
     audioChatPeerData: {[id: string]: IAudioChatPeerData} = {};
+
+    /**
+     * The instance of handle key down. The normal window handler instance.
+     */
+    handleKeyDownInstance: any = null;
 
     /**
      * The state of the game.
@@ -235,6 +250,103 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     componentWillUnmount(): void {
         this.endGameLoop();
     }
+
+    /**
+     * Cancel an active follow command.
+     */
+    cancelFollowCommand = () => {
+        if (this.intervalFollow) {
+            clearInterval(this.intervalFollow);
+            this.intervalFollow = null;
+        }
+    };
+
+    /**
+     * Follow an npc by pressing or releasing keyboard keys.
+     * @param npcCopy The npc to follow.
+     */
+    followNpc = (npcCopy: INpc) => () => {
+        // clear previous follow command
+        this.cancelFollowCommand();
+
+        // begin following npc
+        let lastDx = 0;
+        let lastDy = 0;
+        this.intervalFollow = setInterval(() => {
+            const currentPerson = this.getCurrentPerson();
+            const npc = this.state.npcs.find(n => n.id === npcCopy.id);
+
+            /**
+             * Simulate keyboard events to trigger the following of an object.
+             * @param delta The current difference of position.
+             * @param lastDelta The last difference of position.
+             * @param threshold The threshold value to press or release the key.
+             * @param key The key to press or release.
+             */
+            const pressAndReleaseKey = (delta: number, lastDelta: number, threshold: number, key: string) => {
+                if (threshold > 0) {
+                    // greater than threshold
+                    if (delta >= threshold && lastDelta < threshold) {
+                        // press key
+                        this.handleKeyDown(true)(new KeyboardEvent("keydown", {
+                            key
+                        }));
+                    }
+                    // less than threshold
+                    if (delta < threshold && lastDelta >= threshold) {
+                        // release key
+                        this.handleKeyUp(new KeyboardEvent("keyup", {
+                            key
+                        }));
+                    }
+                    console.log(delta, lastDelta, threshold);
+                } else {
+                    // greater than threshold
+                    if (delta <= threshold && lastDelta > threshold) {
+                        // press key
+                        this.handleKeyDown(true)(new KeyboardEvent("keydown", {
+                            key
+                        }));
+                    }
+                    // less than threshold
+                    if (delta > threshold && lastDelta <= threshold) {
+                        // release key
+                        this.handleKeyUp(new KeyboardEvent("keyup", {
+                            key
+                        }));
+                    }
+                }
+            };
+
+            if (currentPerson && npc) {
+                // found current person and npc, follow npc
+                const dx = npc.x - currentPerson.x;
+                const dy = npc.y - currentPerson.y;
+
+                // simulate key press if the object is out of range
+                pressAndReleaseKey(dy, lastDy, -this.followDistance, "w");
+                pressAndReleaseKey(dx, lastDx, -this.followDistance, "a");
+                pressAndReleaseKey(dy, lastDy, this.followDistance, "s");
+                pressAndReleaseKey(dx, lastDx, this.followDistance, "d");
+
+                console.log(dx, lastDx);
+
+                // copy values for next call
+                lastDx = dx;
+                lastDy = dy;
+            } else {
+                // cannot find current person or npc, end follow command
+                clearInterval(this.intervalFollow);
+                this.intervalFollow = null;
+
+                // release all keys
+                pressAndReleaseKey(0, -2, -1, "w");
+                pressAndReleaseKey(0, -2, -1, "a");
+                pressAndReleaseKey(0, 2, 1, "s");
+                pressAndReleaseKey(0, 2, 1, "d");
+            }
+        }, 100);
+    };
 
     /**
      * Add all connection handlers for a peer connection.
@@ -1142,7 +1254,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      */
     beginGameLoop = () => {
         // add keyboard events
-        window.addEventListener("keydown", this.handleKeyDown);
+        this.handleKeyDownInstance = this.handleKeyDown(false);
+        window.addEventListener("keydown", this.handleKeyDownInstance);
         window.addEventListener("keyup", this.handleKeyUp);
 
         // begin game loop
@@ -1207,7 +1320,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      */
     endGameLoop = () => {
         // remove keyboard events
-        window.removeEventListener("keydown", this.handleKeyDown);
+        window.removeEventListener("keydown", this.handleKeyDownInstance);
         window.removeEventListener("keyup", this.handleKeyUp);
 
         // stop the heartbeat
@@ -1569,8 +1682,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * The code for WASD keys movement is identical except for one line, adding or subtracting x or y.
      * @param event The keyboard event which contains which key was pressed.
      * @param person The cached copy of a person, used for determining speed of setInterval.
+     * @param auto If the handler was triggered by an automatic function. Do not close certian windows and functions.
      */
-    handleKeyDownMovementPerson = (event: KeyboardEvent, person: IPerson) => (
+    handleKeyDownMovementPerson = (event: KeyboardEvent, person: IPerson, auto: boolean) => (
         updatePerson: (person: IObject, car?: ICar) => IObject,
         updateCar: (car: ICar) => ICar
     ) => {
@@ -1635,6 +1749,11 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 // merge optional state updates into one state update object to perform a single setState.
                 const stateUpdate: IPersonsState = Object.assign.apply({}, [{}, ...stateUpdates]);
                 this.setState(stateUpdate);
+
+                // cancel follow command
+                if (!auto) {
+                    this.cancelFollowCommand();
+                }
             }, this.personIntervalSpeed(person))
         });
     };
@@ -1715,9 +1834,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
 
     /**
      * Handle the movement of the current person across the screen.
-     * @param event
+     * @param auto If the handler was triggered by an automatic function. Do not close certain windows and functions.
      */
-    handleKeyDown = (event: KeyboardEvent) => {
+    handleKeyDown = (auto: boolean) => (event: KeyboardEvent) => {
         // ignore repeat key down events to prevent multiple key presses being registered.
         if (event.repeat) {
             return;
@@ -1735,7 +1854,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         switch (event.key) {
             case "w":
             case "ArrowUp": {
-                this.handleKeyDownMovementPerson(event, currentPerson)((person: IObject, car?: ICar): IObject => {
+                this.handleKeyDownMovementPerson(event, currentPerson, auto)((person: IObject, car?: ICar): IObject => {
                     if (car) {
                         const personOffsetInCar = this.getPersonOffset(person, car);
                         const rotatedPersonOffsetInCar = this.rotatePersonOffset(car.direction, ECarDirection.UP, personOffsetInCar);
@@ -1759,7 +1878,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             }
             case "s":
             case "ArrowDown": {
-                this.handleKeyDownMovementPerson(event, currentPerson)((person: IObject, car?: ICar): IObject => {
+                this.handleKeyDownMovementPerson(event, currentPerson, auto)((person: IObject, car?: ICar): IObject => {
                     if (car) {
                         const personOffsetInCar = this.getPersonOffset(person, car);
                         const rotatedPersonOffsetInCar = this.rotatePersonOffset(car.direction, ECarDirection.DOWN, personOffsetInCar);
@@ -1783,7 +1902,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             }
             case "a":
             case "ArrowLeft": {
-                this.handleKeyDownMovementPerson(event, currentPerson)((person: IObject, car?: ICar): IObject => {
+                this.handleKeyDownMovementPerson(event, currentPerson, auto)((person: IObject, car?: ICar): IObject => {
                     if (car) {
                         const personOffsetInCar = this.getPersonOffset(person, car);
                         const rotatedPersonOffsetInCar = this.rotatePersonOffset(car.direction, ECarDirection.LEFT, personOffsetInCar);
@@ -1807,7 +1926,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             }
             case "d":
             case "ArrowRight": {
-                this.handleKeyDownMovementPerson(event, currentPerson)((person: IObject, car?: ICar): IObject => {
+                this.handleKeyDownMovementPerson(event, currentPerson, auto)((person: IObject, car?: ICar): IObject => {
                     if (car) {
                         const personOffsetInCar = this.getPersonOffset(person, car);
                         const rotatedPersonOffsetInCar = this.rotatePersonOffset(car.direction, ECarDirection.RIGHT, personOffsetInCar);
@@ -2180,9 +2299,10 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                             <g>
                                 <rect x="0" y="0" width={this.state.width} height={this.state.height} fill="white" opacity="0.3"/>
                                 <text x="20" y="60" fontSize="24">NPC id: {this.state.npc.id}</text>
+                                <text x="20" y="80" fontSize="18" onClick={this.followNpc(this.state.npc)}>Follow</text>
                                 {
                                     this.state.npc.directionMap.split(/\r|\n|\r\n/).map((row, rowIndex) => {
-                                        return <text x="20" y={80 + rowIndex * 20} fontSize="24" fontFamily="monospace">{row}</text>
+                                        return <text x="20" y={100 + rowIndex * 20} fontSize="24" fontFamily="monospace">{row}</text>
                                     })
                                 }
                             </g>

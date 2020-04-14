@@ -128,7 +128,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
             // must use a separate collection with npc schedule to gather traveling npcs
             // more complicated query involving one npc to many time and cell records
             const querySnapshot = await admin.firestore().collection("npcTimes")
-                .where("startTime", ">=", admin.firestore.Timestamp.now())
+                .where("startTime", "<=", admin.firestore.Timestamp.now())
                 .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData))
                 .get();
 
