@@ -262,19 +262,16 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     };
 
     /**
-     * Follow an npc by pressing or releasing keyboard keys.
-     * @param npcCopy The npc to follow.
+     * The follow command used to follow objects.
+     * @param npcCopy A copy of the NPC data. Contains information used to follow the object over time.
      */
-    followNpc = (npcCopy: INpc) => () => {
-        // clear previous follow command
-        this.cancelFollowCommand();
-
-        // begin following npc
-        let lastDx = 0;
-        let lastDy = 0;
-        this.intervalFollow = setInterval(() => {
+    private followCommand = (npcCopy: INpc) => {
+        let lastDx: number | undefined;
+        let lastDy: number | undefined;
+        return () => {
             const currentPerson = this.getCurrentPerson();
-            const npc = this.state.npcs.find(n => n.id === npcCopy.id);
+            const foundNpc = this.state.npcs.find(n => n.id === npcCopy.id);
+            const npc = foundNpc ? this.applyPathToNpc(foundNpc) : undefined;
 
             /**
              * Simulate keyboard events to trigger the following of an object.
@@ -283,33 +280,32 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
              * @param threshold The threshold value to press or release the key.
              * @param key The key to press or release.
              */
-            const pressAndReleaseKey = (delta: number, lastDelta: number, threshold: number, key: string) => {
+            const pressAndReleaseKey = (delta: number, lastDelta: number | undefined, threshold: number, key: string) => {
                 if (threshold > 0) {
                     // greater than threshold
-                    if (delta >= threshold && lastDelta < threshold) {
+                    if (delta >= threshold && (typeof lastDelta === "number" ? lastDelta < threshold : true)) {
                         // press key
                         this.handleKeyDown(true)(new KeyboardEvent("keydown", {
                             key
                         }));
                     }
                     // less than threshold
-                    if (delta < threshold && lastDelta >= threshold) {
+                    if (delta < threshold && (typeof lastDelta === "number" ? lastDelta >= threshold : true)) {
                         // release key
                         this.handleKeyUp(new KeyboardEvent("keyup", {
                             key
                         }));
                     }
-                    console.log(delta, lastDelta, threshold);
                 } else {
                     // greater than threshold
-                    if (delta <= threshold && lastDelta > threshold) {
+                    if (delta <= threshold && (typeof lastDelta === "number" ? lastDelta > threshold : true)) {
                         // press key
                         this.handleKeyDown(true)(new KeyboardEvent("keydown", {
                             key
                         }));
                     }
                     // less than threshold
-                    if (delta > threshold && lastDelta <= threshold) {
+                    if (delta > threshold && (typeof lastDelta === "number" ? lastDelta <= threshold : true)) {
                         // release key
                         this.handleKeyUp(new KeyboardEvent("keyup", {
                             key
@@ -329,8 +325,6 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 pressAndReleaseKey(dy, lastDy, this.followDistance, "s");
                 pressAndReleaseKey(dx, lastDx, this.followDistance, "d");
 
-                console.log(dx, lastDx);
-
                 // copy values for next call
                 lastDx = dx;
                 lastDy = dy;
@@ -345,7 +339,19 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 pressAndReleaseKey(0, 2, 1, "s");
                 pressAndReleaseKey(0, 2, 1, "d");
             }
-        }, 100);
+        };
+    };
+
+    /**
+     * Follow an npc by pressing or releasing keyboard keys.
+     * @param npcCopy The npc to follow.
+     */
+    followNpc = (npcCopy: INpc) => () => {
+        // clear previous follow command
+        this.cancelFollowCommand();
+
+        // begin following npc
+        this.intervalFollow = setInterval(this.followCommand(npcCopy), 20);
     };
 
     /**
@@ -1682,7 +1688,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * The code for WASD keys movement is identical except for one line, adding or subtracting x or y.
      * @param event The keyboard event which contains which key was pressed.
      * @param person The cached copy of a person, used for determining speed of setInterval.
-     * @param auto If the handler was triggered by an automatic function. Do not close certian windows and functions.
+     * @param auto If the handler was triggered by an automatic function. Do not close certain windows and functions.
      */
     handleKeyDownMovementPerson = (event: KeyboardEvent, person: IPerson, auto: boolean) => (
         updatePerson: (person: IObject, car?: ICar) => IObject,

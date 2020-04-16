@@ -103,11 +103,13 @@ const generateDirectionMapTowardsTile = ({cityMapWithRooms, offset, to}: {
         " ": 1000
     };
 
+    // the destination in tile coordinates
+    const destinationXTile = Math.round((to.x - offset.x) / 500);
+    const destinationYTile = Math.round((to.y - offset.y) / 300);
+
     {
         // mark destination on weight map
-        const xTile = Math.round((to.x - offset.x) / 500);
-        const yTile = Math.round((to.y - offset.y) / 300);
-        const data = weightMap[`${yTile},${xTile}`];
+        const data = weightMap[`${destinationYTile},${destinationXTile}`];
         if (data) {
             data.weight = 0;
             data.direction = "*";
@@ -147,10 +149,47 @@ const generateDirectionMapTowardsTile = ({cityMapWithRooms, offset, to}: {
                 const dataTop = weightMap[`${rowIndex - 1},${columnIndex}`];
                 const dataBottom = weightMap[`${rowIndex + 1},${columnIndex}`];
                 if (data) {
-                    updateWeightAndDirection(data, dataLeft, "→");
-                    updateWeightAndDirection(data, dataRight, "←");
-                    updateWeightAndDirection(data, dataTop, "↓");
-                    updateWeightAndDirection(data, dataBottom, "↑");
+                    /**
+                     * The position relative to destination tile is needed for direction bias towards destination.
+                     * the last updateWeightAndDirection will override the previous direction. By changing the order
+                     * of the function calls, the graph will not be biased towards the bottom of the graph.
+                     */
+                    const deltaX = columnIndex - destinationXTile;
+                    const deltaY = rowIndex - destinationYTile;
+
+                    const handleLeftRightDirections = () => {
+                        // depending on position relative from destination
+                        if (deltaX > 0) {
+                            // left of destination
+                            updateWeightAndDirection(data, dataLeft, "→");
+                            updateWeightAndDirection(data, dataRight, "←");
+                        } else {
+                            // right of destination
+                            updateWeightAndDirection(data, dataRight, "←");
+                            updateWeightAndDirection(data, dataLeft, "→");
+                        }
+                    };
+                    const handleUpDownDirections = () => {
+                        // depending on position relative to destination
+                        if (deltaY > 0) {
+                            // below destination
+                            updateWeightAndDirection(data, dataTop, "↓");
+                            updateWeightAndDirection(data, dataBottom, "↑");
+                        } else {
+                            // above destination
+                            updateWeightAndDirection(data, dataBottom, "↑");
+                            updateWeightAndDirection(data, dataTop, "↓");
+                        }
+                    };
+
+                    // change the order of updateWeightAndDirection depending on position relative to destination
+                    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                        handleUpDownDirections();
+                        handleLeftRightDirections();
+                    } else {
+                        handleLeftRightDirections();
+                        handleUpDownDirections();
+                    }
                 }
             }
         }
@@ -197,8 +236,8 @@ const findPathOnDirectionMap = ({directionMap, offset, from}: {
     };
 
     // information about the current position and time, iterated while path is being generated.
-    let xTile = Math.round((from.x - offset.x) / 500);
-    let yTile = Math.round((from.y - offset.y) / 300);
+    let xTile = Math.floor((from.x - offset.x) / 500);
+    let yTile = Math.floor((from.y - offset.y) / 300);
     let tile: string | undefined = getTile(xTile, yTile);
     let lastTile: string | undefined;
     let timeSinceStart: number = 0;
