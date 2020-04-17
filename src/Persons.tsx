@@ -2123,6 +2123,14 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         return tilePositions;
     };
 
+    /**
+     * Refresh all NPCs on the server.
+     */
+    refreshNpcs = async () => {
+        await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/npcs/refresh");
+        alert("NPCs have been reset");
+    };
+
     render() {
         // find the current person
         const currentPerson = this.getCurrentPerson();
@@ -2337,6 +2345,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         <option>red</option>
                         <option>green</option>
                     </select>
+                </div>
+                <div>
+                    <button onClick={this.refreshNpcs}>Refresh NPCs</button>
                 </div>
                 {
                     this.state.nearestPersons.map(personId => {

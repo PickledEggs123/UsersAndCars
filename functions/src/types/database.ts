@@ -88,6 +88,7 @@ export interface INpcDatabase {
     health: IObjectHealth;
     path: INpcPathPoint[];
     directionMap: string;
+    doneWalking: admin.firestore.Timestamp;
 }
 
 export interface ICarDatabase {

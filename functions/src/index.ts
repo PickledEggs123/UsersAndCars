@@ -16,7 +16,7 @@ import {
     IApiPersonsPut,
     ICar,
     INetworkObject,
-    INpc,
+    INpc, IObject,
     IPerson
 } from "./types/GameTypes";
 import {
@@ -37,7 +37,7 @@ import {giveEveryoneCash, handleVend} from "./cash";
 import {performHealthTickOnCollectionOfNetworkObjects} from "./health";
 import {addCellStringToBlankCellObjects, getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell";
 import {getThirtySecondsAgo, handleLogin} from "./authentication";
-import {streetWalkerPath} from "./pathfinding";
+import {getCityMapWithRooms, getDirectionMap, streetWalkerPath} from "./pathfinding";
 
 const matchAll = require("string.prototype.matchall");
 matchAll.shim();
@@ -113,7 +113,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
                 // save database record into json array
                 const personToReturnAsJson: IPerson = {
                     ...dataWithoutPassword,
-                    lastUpdate: dataWithoutPassword.lastUpdate.toDate().toISOString()
+                    lastUpdate: dataWithoutPassword.lastUpdate ? dataWithoutPassword.lastUpdate.toDate().toISOString() : new Date().toISOString()
                 };
                 personsToReturnAsJson.push(personToReturnAsJson);
             }
@@ -150,11 +150,12 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
                 // delete password so it does not reach the frontend
                 const dataWithoutPassword = {...data};
                 delete dataWithoutPassword.password;
+                delete dataWithoutPassword.doneWalking;
 
                 // save database record into json array
                 const npcToReturnAsJson: INpc = {
                     ...dataWithoutPassword,
-                    lastUpdate: dataWithoutPassword.lastUpdate.toDate().toISOString()
+                    lastUpdate: dataWithoutPassword.lastUpdate ? dataWithoutPassword.lastUpdate.toDate().toISOString() : new Date().toISOString()
                 };
                 npcsToReturnAsJson.push(npcToReturnAsJson);
             }
@@ -422,9 +423,10 @@ const handleStreetWalkingNpc = async ({id}: {
             let data: INpcDatabase = {
                 ...applyPathToNpc(npcData)
             };
-            const streetWalkerData = streetWalkerPath(applyPathToNpc(npcData), {x: 0, y: 0});
+            const streetWalkerData = await streetWalkerPath(applyPathToNpc(npcData), {x: 0, y: 0});
             data = {
                 ...data,
+                doneWalking: streetWalkerData.doneWalking,
                 path: streetWalkerData.path,
                 directionMap: streetWalkerData.directionMap
             };
@@ -460,14 +462,16 @@ const handleStreetWalkingNpc = async ({id}: {
             creditLimit: 0,
             objectType: ENetworkObjectType.PERSON,
             lastUpdate: admin.firestore.Timestamp.now(),
+            doneWalking: admin.firestore.Timestamp.now(),
             password: "",
             health: defaultPersonHealthObject,
             path: [],
             directionMap: ""
         };
-        const streetWalkerData = streetWalkerPath(data, {x: 0, y: 0});
+        const streetWalkerData = await streetWalkerPath(data, {x: 0, y: 0});
         data = {
             ...data,
+            doneWalking: streetWalkerData.doneWalking,
             path: streetWalkerData.path,
             directionMap: streetWalkerData.directionMap
         };
@@ -495,21 +499,126 @@ const handleStreetWalkingNpc = async ({id}: {
  * Handle each NPC in the game.
  */
 const performNpcTick = async () => {
-    const pubSubClient = new PubSub();
-    // generate 200 npcs that walk randomly around the city using the streets over walking through buildings.
+    // get a list of npcIds of npcs that are done walking
+    const npcDocuments = await admin.firestore().collection("npcs")
+        .where("doneWalking", "<=", admin.firestore.Timestamp.now())
+        .get();
+    const npcIds = npcDocuments.docs.map(doc => doc.id);
+
+    // update only the npcs that are done walking
     // each npc uses a pubsub topic so each npc is simulated by a separate CPU.
-    await Promise.all(new Array(200).fill(0).map((v, i) => {
-        const id = `1st-street-walker-${i}`;
+    const pubSubClient = new PubSub();
+    await Promise.all(npcIds.map((id) => {
         const data = Buffer.from(JSON.stringify({id}));
         return pubSubClient.topic("npc").publish(data);
     }));
 };
+
+/**
+ * Refresh all npcs on the server.
+ */
+const npcsApp = express();
+npcsApp.use(cors({origin: true}));
+npcsApp.post("/refresh", (req, res, next) => {
+    (async () => {
+        // delete previous npcs
+        while (true) {
+            const npcDocs = await admin.firestore().collection("npcs")
+                .limit(100)
+                .get();
+            if (npcDocs.docs.length === 0) {
+                break;
+            }
+            await Promise.all(npcDocs.docs.map(doc => doc.ref.delete()));
+        }
+        // delete previous npc times
+        while (true) {
+            const npcTimeDocs = await admin.firestore().collection("npcTimes")
+                .limit(100)
+                .get();
+            if (npcTimeDocs.docs.length === 0) {
+                break;
+            }
+            await Promise.all(npcTimeDocs.docs.map(doc => doc.ref.delete()));
+        }
+
+        // generate 200 npcs
+        const pubSubClient = new PubSub();
+        const npcIds = new Array(200).fill(0).map((v, i) => `npc-${i}`);
+        await Promise.all(npcIds.map(id => {
+            const data = Buffer.from(JSON.stringify({id}));
+            return pubSubClient.topic("npc").publish(data);
+        }));
+
+        res.sendStatus(200);
+    })().catch((err) => next(err));
+});
+export const npcs = functions.https.onRequest(npcsApp);
 
 // handle the npc using a pubsub topic
 export const npcTick = functions.pubsub.topic("npc").onPublish((message) => {
     const id = message.json.id;
     return handleStreetWalkingNpc({id});
 });
+
+// generate a direction map for a location
+export const generateDirectionMap = functions.pubsub.topic("directionMaps").onPublish((message) => {
+    const to = message.json.to;
+    return getDirectionMap(to);
+});
+
+/**
+ * A direction map item used to determine which direction maps to create.
+ */
+interface IDirectionMapItem extends IObject {
+    id: string;
+}
+
+/**
+ * Generate all possible direction maps once to speed up NPC path finding.
+ */
+const generateDirectionMaps = async () => {
+    // get direction maps that already exist
+    const directionMapSnapshots = await admin.firestore().collection("directionMaps").get();
+    const directionMapIdsThatExist = directionMapSnapshots.docs.map(doc => doc.id);
+
+    // get direction maps that should exist given the city map
+    const cityMapWithRooms = await getCityMapWithRooms();
+    const directionMapsIdsThatShouldExist = cityMapWithRooms.split(/\r|\n|\r\n/).reduce((acc: IDirectionMapItem[], row, rowIndex): IDirectionMapItem[] => {
+        return [
+            ...acc,
+            ...row.split("").map((column, columnIndex): IDirectionMapItem => {
+                return {
+                    id: `city1(${columnIndex},${rowIndex})`,
+                    x: columnIndex,
+                    y: rowIndex
+                };
+            })
+        ];
+    }, []);
+
+    // find a list of direction maps to create (they don't exist yet)
+    const directionMapsToCreate = directionMapsIdsThatShouldExist.reduce((acc: IObject[], directionMapItem): IObject[] => {
+        if (!directionMapIdsThatExist.includes(directionMapItem.id)) {
+            return [
+                ...acc,
+                {
+                    x: directionMapItem.x,
+                    y: directionMapItem.y
+                }
+            ];
+        } else {
+            return acc;
+        }
+    }, []);
+
+    // create worker threads to process all direction maps
+    const pubSub = new PubSub();
+    await Promise.all(directionMapsToCreate.map(to => {
+        const data = Buffer.from(JSON.stringify({to}));
+        return pubSub.topic("directionMaps").publish(data);
+    }));
+};
 
 // every minute, run a tick to update all persons
 export const personsTick = functions.pubsub.schedule("every 1 minutes").onRun(() => {
@@ -526,6 +635,11 @@ export const personsTick = functions.pubsub.schedule("every 1 minutes").onRun(()
         await addCellStringToBlankCellObjects("personalCars");
         await addCellStringToBlankCellObjects("objects");
 
+        // generate every direction map so NPCs can recycle the previous direction map instead of creating a new one
+        // from scratch, map generation can take 3 or 4 seconds per map.
+        await generateDirectionMaps();
+
+        // handle each npc
         await performNpcTick();
     })().catch((err) => {
         throw err;

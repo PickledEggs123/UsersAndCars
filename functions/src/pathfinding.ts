@@ -61,6 +61,13 @@ const createCityMapWithRooms = ({format, offset, lots}: { format: string, offset
 
     return cityMapWithRooms;
 };
+
+/**
+ * Generate a direction map towards a specific tile.
+ * @param cityMapWithRooms A city map containing tile types, used for applying weights or priority on each tile for traveling.
+ * @param offset The offset of the city map.
+ * @param to The destination.
+ */
 const generateDirectionMapTowardsTile = ({cityMapWithRooms, offset, to}: {
     cityMapWithRooms: string,
     offset: IObject,
@@ -104,8 +111,8 @@ const generateDirectionMapTowardsTile = ({cityMapWithRooms, offset, to}: {
     };
 
     // the destination in tile coordinates
-    const destinationXTile = Math.round((to.x - offset.x) / 500);
-    const destinationYTile = Math.round((to.y - offset.y) / 300);
+    const destinationXTile = Math.floor((to.x - offset.x) / 500);
+    const destinationYTile = Math.floor((to.y - offset.y) / 300);
 
     {
         // mark destination on weight map
@@ -244,6 +251,8 @@ const findPathOnDirectionMap = ({directionMap, offset, from}: {
 
     const path: INpcPathPoint[] = [];
     const now = new Date();
+    // add 5 seconds to now so NPCs will begin moving 5 seconds later, fix teleporting glitch when NPC moves first on server before client.
+    now.setSeconds(now.getSeconds() + 5);
     const timeVertical = 3000;
     const timeHorizontal = 5000;
 
@@ -442,10 +451,16 @@ const findCellTimesInPath = (npc: INpcDatabase, path: INpcPathPoint[]): INpcCell
 
     return cellTimes;
 };
+
 /**
- * Generate pathfinding data for a single street walker.
+ * A city map with rooms to generate.
  */
-export const streetWalkerPath = (npc: INpcDatabase, offset: IObject) => {
+const generateCityMapWithRooms = async () => {
+    const offset: IObject = {
+        x: 0,
+        y: 0
+    };
+
     // an ASCII map of the city
     const format = "" +
         "|-----|---------------|-----|---------------|-----|\n" +
@@ -468,6 +483,60 @@ export const streetWalkerPath = (npc: INpcDatabase, offset: IObject) => {
     const {lots} = generateLots({format, offset});
     const cityMapWithRooms = createCityMapWithRooms({format, offset, lots});
 
+    await admin.firestore().collection("cityMaps").doc("city1").set({
+        cityMapWithRooms
+    });
+
+    return cityMapWithRooms;
+};
+
+export const getCityMapWithRooms = async (): Promise<string> => {
+    const cityMapDocument = await admin.firestore().collection("cityMaps").doc("city1").get();
+    if (cityMapDocument.exists) {
+        const data = cityMapDocument.data() as {cityMapWithRooms: string};
+        return data.cityMapWithRooms;
+    } else {
+        return await generateCityMapWithRooms();
+    }
+};
+
+/**
+ * Generate the direction map for a location.
+ * @param to The location to generate the direction map for.
+ */
+const generateDirectionMap = async (to: IObject): Promise<string> => {
+    const offset: IObject = {
+        x: 0,
+        y: 0
+    };
+    const cityMapWithRooms = await getCityMapWithRooms();
+    const directionMap = await generateDirectionMapTowardsTile({cityMapWithRooms, offset, to});
+    await admin.firestore().collection("directionMaps").doc(`city1(${to.x},${to.y})`).set({
+        directionMap
+    });
+    return directionMap;
+};
+
+/**
+ * Get a direction map for a location.
+ * @param to The location to generate.
+ */
+export const getDirectionMap = async (to: IObject): Promise<string> => {
+    const document = await admin.firestore().collection("directionMaps").doc(`city1(${to.x},${to.y})`).get();
+    if (document.exists) {
+        const data = document.data() as {directionMap: string};
+        return data.directionMap;
+    } else {
+        return await generateDirectionMap(to);
+    }
+};
+
+/**
+ * Generate pathfinding data for a single street walker.
+ */
+export const streetWalkerPath = async (npc: INpcDatabase, offset: IObject) => {
+    const cityMapWithRooms = await getCityMapWithRooms();
+
     // pick random destination
     const generateRandomDestination = (): IObject => {
         const cityRows = cityMapWithRooms.split(/\r|\n|\r\n/);
@@ -486,11 +555,16 @@ export const streetWalkerPath = (npc: INpcDatabase, offset: IObject) => {
     };
 
     // generate path to destination
-    const directionMap = generateDirectionMapTowardsTile({cityMapWithRooms, offset, to});
+    const directionMap = await getDirectionMap(to);
     const path = findPathOnDirectionMap({directionMap, offset, from});
+    const secondToLastPath = path[path.length - 2];
+    const doneWalking = secondToLastPath ?
+        admin.firestore.Timestamp.fromMillis(Math.round(Date.parse(secondToLastPath.time))) :
+        admin.firestore.Timestamp.now();
     const cellTimes = findCellTimesInPath(npc, path);
     return {
         directionMap,
+        doneWalking,
         path,
         cellTimes
     };
