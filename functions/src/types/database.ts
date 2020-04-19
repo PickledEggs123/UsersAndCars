@@ -4,7 +4,7 @@ import {
     ENetworkObjectType,
     ILot,
     INetworkObject,
-    INpcPathPoint,
+    INpcPathPoint, INpcSchedule,
     IObjectHealth
 } from "./GameTypes";
 import * as admin from "firebase-admin";
@@ -89,6 +89,10 @@ export interface INpcDatabase {
     path: INpcPathPoint[];
     directionMap: string;
     doneWalking: admin.firestore.Timestamp;
+    /**
+     * A list of actions to perform every 4 hours.
+     */
+    schedule: INpcSchedule[];
 }
 
 export interface ICarDatabase {

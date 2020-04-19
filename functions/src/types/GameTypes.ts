@@ -538,6 +538,47 @@ export interface INpcPathPoint {
 }
 
 /**
+ * The game operates on a 4 hour, 240 minutes, 10 minute per hour basis. It is represented by a number that loops back
+ * to repeat the entire start of the schedule. It is the number of miliseconds since midnight 12:00 am. Examples:
+ *      0 -  60000 12 am to 1 am
+ *  60000 - 120000  1 am to 2 am
+ * 120000 - 180000  2 am to 3 am
+ */
+export type TDayNightTime = number;
+
+/**
+ * The length of one hour in day night time.
+ */
+export const TDayNightTimeHour: TDayNightTime = 60 * 10 * 1000;
+
+/**
+ * Get the current number of milliseconds from midnight in game time.
+ */
+export const getCurrentTDayNightTime = () => {
+    const now = new Date();
+    const day = TDayNightTimeHour * 24;
+    return +now % day;
+};
+
+/**
+ * A time slot in a NPC schedule to do a specific action between two points of time.
+ */
+export interface INpcSchedule {
+    /**
+     * A time of day that an activity begins.
+     */
+    startTime: TDayNightTime;
+    /**
+     * A time of day that an activity ends.
+     */
+    endTime: TDayNightTime;
+    /**
+     * The location that the NPC should be in.
+     */
+    to: IObject;
+}
+
+/**
  * A non playable character that moves along preplanned routes.
  */
 export interface INpc extends IPerson {
@@ -549,4 +590,8 @@ export interface INpc extends IPerson {
      * A map of the pathfinding map used by the NPC.
      */
     directionMap: string;
+    /**
+     * A list of actions to perform every 4 hours.
+     */
+    schedule: INpcSchedule[];
 }

@@ -1,4 +1,10 @@
-import {ILot, INpcPathPoint, IObject} from "./types/GameTypes";
+import {
+    getCurrentTDayNightTime,
+    ILot,
+    INpcPathPoint,
+    IObject,
+    TDayNightTime,
+} from "./types/GameTypes";
 import {INpcCellTimeDatabase, INpcDatabase} from "./types/database";
 import {cellSize} from "./config";
 import * as admin from "firebase-admin";
@@ -455,7 +461,7 @@ const findCellTimesInPath = (npc: INpcDatabase, path: INpcPathPoint[]): INpcCell
 /**
  * A city map with rooms to generate.
  */
-const generateCityMapWithRooms = async () => {
+const generateCityMapWithRooms = async (): Promise<{cityMapWithRooms: string, lots: ILot[]}> => {
     const offset: IObject = {
         x: 0,
         y: 0
@@ -483,20 +489,54 @@ const generateCityMapWithRooms = async () => {
     const {lots} = generateLots({format, offset});
     const cityMapWithRooms = createCityMapWithRooms({format, offset, lots});
 
-    await admin.firestore().collection("cityMaps").doc("city1").set({
-        cityMapWithRooms
-    });
+    // save city map and lots
+    await Promise.all([
+        admin.firestore().collection("cityMaps").doc("city1").set({
+            cityMapWithRooms
+        }),
+        ...lots.map(lot => {
+            return admin.firestore().collection("lots")
+                .doc(`city1-${lot.zone}(${lot.x},${lot.y})`)
+                .set(lot);
+        })
+    ]);
 
-    return cityMapWithRooms;
+    return {
+        cityMapWithRooms,
+        lots
+    };
 };
 
+/**
+ * Get a list of lots in the city.
+ */
+export const getLots = async (): Promise<Array<ILot>> => {
+    const lotDocuments = await admin.firestore().collection("lots").get();
+    // check to see if lots exist
+    if (lotDocuments.docs.length === 0) {
+        // generate lots and return
+        const {lots} = await generateCityMapWithRooms();
+        return lots;
+    } else {
+        // return existing lots
+        return lotDocuments.docs.map(doc => {
+            return doc.data() as ILot;
+        });
+    }
+};
+
+/**
+ * Get an ASCII map of the city including the rooms for direction mapping (part of pathfinding). Each room has a different
+ * weight or priority of travel.
+ */
 export const getCityMapWithRooms = async (): Promise<string> => {
     const cityMapDocument = await admin.firestore().collection("cityMaps").doc("city1").get();
     if (cityMapDocument.exists) {
         const data = cityMapDocument.data() as {cityMapWithRooms: string};
         return data.cityMapWithRooms;
     } else {
-        return await generateCityMapWithRooms();
+        const {cityMapWithRooms} = await generateCityMapWithRooms();
+        return cityMapWithRooms;
     }
 };
 
@@ -548,7 +588,32 @@ export const streetWalkerPath = async (npc: INpcDatabase, offset: IObject) => {
             y: randomCityY * 300
         };
     };
-    const to = generateRandomDestination();
+    /**
+     * Get the firebase timestamp from the game time.
+     * @param gameTime The game time to convert into a specific date and time.
+     */
+    const getTimestampFromGameTime = (gameTime: TDayNightTime): admin.firestore.Timestamp => {
+        const now = new Date();
+        const gameTimeNow = getCurrentTDayNightTime();
+        const gameTimeToAdd = gameTime - gameTimeNow;
+        return admin.firestore.Timestamp.fromMillis(Math.round(+now + gameTimeToAdd));
+    };
+    /**
+     * Get the destination and endTime from the schedule.
+     */
+    const getDestinationAndEndTimeFromSchedule = (): {to: IObject, timeDone: admin.firestore.Timestamp} | undefined => {
+        const gameTimeNow = getCurrentTDayNightTime();
+        const currentSchedule = npc.schedule.find(s => {
+            return gameTimeNow >= s.startTime && gameTimeNow < s.endTime;
+        });
+        return currentSchedule ? {
+            to: currentSchedule.to,
+            timeDone: getTimestampFromGameTime(currentSchedule.endTime)
+        } : undefined;
+    };
+
+    const destinationAndEndTime = getDestinationAndEndTimeFromSchedule();
+    const to = destinationAndEndTime ? destinationAndEndTime.to : generateRandomDestination();
     const from = {
         x: npc.x,
         y: npc.y
@@ -557,9 +622,10 @@ export const streetWalkerPath = async (npc: INpcDatabase, offset: IObject) => {
     // generate path to destination
     const directionMap = await getDirectionMap(to);
     const path = findPathOnDirectionMap({directionMap, offset, from});
-    const secondToLastPath = path[path.length - 2];
-    const doneWalking = secondToLastPath ?
-        admin.firestore.Timestamp.fromMillis(Math.round(Date.parse(secondToLastPath.time))) :
+    const lastPath = path[path.length - 1];
+    const doneWalking = destinationAndEndTime ? destinationAndEndTime.timeDone :
+        lastPath ?
+        admin.firestore.Timestamp.fromMillis(Math.round(Date.parse(lastPath.time))) :
         admin.firestore.Timestamp.now();
     const cellTimes = findCellTimesInPath(npc, path);
     return {

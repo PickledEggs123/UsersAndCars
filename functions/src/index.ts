@@ -11,13 +11,15 @@ import {users as usersHttp} from "./crud/users";
 import {cars as carsHttp} from "./crud/cars";
 import {
     ECarDirection,
+    ELotZone,
     ENetworkObjectType,
     IApiPersonsGetResponse,
     IApiPersonsPut,
     ICar,
     INetworkObject,
-    INpc, IObject,
-    IPerson
+    INpc, INpcSchedule,
+    IObject,
+    IPerson, TDayNightTimeHour
 } from "./types/GameTypes";
 import {
     getVoiceMessages,
@@ -37,7 +39,7 @@ import {giveEveryoneCash, handleVend} from "./cash";
 import {performHealthTickOnCollectionOfNetworkObjects} from "./health";
 import {addCellStringToBlankCellObjects, getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell";
 import {getThirtySecondsAgo, handleLogin} from "./authentication";
-import {getCityMapWithRooms, getDirectionMap, streetWalkerPath} from "./pathfinding";
+import {getCityMapWithRooms, getDirectionMap, getLots, streetWalkerPath} from "./pathfinding";
 
 const matchAll = require("string.prototype.matchall");
 matchAll.shim();
@@ -145,19 +147,24 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
 
             // add to json list
             for (const documentSnapshot of documents) {
-                const data = documentSnapshot.data() as INpcDatabase;
+                // for npcs that exist
+                if (documentSnapshot.exists) {
+                    // get npc data
+                    const data = documentSnapshot.data() as INpcDatabase;
 
-                // delete password so it does not reach the frontend
-                const dataWithoutPassword = {...data};
-                delete dataWithoutPassword.password;
-                delete dataWithoutPassword.doneWalking;
+                    // delete password so it does not reach the frontend
+                    const dataWithoutPassword = {...data};
+                    delete dataWithoutPassword.password;
+                    delete dataWithoutPassword.doneWalking;
+                    delete dataWithoutPassword.schedule;
 
-                // save database record into json array
-                const npcToReturnAsJson: INpc = {
-                    ...dataWithoutPassword,
-                    lastUpdate: dataWithoutPassword.lastUpdate ? dataWithoutPassword.lastUpdate.toDate().toISOString() : new Date().toISOString()
-                };
-                npcsToReturnAsJson.push(npcToReturnAsJson);
+                    // save database record into json array
+                    const npcToReturnAsJson: INpc = {
+                        ...dataWithoutPassword,
+                        lastUpdate: dataWithoutPassword.lastUpdate ? dataWithoutPassword.lastUpdate.toDate().toISOString() : new Date().toISOString()
+                    };
+                    npcsToReturnAsJson.push(npcToReturnAsJson);
+                }
             }
 
             // get sorted list of nearest persons
@@ -409,6 +416,69 @@ const applyPathToNpc = (npc: INpcDatabase): INpcDatabase => {
 };
 
 /**
+ * Generate a schedule for the NPC to follow.
+ */
+const generateNpcSchedule = async (): Promise<INpcSchedule[]> => {
+    const schedule: INpcSchedule[] = [];
+
+    // get a list of residential and commercial lots
+    const lots = await getLots();
+    const residentialLots = lots.filter(lot => lot.zone === ELotZone.RESIDENTIAL);
+    const commercialLots = lots.filter(lot => lot.zone === ELotZone.COMMERCIAL);
+
+    // get the home of the NPC
+    const home = residentialLots[Math.floor(Math.random() * residentialLots.length)];
+    // get three stores for the NPC to visit
+    const stores = new Array(3).fill(0).map(() => {
+        return commercialLots[Math.floor(Math.random() * commercialLots.length)];
+    });
+
+    // if home and each store exist, make a schedule
+    if (home && stores.every(store => store)) {
+        // npcs start at home
+        schedule.push({
+            startTime: 0,
+            endTime: TDayNightTimeHour * 7,
+            to: {
+                x: home.x,
+                y: home.y
+            }
+        });
+
+        // they travel to a store for 1 hour (10 minutes) then return for 2 hours
+        stores.forEach((store, i) => {
+            schedule.push({
+                startTime: TDayNightTimeHour * (7 + i * 3),
+                endTime: TDayNightTimeHour * (8 + i * 3),
+                to: {
+                    x: store.x,
+                    y: store.y
+                }
+            });
+            schedule.push({
+                startTime: TDayNightTimeHour * (8 + i * 3),
+                endTime: TDayNightTimeHour * (10 + i * 3),
+                to: {
+                    x: home.x,
+                    y: home.y
+                }
+            });
+        });
+
+        // go home and sleep
+        schedule.push({
+            startTime: TDayNightTimeHour * 16,
+            endTime: TDayNightTimeHour * 24,
+            to: {
+                x: home.x,
+                y: home.y
+            }
+        });
+    }
+    return schedule;
+};
+
+/**
  * Handle the path generation for a single street walking npc.
  * @param id The id of the npc.
  */
@@ -466,6 +536,7 @@ const handleStreetWalkingNpc = async ({id}: {
             password: "",
             health: defaultPersonHealthObject,
             path: [],
+            schedule: await generateNpcSchedule(),
             directionMap: ""
         };
         const streetWalkerData = await streetWalkerPath(data, {x: 0, y: 0});
@@ -515,32 +586,45 @@ const performNpcTick = async () => {
 };
 
 /**
+ * Delete a large collection of documents using pagination.
+ * @param collectionName The collection name to delete.
+ */
+const deleteAllFromCollection = async (collectionName: string) => {
+    // the previous document in the query, used for pagination large collections of more than 100 documents
+    let previousDocumentSnapshot: admin.firestore.DocumentSnapshot | undefined = undefined;
+    while (true) {
+        // paginate 100 documents, starting off from the previous document
+        const documentQuery = admin.firestore().collection(collectionName)
+            .limit(100);
+        if (previousDocumentSnapshot) {
+            documentQuery.startAfter(previousDocumentSnapshot);
+        }
+
+        // get documents
+        const documents = await documentQuery.get();
+        if (documents.docs.length === 0) {
+            // no more documents, stop deletion
+            break;
+        }
+
+        // delete documents
+        await Promise.all(documents.docs.map(doc => doc.ref.delete()));
+
+        // store a copy of the last previous document to continue pagination
+        previousDocumentSnapshot = documents.docs[documents.docs.length - 1];
+    }
+};
+
+/**
  * Refresh all npcs on the server.
  */
 const npcsApp = express();
 npcsApp.use(cors({origin: true}));
 npcsApp.post("/refresh", (req, res, next) => {
     (async () => {
-        // delete previous npcs
-        while (true) {
-            const npcDocs = await admin.firestore().collection("npcs")
-                .limit(100)
-                .get();
-            if (npcDocs.docs.length === 0) {
-                break;
-            }
-            await Promise.all(npcDocs.docs.map(doc => doc.ref.delete()));
-        }
-        // delete previous npc times
-        while (true) {
-            const npcTimeDocs = await admin.firestore().collection("npcTimes")
-                .limit(100)
-                .get();
-            if (npcTimeDocs.docs.length === 0) {
-                break;
-            }
-            await Promise.all(npcTimeDocs.docs.map(doc => doc.ref.delete()));
-        }
+        // delete previous npc data
+        await deleteAllFromCollection("npcs");
+        await deleteAllFromCollection("npcTimes");
 
         // generate 200 npcs
         const pubSubClient = new PubSub();
