@@ -1,4 +1,4 @@
-import {IObject} from "./types/GameTypes";
+import {ILot, IObject} from "./types/GameTypes";
 import {INetworkObjectCellPosition, INetworkObjectDatabase} from "./types/database";
 import * as admin from "firebase-admin";
 import {cellSize} from "./config";
@@ -34,6 +34,40 @@ const networkObjectCellPositionToCellString = (position: INetworkObjectCellPosit
  */
 export const getNetworkObjectCellString = (networkObject: IObject): string => {
     return networkObjectCellPositionToCellString(getNetworkObjectWorldCellPosition(networkObject));
+};
+/**
+ * Compute the cells string of the cells that the lot is in.
+ * @param lot The lot to compute multiple cells for.
+ */
+export const getLotCellsString = (lot: ILot): string[] => {
+    // get two corners of the outer edge of the rectangle
+    const topLeftCorner = getNetworkObjectWorldCellPosition({
+        x: lot.x,
+        y: lot.y
+    });
+    const bottomRightCorner = getNetworkObjectWorldCellPosition({
+        x: lot.x + lot.width,
+        y: lot.y + lot.height
+    });
+
+    // get difference in cells between two corners
+    const deltaX = bottomRightCorner.x - topLeftCorner.x;
+    const deltaY = bottomRightCorner.y - topLeftCorner.y;
+
+    // for each x and y difference in cells
+    const cells: string[] = [];
+    // for each column cell
+    for (let i = 0; i <= deltaX; i++) {
+        // for each row cell
+        for (let j = 0; j <= deltaY; j++) {
+            // compute cell string from cell position
+            cells.push(networkObjectCellPositionToCellString({
+                x: topLeftCorner.x + i,
+                y: topLeftCorner.y + j
+            }));
+        }
+    }
+    return cells;
 };
 /**
  * Get a list of relevant world cells to filter by.

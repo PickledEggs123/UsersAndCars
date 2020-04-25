@@ -5,6 +5,7 @@ import {
     ENetworkObjectType,
     ERoadDirection,
     ERoadType,
+    ERoomType,
     ERoomWallType,
     ICity,
     ILot,
@@ -225,6 +226,7 @@ const fillLot = (lot: ILot): ILotFillerLotAndObjects => {
         };
     }
 };
+const generateLotId = (lot: ILot): string => `city1-${lot.zone}(${lot.x},${lot.y})`;
 /**
  * Generate lots and objects within the lots.
  * @param format The format string of the city. Lots will populate an ASCII map of the city.
@@ -248,8 +250,10 @@ export const generateLots = ({format, offset: {x, y}}: { format: string, offset:
                         height: 300,
                         x: x + columnIndex * 500,
                         y: y + rowIndex * 300,
-                        zone: ELotZone.RESIDENTIAL
+                        zone: ELotZone.RESIDENTIAL,
+                        id: ""
                     };
+                    lot.id = generateLotId(lot);
                     lots.push(lot);
                     break;
                 }
@@ -261,8 +265,25 @@ export const generateLots = ({format, offset: {x, y}}: { format: string, offset:
                         height: 300,
                         x: x + columnIndex * 500,
                         y: y + rowIndex * 300,
-                        zone: ELotZone.COMMERCIAL
+                        zone: ELotZone.COMMERCIAL,
+                        id: ""
                     };
+                    lot.id = generateLotId(lot);
+                    lots.push(lot);
+                    break;
+                }
+                case "I": {
+                    const lot: ILot = {
+                        owner: null,
+                        format: null,
+                        width: 500,
+                        height: 300,
+                        x: x + columnIndex * 500,
+                        y: y + rowIndex * 300,
+                        zone: ELotZone.INDUSTRIAL,
+                        id: ""
+                    };
+                    lot.id = generateLotId(lot);
                     lots.push(lot);
                     break;
                 }
@@ -331,7 +352,12 @@ export const generateLots = ({format, offset: {x, y}}: { format: string, offset:
  * @param x The x position of the office.
  * @param y The y position of the office.
  */
-const generateOffice = ({id, x, y}: {id: string, x: number, y: number}): IRoom => {
+const generateOffice = ({
+    id,
+    x,
+    y,
+    lotId
+}: {id: string, x: number, y: number, lotId: string}): IRoom => {
     return {
         id,
         x,
@@ -341,7 +367,9 @@ const generateOffice = ({id, x, y}: {id: string, x: number, y: number}): IRoom =
             right: ERoomWallType.WALL,
             top: ERoomWallType.WALL,
             bottom: ERoomWallType.WALL
-        }
+        },
+        type: ERoomType.OFFICE,
+        lotId
     };
 };
 
@@ -351,7 +379,12 @@ const generateOffice = ({id, x, y}: {id: string, x: number, y: number}): IRoom =
  * @param x The x position of the hallway.
  * @param y The y position of the hallway.
  */
-const generateHallway = ({id, x, y}: {id: string, x: number, y: number}): IRoom => {
+const generateHallway = ({
+    id,
+    x,
+    y,
+    lotId
+}: {id: string, x: number, y: number, lotId: string}): IRoom => {
     return {
         id,
         x,
@@ -361,7 +394,9 @@ const generateHallway = ({id, x, y}: {id: string, x: number, y: number}): IRoom 
             right: ERoomWallType.WALL,
             top: ERoomWallType.WALL,
             bottom: ERoomWallType.WALL
-        }
+        },
+        type: ERoomType.HALLWAY,
+        lotId
     };
 };
 
@@ -371,7 +406,12 @@ const generateHallway = ({id, x, y}: {id: string, x: number, y: number}): IRoom 
  * @param x The x position of the hallway.
  * @param y THe y position of the hallway.
  */
-const generateEntrance = ({id, x, y}: {id: string, x: number, y: number}): IRoom => {
+const generateEntrance = ({
+    id,
+    x,
+    y,
+    lotId
+}: {id: string, x: number, y: number, lotId: string}): IRoom => {
     return {
         id,
         x,
@@ -381,7 +421,9 @@ const generateEntrance = ({id, x, y}: {id: string, x: number, y: number}): IRoom
             right: ERoomWallType.OPEN,
             top: ERoomWallType.OPEN,
             bottom: ERoomWallType.OPEN
-        }
+        },
+        type: ERoomType.ENTRANCE,
+        lotId
     };
 };
 
@@ -391,11 +433,15 @@ const generateEntrance = ({id, x, y}: {id: string, x: number, y: number}): IRoom
  * @param x The x position within the house.
  * @param y The y position within the house.
  */
-const roomStringToRoom = ({prefix, offset: {x, y}}: {prefix: string, offset: IObject}) => (roomString: string): IRoom | null => {
+const roomStringToRoom = ({
+    lotId,
+    prefix,
+    offset: {x, y}
+}: {lotId: string, prefix: string, offset: IObject}) => (roomString: string): IRoom | null => {
     switch (roomString) {
-        case "O": return generateOffice({id: `${prefix}-office-${x}-${y}`, x, y});
-        case "H": return generateHallway({id: `${prefix}-hallway-${x}-${y}`, x, y});
-        case "E": return generateEntrance({id: `${prefix}-entrance-${x}-${y}`, x, y});
+        case "O": return generateOffice({lotId, id: `${prefix}-office-${x}-${y}`, x, y});
+        case "H": return generateHallway({lotId, id: `${prefix}-hallway-${x}-${y}`, x, y});
+        case "E": return generateEntrance({lotId, id: `${prefix}-entrance-${x}-${y}`, x, y});
         default:
             return null;
     }
@@ -475,7 +521,12 @@ const applyRoadConnections = (road: IRoad, whichDoorsShouldBeOpen: IWhichDirecti
  * @param format A string containing the layout of the house.
  * @param offset The offset of the house.
  */
-export const generateHouse = ({prefix, format, offset}: {prefix: string, format: string, offset: IObject}): IRoom[] => {
+export const generateHouse = ({
+    lotId,
+    prefix,
+    format,
+    offset
+}: {lotId: string, prefix: string, format: string, offset: IObject}): IRoom[] => {
     const rooms = [] as IRoom[];
 
     // for each line
@@ -486,6 +537,7 @@ export const generateHouse = ({prefix, format, offset}: {prefix: string, format:
         // map letter to room
         roomStrings.forEach((roomString: string, columnIndex: number) => {
             const room = roomStringToRoom({
+                lotId,
                 prefix,
                 offset: {
                     x: columnIndex * 500 + offset.x,
@@ -553,7 +605,8 @@ const generateRoads = ({format, offset: {x, y}}: {format: string, offset: IObjec
         tiles.forEach((tile, columnIndex) => {
             switch (tile) {
                 case "|": {
-                    roads.push({
+                    const road: IRoad = {
+                        id: "",
                         x: x + columnIndex * 500,
                         y: y + rowIndex * 300,
                         type: ERoadType.TWO_LANE,
@@ -564,11 +617,14 @@ const generateRoads = ({format, offset: {x, y}}: {format: string, offset: IObjec
                             left: false,
                             right: false
                         }
-                    });
+                    };
+                    road.id = `city1-road(${road.x},${road.y})`;
+                    roads.push(road);
                     break;
                 }
                 case "-": {
-                    roads.push({
+                    const road: IRoad = {
+                        id: "",
                         x: columnIndex * 500,
                         y: rowIndex * 300,
                         type: ERoadType.TWO_LANE,
@@ -579,7 +635,9 @@ const generateRoads = ({format, offset: {x, y}}: {format: string, offset: IObjec
                             left: false,
                             right: false
                         }
-                    });
+                    };
+                    road.id = `city1-road(${road.x},${road.y})`;
+                    roads.push(road);
                     break;
                 }
             }

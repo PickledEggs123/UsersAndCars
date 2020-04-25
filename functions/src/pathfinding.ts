@@ -2,7 +2,7 @@ import {getCurrentTDayNightTime, ILot, INpcPathPoint, IObject, IRoom, TDayNightT
 import {INpcCellTimeDatabase, INpcDatabase} from "./types/database";
 import {cellSize} from "./config";
 import * as admin from "firebase-admin";
-import {getNetworkObjectCellString} from "./cell";
+import {getLotCellsString, getNetworkObjectCellString} from "./cell";
 import {generateCity, generateHouse} from "./city";
 
 /**
@@ -455,7 +455,7 @@ const findCellTimesInPath = (npc: INpcDatabase, path: INpcPathPoint[]): INpcCell
 /**
  * A city map with rooms to generate.
  */
-const generateCityMapWithRooms = async (): Promise<{cityMapWithRooms: string, lots: ILot[]}> => {
+export const generateCityMapWithRooms = async (): Promise<{cityMapWithRooms: string, lots: ILot[]}> => {
     const offset: IObject = {
         x: 0,
         y: 0
@@ -491,11 +491,12 @@ const generateCityMapWithRooms = async (): Promise<{cityMapWithRooms: string, lo
 
     // generate houses
     const rooms = lots.reduce((arr: IRoom[], lot: ILot, index: number): IRoom[] => {
-        const {x, y, format: houseFormat} = lot;
+        const {id, x, y, format: houseFormat} = lot;
         if (houseFormat) {
             return [
                 ...arr,
                 ...generateHouse({
+                    lotId: id,
                     prefix: `house-${index}`,
                     format: houseFormat,
                     offset: {
@@ -514,16 +515,20 @@ const generateCityMapWithRooms = async (): Promise<{cityMapWithRooms: string, lo
     // save city map and lots
     await Promise.all([
         admin.firestore().collection("cityMaps").doc("city1").set({
-            cityMapWithRooms
+            cityMapWithRooms,
+            created: admin.firestore.Timestamp.now()
         }),
         ...lots.map(lot => {
             return admin.firestore().collection("lots")
-                .doc(`city1-${lot.zone}(${lot.x},${lot.y})`)
-                .set(lot);
+                .doc(lot.id)
+                .set({
+                    ...lot,
+                    cells: getLotCellsString(lot)
+                });
         }),
         ...roads.map(road => {
             return admin.firestore().collection("roads")
-                .doc(`city1-road(${road.x},${road.y})`)
+                .doc(road.id)
                 .set({
                     ...road,
                     cell: getNetworkObjectCellString(road)

@@ -1,16 +1,21 @@
 import {
     ECarDirection,
     EDrawableType,
-    ENetworkObjectType, ERoadDirection,
+    ENetworkObjectType,
+    ERoadDirection,
+    ERoomType,
     ERoomWallType,
     ICar,
     IDrawable,
     ILot,
-    INetworkObject, INpc,
+    INetworkObject,
+    INpc,
     IObject,
     IPerson,
     IRoad,
-    IRoom, IVendor, IVendorInventoryItem
+    IRoom,
+    IVendor,
+    IVendorInventoryItem
 } from "./types/GameTypes";
 import React from "react";
 
@@ -657,6 +662,14 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
+     * Handle opening the mailbox menu.
+     * @param room
+     */
+    handleMailbox = (room: IRoom) => () => {
+        alert(`Mailbox for lot ${room.lotId}`);
+    };
+
+    /**
      * Draw walls around the room.
      * @param drawable The room to draw walls for.
      * @param index The index of the room.
@@ -993,6 +1006,25 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             case ERoomWallType.OPEN: {
                 // do nothing
             }
+        }
+
+        // draw mailbox in entrances
+        if ((drawable as IRoom).type === ERoomType.ENTRANCE) {
+            const component = this;
+            drawables.push({
+                x: x + 200,
+                y: y + 150,
+                type: EDrawableType.OBJECT,
+                draw(this: IDrawable) {
+                    return (
+                        <g key={`room-${index}-mailbox`} transform={`translate(${x + 200},${y + 150})`} onClick={component.handleMailbox(drawable as IRoom)}>
+                            <polygon fill="brown" points="-5,100 -5,30 5,30 5,100"/>
+                            <polygon fill="blue" points="-20,30 -20,0 20,0 20,30"/>
+                            <polygon fill="blue" stroke="black" strokeWidth={2} points="-15,30 -15,10 15,10 15,30"/>
+                        </g>
+                    );
+                }
+            });
         }
         return drawables;
     };

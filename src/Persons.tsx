@@ -1720,12 +1720,13 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         }
                     })
                 }
-                <div>
+                <div style={{display: 'grid', gridTemplateColumns: "repeat(3, 1fr)"}}>
                     <span>Roads: {this.state.roads.length}</span>
                     <span>Rooms: {this.state.rooms.length}</span>
                     <span>Objects: {this.state.objects.length}</span>
                     <span>NPCs: {this.state.npcs.length}</span>
                     <span>Persons: {this.state.persons.length}</span>
+                    <span>Lots: {this.state.lots.length}</span>
                 </div>
             </div>
         );

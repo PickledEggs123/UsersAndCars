@@ -168,6 +168,24 @@ export interface IRoomDoors {
 }
 
 /**
+ * The different types of room.
+ */
+export enum ERoomType {
+    /**
+     * A room that connects together to form a large open space.
+     */
+    HALLWAY = "HALLWAY",
+    /**
+     * A room that is a dead end, useful for rooms that connect to hallways with a door.
+     */
+    OFFICE = "OFFICE",
+    /**
+     * A room that connects hallways to the outside of the house. It contains the mailbox and sale sign of the house.
+     */
+    ENTRANCE = "ENTRANCE"
+}
+
+/**
  * A room which contains doors and furniture.
  */
 export interface IRoom extends IObject {
@@ -179,6 +197,14 @@ export interface IRoom extends IObject {
      * The doors of the room.
      */
     doors: IRoomDoors;
+    /**
+     * The type of the room.
+     */
+    type: ERoomType;
+    /**
+     * The id of the lot that the room is for. Used by the mailbox to open a menu to edit the lot.
+     */
+    lotId: string;
 }
 
 /**
@@ -194,6 +220,7 @@ export enum ELotZone {
  * A city is made of lots. Each lot has locations to place houses, roads, and stores.
  */
 export interface ILot extends IObject {
+    id: string;
     owner: string | null;
     format: string | null;
     width: number;
@@ -255,6 +282,10 @@ export interface IWhichDirectionIsNearby {
  * A city has roads to travel between buildings.
  */
 export interface IRoad extends IObject {
+    /**
+     * The id of the road.
+     */
+    id: string;
     /**
      * The type of road.
      */

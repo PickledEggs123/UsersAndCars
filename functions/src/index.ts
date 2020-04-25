@@ -39,7 +39,7 @@ import {giveEveryoneCash, handleVend} from "./cash";
 import {performHealthTickOnCollectionOfNetworkObjects} from "./health";
 import {addCellStringToBlankCellObjects, getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell";
 import {getThirtySecondsAgo, handleLogin} from "./authentication";
-import {getCityMapWithRooms, getDirectionMap, getLots, streetWalkerPath} from "./pathfinding";
+import {generateCityMapWithRooms, getCityMapWithRooms, getDirectionMap, getLots, streetWalkerPath} from "./pathfinding";
 
 const matchAll = require("string.prototype.matchall");
 matchAll.shim();
@@ -169,13 +169,27 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
             npcsToReturnAsJson.sort(sortNetworkObjectsByDistance);
         }
 
-        // get all objects in a simple collection
-        const getSimpleCollection = async <T extends IObject>(collectionName: string): Promise<Array<T>> => {
+        /**
+         * Get all objects near person from a collection
+         * @param collectionName The name of the collection.
+         * @param cellsArray If the collection uses cells string array instead of cell string.
+         */
+        const getSimpleCollection = async <T extends IObject>(collectionName: string, cellsArray: boolean = false): Promise<Array<T>> => {
             const dataArrayToReturnAsJson: T[] = [];
 
-            const querySnapshot = await admin.firestore().collection(collectionName)
-                .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData))
-                .get();
+            let query: admin.firestore.Query;
+            if (cellsArray) {
+                // using cells array, perform a search in an array of cells
+                // used for objects that can be in multiple cells like lots. Lots can be larger than cellSize.
+                query = admin.firestore().collection(collectionName)
+                    .where("cells", "array-contains-any", getRelevantNetworkObjectCells(currentPersonData));
+            } else {
+                // using cell field, perform a search for a cell field
+                // used for objects that are in one cell at a time. The objects are smaller than cellSize.
+                query = admin.firestore().collection(collectionName)
+                    .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData));
+            }
+            const querySnapshot = await query.get();
 
             for (const documentSnapshot of querySnapshot.docs) {
                 const data = documentSnapshot.data() as any;
@@ -202,7 +216,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
             npcs: npcsToReturnAsJson,
             cars: await getSimpleCollection<ICar>("personalCars"),
             objects: await getSimpleCollection<INetworkObject>("objects"),
-            lots: await getSimpleCollection<ILot>("lots"),
+            lots: await getSimpleCollection<ILot>("lots", true),
             roads: await getSimpleCollection<IRoad>("roads"),
             rooms: await getSimpleCollection<IRoom>("rooms"),
             voiceMessages: await getVoiceMessages(id)
@@ -628,6 +642,29 @@ npcsApp.post("/refresh", (req, res, next) => {
     })().catch((err) => next(err));
 });
 export const npcs = functions.https.onRequest(npcsApp);
+
+/**
+ * Generate data.
+ */
+const generateApp = express();
+generateApp.use(cors({origin: true}));
+generateApp.post("/city", (req, res, next) => {
+    (async () => {
+        // delete old city data
+        await Promise.all([
+            deleteAllFromCollection("roads"),
+            deleteAllFromCollection("lots"),
+            deleteAllFromCollection("rooms"),
+            deleteAllFromCollection("cityMaps")
+        ]);
+
+        // create new city data
+        await generateCityMapWithRooms();
+
+        res.sendStatus(200);
+    })().catch((err) => next(err));
+});
+export const generate = functions.https.onRequest(generateApp);
 
 // handle the npc using a pubsub topic
 export const npcTick = functions.pubsub.topic("npc").onPublish((message) => {
