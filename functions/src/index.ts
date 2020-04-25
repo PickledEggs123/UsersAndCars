@@ -15,11 +15,11 @@ import {
     ENetworkObjectType,
     IApiPersonsGetResponse,
     IApiPersonsPut,
-    ICar,
+    ICar, ILot,
     INetworkObject,
     INpc, INpcSchedule,
     IObject,
-    IPerson, TDayNightTimeHour
+    IPerson, IRoad, IRoom, TDayNightTimeHour
 } from "./types/GameTypes";
 import {
     getVoiceMessages,
@@ -65,8 +65,6 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
         // json response data
         const personsToReturnAsJson: IPerson[] = [];
         const npcsToReturnAsJson: INpc[] = [];
-        const carsToReturnAsJson: ICar[] = [];
-        const objectsToReturnAsJson: INetworkObject[] = [];
 
         const {id} = req.query;
 
@@ -83,7 +81,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
          * The distance from the object to the current person.
          * @param networkObject The object to compute distance for.
          */
-        const distanceFromCurrentPerson = (networkObject: INetworkObject): number => {
+        const distanceFromCurrentPerson = (networkObject: IObject): number => {
             return Math.sqrt((networkObject.x - currentPersonData.x) ** 2 + (networkObject.y - currentPersonData.y) ** 2);
         };
 
@@ -92,7 +90,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
          * @param a Object to sort.
          * @param b Object to sort.
          */
-        const sortNetworkObjectsByDistance = (a: INetworkObject, b: INetworkObject): number => {
+        const sortNetworkObjectsByDistance = (a: IObject, b: IObject): number => {
             return distanceFromCurrentPerson(a) - distanceFromCurrentPerson(b);
         };
 
@@ -171,50 +169,42 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
             npcsToReturnAsJson.sort(sortNetworkObjectsByDistance);
         }
 
-        // get cars
-        {
-            const querySnapshot = await admin.firestore().collection("personalCars")
+        // get all objects in a simple collection
+        const getSimpleCollection = async <T extends IObject>(collectionName: string): Promise<Array<T>> => {
+            const dataArrayToReturnAsJson: T[] = [];
+
+            const querySnapshot = await admin.firestore().collection(collectionName)
                 .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData))
                 .get();
 
             for (const documentSnapshot of querySnapshot.docs) {
-                const data = documentSnapshot.data() as ICarDatabase;
-                const carToReturnAsJson: ICar = {
+                const data = documentSnapshot.data() as any;
+                const dataToReturnAsJson: T = {
                     ...data,
-                    lastUpdate: data.lastUpdate.toDate().toISOString()
+                    lastUpdate: data.lastUpdate ?
+                        typeof data.lastUpdate === "string" ?
+                            data.lastUpdate :
+                            data.lastUpdate.toDate().toISOString()
+                        : undefined
                 };
-                carsToReturnAsJson.push(carToReturnAsJson);
+                dataArrayToReturnAsJson.push(dataToReturnAsJson);
             }
 
             // get sorted list of nearest cars
-            carsToReturnAsJson.sort(sortNetworkObjectsByDistance);
-        }
+            dataArrayToReturnAsJson.sort(sortNetworkObjectsByDistance);
 
-        // get objects
-        {
-            const querySnapshot = await admin.firestore().collection("objects")
-                .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData))
-                .get();
-
-            for (const documentSnapshot of querySnapshot.docs) {
-                const data = documentSnapshot.data() as INetworkObjectDatabase;
-                const objectToReturnAsJson: INetworkObject = {
-                    ...data,
-                    lastUpdate: data.lastUpdate.toDate().toISOString()
-                };
-                objectsToReturnAsJson.push(objectToReturnAsJson);
-            }
-
-            // get sorted list of nearest objects
-            objectsToReturnAsJson.sort(sortNetworkObjectsByDistance);
-        }
+            return dataArrayToReturnAsJson;
+        };
 
         // return both persons and cars since both can move and both are network objects
         const jsonData: IApiPersonsGetResponse = {
             persons: personsToReturnAsJson,
             npcs: npcsToReturnAsJson,
-            cars: carsToReturnAsJson,
-            objects: objectsToReturnAsJson,
+            cars: await getSimpleCollection<ICar>("personalCars"),
+            objects: await getSimpleCollection<INetworkObject>("objects"),
+            lots: await getSimpleCollection<ILot>("lots"),
+            roads: await getSimpleCollection<IRoad>("roads"),
+            rooms: await getSimpleCollection<IRoom>("rooms"),
             voiceMessages: await getVoiceMessages(id)
         };
         res.json(jsonData);

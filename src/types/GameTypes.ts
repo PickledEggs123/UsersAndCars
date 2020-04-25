@@ -344,22 +344,13 @@ export interface IKeyDownHandler {
  * The HTTP GET /persons response.
  */
 export interface IApiPersonsGetResponse {
-    /**
-     * A list of people.
-     */
     persons: IPerson[];
-    /**
-     * A list of npcs.
-     */
     npcs: INpc[],
-    /**
-     * A list of cars.
-     */
     cars: ICar[];
-    /**
-     * A list of objects.
-     */
     objects: INetworkObject[];
+    lots: ILot[];
+    rooms: IRoom[];
+    roads: IRoad[];
     /**
      * A list of voice messages.
      */

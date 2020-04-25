@@ -3,11 +3,18 @@ import {
     ELotExpandType,
     ELotZone,
     ENetworkObjectType,
+    ERoadDirection,
+    ERoadType,
+    ERoomWallType,
+    ICity,
     ILot,
     ILotExpandTypeAndAffectedLocations,
     INetworkObject,
     IObject,
-    IVendor
+    IRoad,
+    IRoom,
+    IVendor,
+    IWhichDirectionIsNearby
 } from "./types/GameTypes";
 
 /**
@@ -313,6 +320,295 @@ export const generateLots = ({format, offset: {x, y}}: { format: string, offset:
     const objects = lotAndObjectsMerge.objectsArr;
 
     return {
+        lots,
+        objects
+    };
+};
+
+/**
+ * Generate an office.
+ * @param id The id of the office.
+ * @param x The x position of the office.
+ * @param y The y position of the office.
+ */
+const generateOffice = ({id, x, y}: {id: string, x: number, y: number}): IRoom => {
+    return {
+        id,
+        x,
+        y,
+        doors: {
+            left: ERoomWallType.WALL,
+            right: ERoomWallType.WALL,
+            top: ERoomWallType.WALL,
+            bottom: ERoomWallType.WALL
+        }
+    };
+};
+
+/**
+ * Generate a hallway.
+ * @param id The id of the hallway
+ * @param x The x position of the hallway.
+ * @param y The y position of the hallway.
+ */
+const generateHallway = ({id, x, y}: {id: string, x: number, y: number}): IRoom => {
+    return {
+        id,
+        x,
+        y,
+        doors: {
+            left: ERoomWallType.WALL,
+            right: ERoomWallType.WALL,
+            top: ERoomWallType.WALL,
+            bottom: ERoomWallType.WALL
+        }
+    };
+};
+
+/**
+ * Generate an entrance.
+ * @param id The id of the entrance
+ * @param x The x position of the hallway.
+ * @param y THe y position of the hallway.
+ */
+const generateEntrance = ({id, x, y}: {id: string, x: number, y: number}): IRoom => {
+    return {
+        id,
+        x,
+        y,
+        doors: {
+            left: ERoomWallType.OPEN,
+            right: ERoomWallType.OPEN,
+            top: ERoomWallType.OPEN,
+            bottom: ERoomWallType.OPEN
+        }
+    };
+};
+
+/**
+ * Map a roomString to a generated room.
+ * @param prefix The house prefix.
+ * @param x The x position within the house.
+ * @param y The y position within the house.
+ */
+const roomStringToRoom = ({prefix, offset: {x, y}}: {prefix: string, offset: IObject}) => (roomString: string): IRoom | null => {
+    switch (roomString) {
+        case "O": return generateOffice({id: `${prefix}-office-${x}-${y}`, x, y});
+        case "H": return generateHallway({id: `${prefix}-hallway-${x}-${y}`, x, y});
+        case "E": return generateEntrance({id: `${prefix}-entrance-${x}-${y}`, x, y});
+        default:
+            return null;
+    }
+};
+
+/**
+ * Determine if room is nearby another room.
+ * @param a The room to test being nearby room b.
+ */
+const tileIsNearbyTile = (a: IObject) => (b: IObject) => {
+    return b.x >= a.x - 500 && b.x <= a.x + 500 && b.y >= a.y - 300 && b.y <= a.y + 300;
+};
+
+/**
+ * Return which doors should be open given a room and an array of nearby rooms.
+ * @param tile The room which doors should be computed.
+ * @param nearbyTiles The array of nearby rooms.
+ */
+const whichDirectionIsNearby = (tile: IObject, nearbyTiles: IObject[]): IWhichDirectionIsNearby => {
+    const up = nearbyTiles.some((nearbyTile) => {
+        return Math.abs(nearbyTile.x - tile.x) < 10 && Math.abs(nearbyTile.y - tile.y + 300) < 10;
+    });
+    const down = nearbyTiles.some((nearbyTile) => {
+        return Math.abs(nearbyTile.x - tile.x) < 10 && Math.abs(nearbyTile.y - tile.y - 300) < 10;
+    });
+    const left = nearbyTiles.some((nearbyTile) => {
+        return Math.abs(nearbyTile.y - tile.y) < 10 && Math.abs(nearbyTile.x - tile.x + 500) < 10;
+    });
+    const right = nearbyTiles.some((nearbyTile) => {
+        return Math.abs(nearbyTile.y - tile.y) < 10 && Math.abs(nearbyTile.x - tile.x - 500) < 10;
+    });
+
+    return {
+        up,
+        down,
+        left,
+        right
+    } as IWhichDirectionIsNearby;
+};
+
+/**
+ * Apply doors onto the room mutably.
+ * @param room The room which should be modified with new doors.
+ * @param whichDoorsShouldBeOpen The doors to open.
+ * @param value The type of wall to be drawn.
+ */
+const applyWhichDoorsShouldBeOpen = (room: IRoom, whichDoorsShouldBeOpen: IWhichDirectionIsNearby, value: ERoomWallType): void => {
+    if (whichDoorsShouldBeOpen.up) {
+        room.doors.top = value;
+    }
+    if (whichDoorsShouldBeOpen.down) {
+        room.doors.bottom = value;
+    }
+    if (whichDoorsShouldBeOpen.left) {
+        room.doors.left = value;
+    }
+    if (whichDoorsShouldBeOpen.right) {
+        room.doors.right = value;
+    }
+};
+
+/**
+ * Apply doors onto the room mutably.
+ * @param road The room which should be modified with new doors.
+ * @param whichDoorsShouldBeOpen The doors to open.
+ */
+const applyRoadConnections = (road: IRoad, whichDoorsShouldBeOpen: IWhichDirectionIsNearby): void => {
+    road.connected = {
+        ...road.connected,
+        ...whichDoorsShouldBeOpen
+    };
+};
+
+/**
+ * Generate a house from a format string.
+ * @param prefix The house prefix.
+ * @param format A string containing the layout of the house.
+ * @param offset The offset of the house.
+ */
+export const generateHouse = ({prefix, format, offset}: {prefix: string, format: string, offset: IObject}): IRoom[] => {
+    const rooms = [] as IRoom[];
+
+    // for each line
+    const rows = format.split(/\r|\n|\r\n/);
+    rows.forEach((row: string, rowIndex: number) => {
+        // for each letter
+        const roomStrings = row.split("");
+        // map letter to room
+        roomStrings.forEach((roomString: string, columnIndex: number) => {
+            const room = roomStringToRoom({
+                prefix,
+                offset: {
+                    x: columnIndex * 500 + offset.x,
+                    y: rowIndex * 300 + offset.y
+                }
+            })(roomString);
+            if (room) {
+                rooms.push(room);
+            }
+        });
+    });
+
+    // build doors from hallways to any room
+    const hallways = rooms.filter(room => room.id.includes("hallway"));
+    const notHallways = rooms.filter(room => !room.id.includes("hallway"));
+    hallways.forEach(hallway => {
+        {
+            // find nearby hallways, make open
+            const nearbyRooms = hallways.filter(tileIsNearbyTile(hallway));
+            const whichDoorsShouldBeOpen = whichDirectionIsNearby(hallway, nearbyRooms);
+            applyWhichDoorsShouldBeOpen(hallway, whichDoorsShouldBeOpen, ERoomWallType.OPEN);
+        }
+        {
+            // find nearby rooms that are not hallways, make door
+            const nearbyRooms = notHallways.filter(tileIsNearbyTile(hallway));
+            const whichDoorsShouldBeOpen = whichDirectionIsNearby(hallway, nearbyRooms);
+            applyWhichDoorsShouldBeOpen(hallway, whichDoorsShouldBeOpen, ERoomWallType.DOOR);
+        }
+    });
+
+    // build doors from offices to hallways
+    const offices = rooms.filter(room => room.id.includes("office"));
+    offices.forEach(office => {
+        // find nearby hallways, add door
+        const nearbyRooms = hallways.filter(tileIsNearbyTile(office));
+        const whichDoorsShouldBeOpen = whichDirectionIsNearby(office, nearbyRooms);
+        applyWhichDoorsShouldBeOpen(office, whichDoorsShouldBeOpen, ERoomWallType.DOOR);
+    });
+
+    // build doors from entrances to hallways
+    const entrances = rooms.filter(room => room.id.includes("entrance"));
+    entrances.forEach(entrance => {
+        // find nearby hallways, add door
+        const nearbyRooms = hallways.filter(tileIsNearbyTile(entrance));
+        const whichDoorsShouldBeOpen = whichDirectionIsNearby(entrance, nearbyRooms);
+        applyWhichDoorsShouldBeOpen(entrance, whichDoorsShouldBeOpen, ERoomWallType.ENTRANCE);
+    });
+
+    return rooms;
+};
+
+/**
+ * Generate roads for a city.
+ * @param format A string containing an ASCII map of the city.
+ * @param x The offset of the city.
+ * @param y The offset of the city.
+ */
+const generateRoads = ({format, offset: {x, y}}: {format: string, offset: IObject}): IRoad[] => {
+    const roads = [] as IRoad[];
+
+    // parse all roads
+    const rows = format.split(/\r\n|\r|\n/);
+    rows.forEach((row, rowIndex) => {
+        const tiles = row.split("");
+        tiles.forEach((tile, columnIndex) => {
+            switch (tile) {
+                case "|": {
+                    roads.push({
+                        x: x + columnIndex * 500,
+                        y: y + rowIndex * 300,
+                        type: ERoadType.TWO_LANE,
+                        direction: ERoadDirection.VERTICAL,
+                        connected: {
+                            up: false,
+                            down: false,
+                            left: false,
+                            right: false
+                        }
+                    });
+                    break;
+                }
+                case "-": {
+                    roads.push({
+                        x: columnIndex * 500,
+                        y: rowIndex * 300,
+                        type: ERoadType.TWO_LANE,
+                        direction: ERoadDirection.HORIZONTAL,
+                        connected: {
+                            up: false,
+                            down: false,
+                            left: false,
+                            right: false
+                        }
+                    });
+                    break;
+                }
+            }
+        });
+    });
+
+    // connect roads to each other
+    roads.forEach(road => {
+        const nearbyRoads = roads.filter(tileIsNearbyTile(road));
+        const whichDirectionShouldBeConnected = whichDirectionIsNearby(road, nearbyRoads);
+        applyRoadConnections(road, whichDirectionShouldBeConnected);
+    });
+
+    return roads;
+};
+
+/**
+ * Generate a city from an ASCII map.
+ * @param prefix The name of the city. It's prepended to the [[ILot]] names.
+ * @param format The ASCII map of the city.
+ * @param x The x offset of the city.
+ * @param y The y offset of the city.
+ */
+export const generateCity = ({prefix, format, offset: {x, y}}: {prefix: string, format: string, offset: IObject}): ICity => {
+    const roads = generateRoads({format, offset: {x, y}});
+    const {lots, objects} = generateLots({format, offset: {x, y}});
+
+    return {
+        roads,
         lots,
         objects
     };

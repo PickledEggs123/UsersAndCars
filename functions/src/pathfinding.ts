@@ -1,15 +1,9 @@
-import {
-    getCurrentTDayNightTime,
-    ILot,
-    INpcPathPoint,
-    IObject,
-    TDayNightTime,
-} from "./types/GameTypes";
+import {getCurrentTDayNightTime, ILot, INpcPathPoint, IObject, IRoom, TDayNightTime} from "./types/GameTypes";
 import {INpcCellTimeDatabase, INpcDatabase} from "./types/database";
 import {cellSize} from "./config";
 import * as admin from "firebase-admin";
 import {getNetworkObjectCellString} from "./cell";
-import {generateLots} from "./city";
+import {generateCity, generateHouse} from "./city";
 
 /**
  * Handle pathfinding AI for each NPC.
@@ -485,8 +479,36 @@ const generateCityMapWithRooms = async (): Promise<{cityMapWithRooms: string, lo
         "|RRRRR|RRRRRRRRRRRRRRR|CCCCC|RRRRRRRRRRRRRRR|RRRRR|\n" +
         "|-----|---------------|-----|---------------|-----|";
 
-    // create city map with rooms
-    const {lots} = generateLots({format, offset});
+    // generate roads and lots
+    const {roads, lots, objects} = generateCity({
+        prefix: "city1",
+        format,
+        offset: {
+            x: 0,
+            y: 0
+        }
+    });
+
+    // generate houses
+    const rooms = lots.reduce((arr: IRoom[], lot: ILot, index: number): IRoom[] => {
+        const {x, y, format: houseFormat} = lot;
+        if (houseFormat) {
+            return [
+                ...arr,
+                ...generateHouse({
+                    prefix: `house-${index}`,
+                    format: houseFormat,
+                    offset: {
+                        x,
+                        y
+                    }
+                })
+            ];
+        } else {
+            return arr;
+        }
+    }, []);
+
     const cityMapWithRooms = createCityMapWithRooms({format, offset, lots});
 
     // save city map and lots
@@ -498,6 +520,30 @@ const generateCityMapWithRooms = async (): Promise<{cityMapWithRooms: string, lo
             return admin.firestore().collection("lots")
                 .doc(`city1-${lot.zone}(${lot.x},${lot.y})`)
                 .set(lot);
+        }),
+        ...roads.map(road => {
+            return admin.firestore().collection("roads")
+                .doc(`city1-road(${road.x},${road.y})`)
+                .set({
+                    ...road,
+                    cell: getNetworkObjectCellString(road)
+                });
+        }),
+        ...rooms.map(room => {
+            return admin.firestore().collection("rooms")
+                .doc(room.id)
+                .set({
+                    ...room,
+                    cell: getNetworkObjectCellString(room)
+                });
+        }),
+        ...objects.map(networkObject => {
+            return admin.firestore().collection("objects")
+                .doc(networkObject.id)
+                .set({
+                    ...networkObject,
+                    cell: getNetworkObjectCellString(networkObject)
+                });
         })
     ]);
 
