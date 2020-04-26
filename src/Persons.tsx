@@ -3,12 +3,9 @@ import './App.scss';
 import axios from "axios";
 import {
     ECarDirection,
-    ELotExpandType,
     ELotZone,
-    ENetworkObjectType,
-    ERoadDirection,
-    ERoadType,
-    ERoomWallType,
+    IApiLotsBuyPost,
+    IApiLotsSellPost,
     IApiPersonsGetResponse,
     IApiPersonsPut,
     IApiPersonsVendPost,
@@ -19,20 +16,16 @@ import {
     IApiPersonsVoiceOfferMessage,
     IApiPersonsVoiceOfferPost,
     ICar,
-    ICity,
     IGameTutorials,
     IKeyDownHandler,
     ILot,
-    ILotExpandTypeAndAffectedLocations,
     INetworkObject,
-    INpc, INpcPathPoint,
+    INpc,
     IObject,
     IPerson,
     IRoad,
     IRoom,
-    IVendor,
-    IVendorInventoryItem,
-    IWhichDirectionIsNearby
+    IVendorInventoryItem
 } from "./types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
 import {IPersonsDrawablesProps, IPersonsDrawablesState, PersonsDrawables} from "./PersonsDrawables";
@@ -63,6 +56,10 @@ interface IPersonsState extends IPersonsDrawablesState {
      * A list of nearest persons for voice audio chat.
      */
     nearestPersons: string[];
+    /**
+     * The lot price for buying or selling a lot.
+     */
+    lotPrice: number | null;
 }
 
 export interface ILotFillerLotAndObjects {
@@ -197,7 +194,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         vendingInventory: [] as IVendorInventoryItem[],
         nearestPersons: [] as string[],
         connectedVoiceChats: [] as string[],
-        npc: null as INpc | null
+        npc: null as INpc | null,
+        lot: null as ILot | null,
+        lotPrice: null as number | null
     };
 
     /**
@@ -801,6 +800,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             const nearestPersons = this.getCurrentPerson() ?
                 persons.filter(person => person.id !== this.state.currentPersonId).slice(0, 10).map(person => person.id) :
                 [];
+            const npc = npcs.find(n => this.state.npc && n.id === this.state.npc.id) || null;
+            const lot = lots.find(l => this.state.lot && l.id === this.state.lot.id) || null;
             this.setState({
                 persons,
                 npcs,
@@ -818,7 +819,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 nearestPersons,
                 roads,
                 lots,
-                rooms
+                rooms,
+                npc,
+                lot
             });
         }
 
@@ -1110,7 +1113,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     // close vending inventory list
                     vendingInventory: [],
                     // close npc viewer
-                    npc: null
+                    npc: null,
+                    // close lot viewer
+                    lot: null
                 });
 
                 // merge optional state updates into one state update object to perform a single setState.
@@ -1492,6 +1497,65 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         alert("NPCs have been reset");
     };
 
+    /**
+     * Handle lot price changes.
+     */
+    handleLotPrice = (event: React.KeyboardEvent) => {
+        const key = event.key;
+        const previousLotPrice: string = typeof this.state.lotPrice === "number" ? this.state.lotPrice.toString() : "";
+        if (/[0-9]/.test(key)) {
+            this.setState({
+                lotPrice: Number(`${previousLotPrice}${key}`)
+            });
+        } else if (key === "Backspace") {
+            this.setState({
+                lotPrice: Number(previousLotPrice.substr(0, previousLotPrice.length - 1))
+            });
+        }
+    };
+
+    /**
+     * Create a buy offer for a lot.
+     */
+    buyLot = (lot: ILot) => async () => {
+        if (typeof this.state.lotPrice === "number") {
+            const data: IApiLotsBuyPost = {
+                lotId: lot.id,
+                price: this.state.lotPrice,
+                personId: this.state.currentPersonId
+            };
+            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/lots/buy", data);
+        }
+    };
+
+    /**
+     * Create a sell offer for a lot.
+     */
+    sellLot = (lot: ILot) => async () => {
+        if (typeof this.state.lotPrice === "number") {
+            const data: IApiLotsSellPost = {
+                lotId: lot.id,
+                price: this.state.lotPrice,
+                personId: this.state.currentPersonId
+            };
+            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/lots/sell", data);
+        }
+    };
+
+    /**
+     * Accept buy offer.
+     */
+    acceptBuyOffer = (offer: IApiLotsBuyPost) => async () => {
+        await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/lots/buy/accept", offer)
+    };
+
+    /**
+     * Accept sell offer.
+     */
+    acceptSellOffer = (offer: IApiLotsSellPost) => async () => {
+        await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/lots/sell/accept", offer)
+    };
+
     render() {
         // find the current person
         const currentPerson = this.getCurrentPerson();
@@ -1674,11 +1738,39 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                             <g>
                                 <rect x="0" y="0" width={this.state.width} height={this.state.height} fill="white" opacity="0.3"/>
                                 <text x="20" y="60" fontSize="24">NPC id: {this.state.npc.id}</text>
-                                <text x="20" y="80" fontSize="18" onClick={this.followNpc(this.state.npc)}>Follow</text>
+                                <text x="20" y="100" fontSize="18" onClick={this.followNpc(this.state.npc)}>Follow</text>
                                 {
                                     this.state.npc.directionMap.split(/\r|\n|\r\n/).map((row, rowIndex) => {
-                                        return <text x="20" y={100 + rowIndex * 20} fontSize="24" fontFamily="monospace">{row}</text>
+                                        return <text x="20" y={120 + rowIndex * 20} fontSize="24" fontFamily="monospace">{row}</text>
                                     })
+                                }
+                            </g>
+                        ) : null
+                    }
+                    {
+                        this.state.lot ? (
+                            <g>
+                                <rect x="0" y="0" width={this.state.width} height={this.state.height} fill="white" opacity="0.3"/>
+                                <text x="20" y="60" fontSize="24">Lot id: {this.state.lot.id}</text>
+                                <text x="20" y="100" fontSize="18" onClick={
+                                    this.state.lot.owner === this.state.currentPersonId ? this.sellLot(this.state.lot) : this.buyLot(this.state.lot)
+                                }>{this.state.lot.owner === this.state.currentPersonId ? "Sell Offer" : "Buy Offer"}</text>
+                                <foreignObject x="100" y="80" width="150" height="40">
+                                    <div>
+                                        <input onKeyUp={this.handleLotPrice} value={`Amount: ${this.state.lotPrice}`}/>
+                                    </div>
+                                </foreignObject>
+                                {
+                                    this.state.lot.sellOffers && this.state.lot.sellOffers[0] ? (
+                                        <text x="20" y="140" fontSize="18" onClick={this.acceptBuyOffer(this.state.lot.sellOffers[0])}>{this.state.lot.sellOffers[0].personId} {this.state.lot.sellOffers[0].price} Buy</text>
+                                    ) : null
+                                }
+                                {
+                                    this.state.lot.buyOffers ? (
+                                        this.state.lot.buyOffers.map((offer, i) => {
+                                            return <text x="20" y={180 + i * 20} fontSize="18" onClick={this.acceptSellOffer(offer)}>{offer.personId} {offer.price} Sell</text>
+                                        })
+                                    ) : null
                                 }
                             </g>
                         ) : null

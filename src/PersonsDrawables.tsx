@@ -112,6 +112,10 @@ export interface IPersonsDrawablesState {
      * An NPC being viewed.
      */
     npc: INpc | null;
+    /**
+     * A lot that is being viewed.
+     */
+    lot: ILot | null;
 }
 
 /**
@@ -666,7 +670,12 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param room
      */
     handleMailbox = (room: IRoom) => () => {
-        alert(`Mailbox for lot ${room.lotId}`);
+        const lot = this.state.lots.find(l => l.id === room.lotId);
+        if (lot) {
+            this.setState({
+                lot
+            });
+        }
     };
 
     /**

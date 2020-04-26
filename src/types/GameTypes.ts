@@ -226,6 +226,8 @@ export interface ILot extends IObject {
     width: number;
     height: number;
     zone: ELotZone;
+    buyOffers: IApiLotsBuyPost[] | null;
+    sellOffers: IApiLotsSellPost[] | null;
 }
 
 /**
@@ -509,6 +511,24 @@ export interface IApiPersonsVoiceAnswerMessage extends IApiVoiceMessage {
  * The HTTP POST /persons/voice/answer request.
  */
 export interface IApiPersonsVoiceAnswerPost extends IApiPersonsVoiceAnswerMessage {}
+
+/**
+ * The HTTP POST /lots/buy request. Used to ask for a buying price of a lot.
+ */
+export interface IApiLotsBuyPost {
+    lotId: string;
+    price: number;
+    personId: string;
+}
+
+/**
+ * The HTTP POST /lots/sell request. Used to put a lot up for sale.
+ */
+export interface IApiLotsSellPost {
+    lotId: string;
+    price: number;
+    personId: string;
+}
 
 /**
  * A list of game tutorials that should be shown.

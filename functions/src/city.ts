@@ -251,7 +251,9 @@ export const generateLots = ({format, offset: {x, y}}: { format: string, offset:
                         x: x + columnIndex * 500,
                         y: y + rowIndex * 300,
                         zone: ELotZone.RESIDENTIAL,
-                        id: ""
+                        id: "",
+                        buyOffers: null,
+                        sellOffers: null
                     };
                     lot.id = generateLotId(lot);
                     lots.push(lot);
@@ -266,7 +268,9 @@ export const generateLots = ({format, offset: {x, y}}: { format: string, offset:
                         x: x + columnIndex * 500,
                         y: y + rowIndex * 300,
                         zone: ELotZone.COMMERCIAL,
-                        id: ""
+                        id: "",
+                        buyOffers: null,
+                        sellOffers: null
                     };
                     lot.id = generateLotId(lot);
                     lots.push(lot);
@@ -281,7 +285,9 @@ export const generateLots = ({format, offset: {x, y}}: { format: string, offset:
                         x: x + columnIndex * 500,
                         y: y + rowIndex * 300,
                         zone: ELotZone.INDUSTRIAL,
-                        id: ""
+                        id: "",
+                        buyOffers: null,
+                        sellOffers: null
                     };
                     lot.id = generateLotId(lot);
                     lots.push(lot);

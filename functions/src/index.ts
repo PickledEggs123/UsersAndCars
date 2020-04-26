@@ -12,7 +12,7 @@ import {cars as carsHttp} from "./crud/cars";
 import {
     ECarDirection,
     ELotZone,
-    ENetworkObjectType,
+    ENetworkObjectType, IApiLotsBuyPost, IApiLotsSellPost,
     IApiPersonsGetResponse,
     IApiPersonsPut,
     ICar, ILot,
@@ -65,6 +65,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
         // json response data
         const personsToReturnAsJson: IPerson[] = [];
         const npcsToReturnAsJson: INpc[] = [];
+        const lotsToReturnAsJson: ILot[] = [];
 
         const {id} = req.query;
 
@@ -169,6 +170,41 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
             npcsToReturnAsJson.sort(sortNetworkObjectsByDistance);
         }
 
+        // get lots
+        {
+            const querySnapshot = await admin.firestore().collection("lots")
+                .where("cells", "array-contains-any", getRelevantNetworkObjectCells(currentPersonData))
+                .get();
+
+            for (const documentSnapshot of querySnapshot.docs) {
+                const data = documentSnapshot.data() as ILot;
+                let dataToReturnAsJson: ILot = {
+                    ...data
+                };
+
+                const buyOffersQuery = await admin.firestore().collection("buyOffers")
+                    .where("lotId", "==", data.id)
+                    .get();
+                const buyOffers: IApiLotsBuyPost[] = buyOffersQuery.docs.map(offer => offer.data() as IApiLotsBuyPost);
+
+                const sellOffersQuery = await admin.firestore().collection("sellOffers")
+                    .where("lotId", "==", data.id)
+                    .get();
+                const sellOffers: IApiLotsSellPost[] = sellOffersQuery.docs.map(offer => offer.data() as IApiLotsSellPost);
+
+                dataToReturnAsJson = {
+                    ...dataToReturnAsJson,
+                    buyOffers,
+                    sellOffers
+                };
+
+                lotsToReturnAsJson.push(dataToReturnAsJson);
+            }
+
+            // get sorted list of nearest cars
+            lotsToReturnAsJson.sort(sortNetworkObjectsByDistance);
+        }
+
         /**
          * Get all objects near person from a collection
          * @param collectionName The name of the collection.
@@ -214,9 +250,9 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
         const jsonData: IApiPersonsGetResponse = {
             persons: personsToReturnAsJson,
             npcs: npcsToReturnAsJson,
+            lots: lotsToReturnAsJson,
             cars: await getSimpleCollection<ICar>("personalCars"),
             objects: await getSimpleCollection<INetworkObject>("objects"),
-            lots: await getSimpleCollection<ILot>("lots", true),
             roads: await getSimpleCollection<IRoad>("roads"),
             rooms: await getSimpleCollection<IRoom>("rooms"),
             voiceMessages: await getVoiceMessages(id)
@@ -426,9 +462,9 @@ const generateNpcSchedule = async (): Promise<INpcSchedule[]> => {
     const schedule: INpcSchedule[] = [];
 
     // get a list of residential and commercial lots
-    const lots = await getLots();
-    const residentialLots = lots.filter(lot => lot.zone === ELotZone.RESIDENTIAL);
-    const commercialLots = lots.filter(lot => lot.zone === ELotZone.COMMERCIAL);
+    const lotData = await getLots();
+    const residentialLots = lotData.filter(lot => lot.zone === ELotZone.RESIDENTIAL);
+    const commercialLots = lotData.filter(lot => lot.zone === ELotZone.COMMERCIAL);
 
     // get the home of the NPC
     const home = residentialLots[Math.floor(Math.random() * residentialLots.length)];
@@ -665,6 +701,89 @@ generateApp.post("/city", (req, res, next) => {
     })().catch((err) => next(err));
 });
 export const generate = functions.https.onRequest(generateApp);
+
+/**
+ * Lot data.
+ */
+const lotsApp = express();
+const acceptBuyOffer = async (offer: IApiLotsBuyPost) => {
+    const lotDocument = await admin.firestore().collection("lots").doc(offer.lotId).get();
+    const personDocument = await admin.firestore().collection("persons").doc(offer.personId).get();
+    if (lotDocument.exists && personDocument.exists) {
+        const oldBuyOffers = await admin.firestore().collection("buyOffers")
+            .where("lotId", "==", offer.lotId)
+            .get();
+        const oldSellOffers = await admin.firestore().collection("sellOffers")
+            .where("lotId", "==", offer.lotId)
+            .get();
+
+        const lotData: Partial<ILot> = {
+            owner: offer.personId
+        };
+        const personData = personDocument.data() as IPersonDatabase;
+        const newPersonData: Partial<IPersonDatabase> = {
+            cash: personData.cash - offer.price,
+            lastUpdate: admin.firestore.Timestamp.now()
+        };
+        await Promise.all([
+            lotDocument.ref.set(lotData, {merge: true}),
+            personDocument.ref.set(newPersonData, {merge: true}),
+            ...oldBuyOffers.docs.map(o => o.ref.delete()),
+            ...oldSellOffers.docs.map(o => o.ref.delete())
+        ]);
+    }
+};
+lotsApp.use(cors({origin: true}));
+lotsApp.post("/buy", (req, res, next) => {
+    (async () => {
+        const bodyData: IApiLotsBuyPost = req.body;
+
+        // find lot in database
+        const lotDocument = await admin.firestore().collection("lots").doc(bodyData.lotId).get();
+        if (lotDocument.exists) {
+            // lot exists, get data
+            const lotData = lotDocument.data() as ILot;
+
+            if (!lotData.owner) {
+                // lot has no owner, automatically accept offer
+                await acceptBuyOffer(bodyData);
+            } else {
+                // lot has an owner, create a buy offer
+                await admin.firestore().collection("buyOffers").add({
+                    ...req.body
+                });
+            }
+        }
+
+        res.sendStatus(200);
+    })().catch((err) => next(err));
+});
+// accept a buy offer
+lotsApp.post("/buy/accept", (req, res, next) => {
+    (async () => {
+        const bodyData: IApiLotsBuyPost = req.body;
+        await acceptBuyOffer(bodyData);
+        res.sendStatus(200);
+    })().catch((err) => next(err));
+});
+// accept a buy offer
+lotsApp.post("/sell/accept", (req, res, next) => {
+    (async () => {
+        const bodyData: IApiLotsBuyPost = req.body;
+        await acceptBuyOffer(bodyData);
+        res.sendStatus(200);
+    })().catch((err) => next(err));
+});
+lotsApp.post("/sell", (req, res, next) => {
+    (async () => {
+        await admin.firestore().collection("sellOffers").add({
+            ...req.body
+        });
+
+        res.sendStatus(200);
+    })().catch((err) => next(err));
+});
+export const lots = functions.https.onRequest(lotsApp);
 
 // handle the npc using a pubsub topic
 export const npcTick = functions.pubsub.topic("npc").onPublish((message) => {
