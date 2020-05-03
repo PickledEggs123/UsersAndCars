@@ -3,7 +3,6 @@ import './App.scss';
 import axios from "axios";
 import {
     ECarDirection,
-    ELotZone,
     ENetworkObjectType,
     IApiLotsBuyPost,
     IApiLotsSellPost,
@@ -65,21 +64,6 @@ interface IPersonsState extends IPersonsDrawablesState {
      * The lot price for buying or selling a lot.
      */
     lotPrice: number | null;
-}
-
-export interface ILotFillerLotAndObjects {
-    lot: ILot;
-    objects: INetworkObject[];
-}
-
-/**
- * A list of lot fillers. They fill the lot with a format string given a dimension and zone type.
- */
-export interface ILotFiller {
-    width: number;
-    height: number;
-    zone: ELotZone;
-    fillLot(lot: ILot): ILotFillerLotAndObjects;
 }
 
 /**
@@ -664,7 +648,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         // add a local copy of a tree
         const resources: IResource[] = [{
             x: 125,
-            y: 150,
+            y: 450,
             objectType: ENetworkObjectType.TREE,
             spawnSeed: "test",
             spawns: [{
@@ -683,7 +667,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             depleted: false
         } as ITree, {
             x: 375,
-            y: 150,
+            y: 450,
             objectType: ENetworkObjectType.TREE,
             spawnSeed: "test2",
             spawns: [{
@@ -700,7 +684,127 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             id: "tree-2",
             treeSeed: "test-tree2",
             depleted: false
-        } as ITree];
+        } as ITree, {
+            x: 50,
+            y: 100,
+            objectType: ENetworkObjectType.ROCK,
+            spawnSeed: "test2",
+            spawns: [{
+                type: ENetworkObjectType.STONE,
+                probability: 50
+            }, {
+                type: ENetworkObjectType.IRON,
+                probability: 30
+            }, {
+                type: ENetworkObjectType.COAL,
+                probability: 20
+            }],
+            lastUpdate: new Date().toISOString(),
+            grabbedByPersonId: null,
+            health: {
+                rate: 0.1,
+                max: 100,
+                value: 100
+            },
+            id: "rock-1",
+            depleted: false
+        } as IResource, {
+            x: 150,
+            y: 100,
+            objectType: ENetworkObjectType.ROCK,
+            spawnSeed: "test2",
+            spawns: [{
+                type: ENetworkObjectType.STONE,
+                probability: 50
+            }, {
+                type: ENetworkObjectType.IRON,
+                probability: 30
+            }, {
+                type: ENetworkObjectType.COAL,
+                probability: 20
+            }],
+            lastUpdate: new Date().toISOString(),
+            grabbedByPersonId: null,
+            health: {
+                rate: 0.1,
+                max: 100,
+                value: 100
+            },
+            id: "rock-2",
+            depleted: false
+        } as IResource, {
+            x: 250,
+            y: 100,
+            objectType: ENetworkObjectType.ROCK,
+            spawnSeed: "test2",
+            spawns: [{
+                type: ENetworkObjectType.STONE,
+                probability: 50
+            }, {
+                type: ENetworkObjectType.IRON,
+                probability: 30
+            }, {
+                type: ENetworkObjectType.COAL,
+                probability: 20
+            }],
+            lastUpdate: new Date().toISOString(),
+            grabbedByPersonId: null,
+            health: {
+                rate: 0.1,
+                max: 100,
+                value: 100
+            },
+            id: "rock-3",
+            depleted: false
+        } as IResource, {
+            x: 350,
+            y: 100,
+            objectType: ENetworkObjectType.ROCK,
+            spawnSeed: "test2",
+            spawns: [{
+                type: ENetworkObjectType.STONE,
+                probability: 50
+            }, {
+                type: ENetworkObjectType.IRON,
+                probability: 30
+            }, {
+                type: ENetworkObjectType.COAL,
+                probability: 20
+            }],
+            lastUpdate: new Date().toISOString(),
+            grabbedByPersonId: null,
+            health: {
+                rate: 0.1,
+                max: 100,
+                value: 100
+            },
+            id: "rock-4",
+            depleted: false
+        } as IResource, {
+            x: 450,
+            y: 100,
+            objectType: ENetworkObjectType.ROCK,
+            spawnSeed: "test2",
+            spawns: [{
+                type: ENetworkObjectType.STONE,
+                probability: 50
+            }, {
+                type: ENetworkObjectType.IRON,
+                probability: 30
+            }, {
+                type: ENetworkObjectType.COAL,
+                probability: 20
+            }],
+            lastUpdate: new Date().toISOString(),
+            grabbedByPersonId: null,
+            health: {
+                rate: 0.1,
+                max: 100,
+                value: 100
+            },
+            id: "rock-5",
+            depleted: false
+        } as IResource];
         this.setState({
             resources
         });
@@ -915,15 +1019,6 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
 
         // schedule next game loop
         this.intervalGameLoop = setTimeout(this.gameLoop, this.gameRefreshSpeed);
-    };
-
-    /**
-     * Detect if the object is a person.
-     * @param person The object to detect as a person.
-     */
-    isPerson = (person: any): person is IPerson => {
-        return person && typeof person.id === "string" && typeof person.x === "number" && typeof person.y === "number" &&
-            typeof person.shirtColor === "string" && person.pantColor === "string";
     };
 
     /**
@@ -1644,6 +1739,51 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/lots/sell/accept", offer)
     };
 
+    /**
+     * Update a resource in the resource list.
+     * @param resourceId The id of the resource to update.
+     * @param update The update function to apply to the matching resource.
+     */
+    updateResource = (resourceId: string, update: (resource: IResource) => IResource): IResource[] => {
+        return this.state.resources.reduce((arr: IResource[], resource: IResource): IResource[] => {
+            if (resource.id === resourceId) {
+                // found the tree, deplete it
+                return [
+                    ...arr,
+                    {
+                        ...update(resource),
+                        lastUpdate: new Date().toISOString()
+                    }
+                ];
+            } else {
+                // did not find the tree, no change
+                return [...arr, resource];
+            }
+        }, []);
+    };
+
+    /**
+     * Deplete the resource.
+     * @param resourceId The id of the resource to deplete.
+     */
+    depleteResource = (resourceId: string): IResource[] => {
+        return this.updateResource(resourceId, (resource: IResource): IResource => ({
+            ...resource,
+            depleted: true
+        }));
+    };
+
+    /**
+     * Replenish the resource.
+     * @param resourceId The id of the resource to replenish.
+     */
+    replenishResource = (resourceId: string): IResource[] => {
+        return this.updateResource(resourceId, (resource: IResource): IResource => ({
+            ...resource,
+            depleted: false
+        }));
+    };
+
     chopDownTree = (tree: ITree) => {
         const rng: seedrandom.prng = seedrandom.alea(tree.spawnSeed);
         const spawn = tree.spawns[Math.floor(rng.quick() * tree.spawns.length)];
@@ -1652,7 +1792,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             const wood: INetworkObject = {
                 x: tree.x + Math.floor(rng.quick() * 200) - 100,
                 y: tree.y + Math.floor(rng.quick() * 200) - 100,
-                objectType: ENetworkObjectType.WOOD,
+                objectType: spawn.type,
                 lastUpdate: new Date().toISOString(),
                 health: {
                     rate: 0,
@@ -1665,21 +1805,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             const objects = [...this.state.objects, wood];
 
             // deplete the tree
-            const resources = this.state.resources.reduce((arr: IResource[], resource: IResource): IResource[] => {
-                if (resource.id === tree.id) {
-                    // found the tree, deplete it
-                    return [
-                        ...arr,
-                        {
-                            ...resource,
-                            depleted: true
-                        }
-                    ];
-                } else {
-                    // did not find the tree, no change
-                    return [...arr, resource];
-                }
-            }, []);
+            const resources = this.depleteResource(tree.id);
 
             // update state
             this.setState({
@@ -1689,21 +1815,46 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
 
             setTimeout(() => {
                 // replenish the tree
-                const resources = this.state.resources.reduce((arr: IResource[], resource: IResource): IResource[] => {
-                    if (resource.id === tree.id) {
-                        // found the tree, deplete it
-                        return [
-                            ...arr,
-                            {
-                                ...resource,
-                                depleted: false
-                            }
-                        ];
-                    } else {
-                        // did not find the tree, no change
-                        return [...arr, resource];
-                    }
-                }, []);
+                const resources = this.replenishResource(tree.id);
+                this.setState({
+                    resources
+                });
+            }, 30000);
+        }
+    };
+
+    mineRock = (rock: IResource) => {
+        const rng: seedrandom.prng = seedrandom.alea(rock.spawnSeed);
+        const spawn = rock.spawns[Math.floor(rng.quick() * rock.spawns.length)];
+        if (spawn) {
+            // add new wood on the ground
+            const stone: INetworkObject = {
+                x: rock.x + Math.floor(rng.quick() * 200) - 100,
+                y: rock.y + Math.floor(rng.quick() * 200) - 100,
+                objectType: spawn.type,
+                lastUpdate: new Date().toISOString(),
+                health: {
+                    rate: 0,
+                    max: 1,
+                    value: 1
+                },
+                id: `stone-${rng.int32()}`,
+                grabbedByPersonId: null
+            };
+            const objects = [...this.state.objects, stone];
+
+            // deplete the rock
+            const resources = this.depleteResource(rock.id);
+
+            // update state
+            this.setState({
+                objects,
+                resources
+            });
+
+            setTimeout(() => {
+                // replenish the rock
+                const resources = this.replenishResource(rock.id);
                 this.setState({
                     resources
                 });
@@ -1861,14 +2012,14 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         ) : null
                     }
                     {
-                        currentPerson && typeof currentPerson.cash === "number" ? (
+                        currentPerson ? (
                             <g>
                                 <text x="20" y={this.state.height - 40} fill="black" fontSize={18}>Cash: {currentPerson.cash}</text>
                             </g>
                         ) : null
                     }
                     {
-                        currentPerson && typeof currentPerson.creditLimit === "number" ? (
+                        currentPerson ? (
                             <g>
                                 <text x="20" y={this.state.height - 20} fill="black" fontSize={18}>Credit: {currentPerson?.creditLimit}</text>
                             </g>

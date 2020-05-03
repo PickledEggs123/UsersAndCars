@@ -674,6 +674,21 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
+     * Draw a piece of stone on the ground.
+     * @param drawable The object to draw.
+     * @param filter The filter to apply to the object.
+     * @param previousNetworkObject The previous position of the object for interpolation.
+     */
+    drawStone = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject) => {
+        const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        return (
+            <g key={`stone-${drawable.id}`} transform={`translate(${x},${y})`} filter={filter}>
+                <path fill="grey" stroke="black" strokeWidth={2} d="m -20 0 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+            </g>
+        )
+    };
+
+    /**
      * Draw a networked object onto the screen.
      * @param networkObject The network object to draw.
      * @param previousNetworkObject The previous network object used for interpolation.
@@ -732,6 +747,15 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     }
                 }
             }
+            case ENetworkObjectType.STONE: {
+                return {
+                    ...networkObject,
+                    type: EDrawableType.OBJECT,
+                    draw() {
+                        return component.drawStone(networkObject, filter, previousNetworkObject);
+                    }
+                }
+            }
             default:
             case ENetworkObjectType.BOX: {
                 return {
@@ -749,6 +773,8 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * A function to chop down a tree.
      */
     abstract chopDownTree: (tree: ITree) => void;
+
+    abstract mineRock: (rock: IResource) => void;
 
     /**
      * Draw a tree.
@@ -812,6 +838,46 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
+     * Draw a tree.
+     * @param rock The tree data to draw.
+     */
+    drawRock = (rock: IResource): IDrawable[] => {
+        const {x, y} = rock;
+
+        const component = this;
+
+        if (rock.depleted) {
+            return [{
+                x,
+                y,
+                type: EDrawableType.OBJECT,
+                draw() {
+                    return (
+                        <g key={rock.id} transform={`translate(${x},${y})`} onClick={() => component.mineRock(rock)}>
+                            <path stroke="black" strokeWidth={2} fill="darkgrey" d="m -50 0 c 0 -75 50 -25 50 0 c 0 -50 50 -75 50 0 z"/>
+                            <path stroke="black" strokeWidth={2} fill="darkgrey" d="m -25 0 c 0 -75 50 -75 50 0 z"/>
+                        </g>
+                    );
+                }
+            }]
+        } else {
+            return [{
+                x,
+                y,
+                type: EDrawableType.OBJECT,
+                draw() {
+                    return (
+                        <g key={rock.id} transform={`translate(${x},${y})`} onClick={() => component.mineRock(rock)}>
+                            <path stroke="black" strokeWidth={2} fill="grey" d="m -50 0 c 0 -75 50 -25 50 0 c 0 -50 50 -75 50 0 z"/>
+                            <path stroke="black" strokeWidth={2} fill="grey" d="m -25 0 c 0 -75 50 -75 50 0 z"/>
+                        </g>
+                    );
+                }
+            }];
+        }
+    };
+
+    /**
      * Draw resource objects which can generate resources.
      * @param resource The resource to draw.
      */
@@ -819,6 +885,9 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         switch (resource.objectType) {
             case ENetworkObjectType.TREE: {
                 return this.drawTree(resource as ITree);
+            }
+            case ENetworkObjectType.ROCK: {
+                return this.drawRock(resource);
             }
             default: {
                 return [];
