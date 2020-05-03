@@ -20,7 +20,7 @@ import {
     IKeyDownHandler,
     ILot,
     INetworkObject,
-    INpc,
+    INpc, INpcPathPoint,
     IObject,
     IPerson,
     IRoad,
@@ -663,8 +663,44 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         // animation begun, clear animation loop interval, cannot cancel the loop now
         this.intervalAnimationLoop = null;
 
+        let cars = this.state.cars;
+        // check to see if the person is in a car
+        const currentPerson = this.getCurrentPerson();
+        if (currentPerson) {
+            // there is an active car, edit path for smoke trail animation
+            const currentCar = this.state.cars.find(car => currentPerson.carId && car.id === currentPerson.carId);
+            if (currentCar) {
+                // update current car path
+                cars = cars.reduce((arr: ICar[], car: ICar): ICar[] => {
+                    if (car.id === currentCar.id) {
+                        // found matching car, update path
+                        const newPathPoint: INpcPathPoint = {
+                            time: new Date().toISOString(),
+                            location: {
+                                x: currentCar.x,
+                                y: currentCar.y
+                            }
+                        };
+                        const path: INpcPathPoint[] = car.path ?
+                            [newPathPoint, ...car.path.filter(pathPoint => Date.parse(pathPoint.time) >= +new Date() - 10000)] :
+                            [newPathPoint];
+                        return [
+                            ...arr,
+                            {
+                                ...car,
+                                path
+                            }
+                        ];
+                    } else {
+                        // do nothing
+                        return [...arr, car];
+                    }
+                }, []);
+            }
+        }
+
         // force react to update, creating the animation. The objects will move across the screen due to network interpolation.
-        this.forceUpdate(() => {
+        this.setState({cars}, () => {
             // react render is done, request another animation frame
             this.timeoutAnimationLoop = setTimeout(() => {
                 // set timeout cannot be cleared now, it started.
@@ -720,12 +756,14 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         if (localItem && +Date.parse(localItem.lastUpdate) > +Date.parse(networkItem.lastUpdate)) {
             // local data is more up to date, replace server position with local position, to prevent backward moving glitch
             const {x, y} = localItem;
+            const path = (localItem as unknown as ICar).path;
             return [
                 ...networkArr,
                 {
                     ...networkItem,
                     x,
-                    y
+                    y,
+                    path
                 }
             ]
         } else {

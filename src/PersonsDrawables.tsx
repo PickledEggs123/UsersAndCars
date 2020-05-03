@@ -9,7 +9,7 @@ import {
     IDrawable,
     ILot,
     INetworkObject,
-    INpc,
+    INpc, INpcPathPoint,
     IObject,
     IPerson,
     IRoad,
@@ -290,6 +290,42 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
+     * Draw the smoke trail behind the car.
+     * @param car The car with a smoke trail
+     * @param mask The mask of the car.
+     * @param filter The filter of the car.
+     */
+    drawCarSmokeTrail = (car: ICar, mask: string, filter: string): IDrawable[] => {
+        const drawables: IDrawable[] = [];
+        if (car.path) {
+            const millisecondsSincePathPointStarted = (pathPoint: INpcPathPoint): number => {
+                return +new Date() - Date.parse(pathPoint.time);
+            };
+            car.path.filter(pathPoint => millisecondsSincePathPointStarted(pathPoint) <= 10000).forEach((pathPoint, index) => {
+                const {x, y} = pathPoint.location;
+                const radius = 20 / 10000 * millisecondsSincePathPointStarted(pathPoint);
+                drawables.push({
+                    x,
+                    y,
+                    type: EDrawableType.OBJECT,
+                    draw(this: IDrawable) {
+                        const width = [ECarDirection.UP, ECarDirection.DOWN].includes(car.direction) ? "100" : "200";
+                        const height = [ECarDirection.UP, ECarDirection.DOWN].includes(car.direction) ? "200" : "100";
+                        return (
+                            <g key={`car-smoke-trail-${car.id}-${index}`} x="0" y="0" width={width} height={height} mask={mask} filter={filter}>
+                                <g key={car.id} transform={`translate(${x},${y})`}>
+                                    <circle cx={0} cy={0} r={radius} fill="grey" opacity="0.3"/>
+                                </g>
+                            </g>
+                        );
+                    }
+                });
+            })
+        }
+        return drawables;
+    };
+
+    /**
      * Draw a person as some SVG elements.
      * @param car The person to draw.
      * @param previousCar The previous position used for interpolation.
@@ -380,7 +416,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                             </g>
                         );
                     }
-                }];
+                }, ...this.drawCarSmokeTrail(car, mask, filter)];
             case ECarDirection.UP:
                 return [{
                     // draw the back of the car
@@ -441,7 +477,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                             </g>
                         );
                     }
-                }];
+                }, ...this.drawCarSmokeTrail(car, mask, filter)];
             case ECarDirection.RIGHT:
             case ECarDirection.LEFT:
                 return [{
@@ -501,7 +537,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                             </g>
                         );
                     }
-                }];
+                }, ...this.drawCarSmokeTrail(car, mask, filter)];
         }
     };
 

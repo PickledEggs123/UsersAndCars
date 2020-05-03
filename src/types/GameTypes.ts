@@ -16,12 +16,50 @@ export interface IObject {
  * The type of object being networked. They are drawn differently and behave differently
  */
 export enum ENetworkObjectType {
+    PERSON = "PERSON",
+    /**
+     * Manufacturing products.
+     */
     CHAIR = "CHAIR",
     TABLE = "TABLE",
     BOX = "BOX",
-    PERSON = "PERSON",
     CAR = "CAR",
-    VENDING_MACHINE = "VENDING_MACHINE"
+    VENDING_MACHINE = "VENDING_MACHINE",
+    /**
+     * Forestry objects.
+     */
+    TREE = "TREE",
+    WOOD = "WOOD",
+    AXE = "AXE",
+    CHAINSAW = "CHAINSAW",
+    /**
+     * Agriculture objects.
+     */
+    WHEAT = "WHEAT",
+    CORN = "CORN",
+    RICE = "RICE",
+    HOE = "HOE",
+    SEED = "SEED",
+    CHICKEN = "CHICKEN",
+    COW = "COW",
+    PIG = "PIG",
+    FISH = "FISH",
+    FLOUR = "FLOUR",
+    MEAT = "MEAT",
+    /**
+     * Mining objects.
+     */
+    ROCK = "ROCK",
+    STONE = "STONE",
+    IRON = "IRON",
+    COAL = "COAL",
+    /*
+     * Petroleum objects.
+     */
+    PUMP_JACK = "PUMP_JACK",
+    OIL = "OIL",
+    GAS_WELL = "GAS_WELL",
+    PROPANE = "PROPANE",
 }
 
 /**
@@ -94,6 +132,53 @@ export interface IPerson extends INetworkObject {
      * The amount of credit the person has.
      */
     creditLimit: number;
+    /**
+     * The person is a person type.
+     */
+    objectType: ENetworkObjectType.PERSON;
+}
+
+/**
+ * A possible resource spawn.
+ */
+export interface IResourceSpawn {
+    /**
+     * The type of object to spawn.
+     */
+    type: ENetworkObjectType;
+    /**
+     * The probability of the object spawning.
+     */
+    probability: number;
+}
+
+/**
+ * Represent a resource that can generate items when clicked. An example is a tree which spawns wood or a rock that spawns
+ * stone.
+ */
+export interface IResource extends INetworkObject {
+    /**
+     * A string that is used in a random number generator to generate the probability of a spawn.
+     */
+    spawnSeed: string;
+    /**
+     * A list of different spawns and their probability.
+     */
+    spawns: IResourceSpawn[];
+}
+
+/**
+ * A tree that can spawn wood.
+ */
+export interface ITree extends IResource {
+    /**
+     * The seed that changes the look of a tree.
+     */
+    treeSeed: string;
+    /**
+     * The tree is of object type tree.
+     */
+    objectType: ENetworkObjectType.TREE;
 }
 
 /**
@@ -208,6 +293,43 @@ export interface IRoom extends IObject {
 }
 
 /**
+ * There are different types of industrial specializations.
+ */
+export enum ELotZoneIndustrialType {
+    /**
+     * The first four industries are primary industries (they generate all of the resources). The resources can then be
+     * sold and shipped to secondary industries which will craft more complex objects.
+     */
+    /**
+     * Specialize in the production of wood products. Used for construction, furniture and early energy production.
+     */
+    FORESTRY = "FORESTRY",
+    /**
+     * Specialize in the production of food and animal products. NPCs will buy a specific amount of food every day and
+     * Persons can eat food to heal.
+     */
+    AGRICULTURE = "AGRICULTURE",
+    /*
+    Specialize in the production of stone and iron. Stone and iron is used for construction, furniture and cars. Coal
+    is used for middle energy production.
+     */
+    MINING = "MINING",
+    /**
+     * Specialize in the production of oil and natural gas. Oil is used for plastics (cheap consumer goods), cars, and
+     * energy production. Natural gas is used for middle energy production.
+     */
+    PETROLEUM = "PETROLEUM",
+    /**
+     * Specialize in the production of complex objects such as tools, furniture, cars, and goods.
+     */
+    MANUFACTURING = "MANUFACTURING",
+    /**
+     * Specialize in the storing and shipping of resources and objects.
+     */
+    LOGISTICS = "LOGISTICS"
+}
+
+/**
  * The type of the lot.
  */
 export enum ELotZone {
@@ -228,6 +350,162 @@ export interface ILot extends IObject {
     zone: ELotZone;
     buyOffers: IApiLotsBuyPost[] | null;
     sellOffers: IApiLotsSellPost[] | null;
+}
+
+/**
+ * Represent a change in the number of workers over time. An array of worker shifts can be interpolated to guess which
+ * workers will be available at a moment in time.
+ */
+export interface IWorkerShift {
+    /**
+     * The id of the working npc.
+     */
+    npcId: string;
+    /**
+     * The start time of the NPC.
+     */
+    startTime: string;
+    /**
+     * The end time of the NPC.
+     */
+    endTime: string;
+}
+
+/**
+ * A lot that specializes in the production of goods.
+ */
+export interface ILotIndustrial extends ILot {
+    zone: ELotZone.INDUSTRIAL;
+    industryType: ELotZoneIndustrialType;
+    /**
+     * A list of present workers.
+     */
+    workers: string[];
+    /**
+     * A list of worker shift changes. Used to compute [[workers]] for any moment in time.
+     */
+    workersOverTime: IWorkerShift[];
+    /**
+     * A list of inventory for sale by the industrial lot.
+     */
+    inventory: ILogisticsInventoryItem[];
+    toolsUsed: ENetworkObjectType[];
+}
+
+/**
+ * An industrial lot that specializes in producing wood.
+ */
+export interface ILotForestry extends ILotIndustrial {
+    zone: ELotZone.INDUSTRIAL;
+    industryType: ELotZoneIndustrialType.FORESTRY;
+}
+
+/**
+ * The type of agriculture the lot engages in.
+ */
+export enum EAgricultureType {
+    WHEAT = "WHEAT",
+    CORN = "CORN",
+    RICE = "RICE",
+    CHICKEN = "CHICKEN",
+    COW = "COW",
+    PIG = "PIG",
+    FISH = "FISH"
+}
+
+/**
+ * An industrial lot that specializes in producing food.
+ */
+export interface ILotAgriculture extends ILotIndustrial {
+    zone: ELotZone.INDUSTRIAL;
+    industryType: ELotZoneIndustrialType.AGRICULTURE;
+    agricultureType: EAgricultureType;
+}
+
+/**
+ * An industrial lot that specializes in producing stone and iron.
+ */
+export interface ILotMining extends ILotIndustrial {
+    zone: ELotZone.INDUSTRIAL;
+    industryType: ELotZoneIndustrialType.MINING;
+}
+
+/**
+ * An industrial lot that specializes in producing oil and natural gas.
+ */
+export interface ILotPetroleum extends ILotIndustrial {
+    zone: ELotZone.INDUSTRIAL;
+    industryType: ELotZoneIndustrialType.PETROLEUM;
+}
+
+/**
+ * An item that is part of a crafting recipe.
+ */
+export interface ICraftingRecipeItem {
+    /**
+     * The item needed.
+     */
+    item: ENetworkObjectType;
+    /**
+     * The quantity of the item.
+     */
+    quantity: number;
+}
+
+/**
+ * A crafting recipe uses multiple items and convert them into one final item.
+ */
+export interface ICraftingRecipe {
+    /**
+     * The result of the recipe.
+     */
+    product: ENetworkObjectType;
+    /**
+     * The inputs of the recipe.
+     */
+    items: ICraftingRecipeItem[];
+}
+
+/**
+ * An industrial lot that specializes in producing complex objects.
+ */
+export interface ILotManufacturing extends ILotIndustrial {
+    zone: ELotZone.INDUSTRIAL;
+    industryType: ELotZoneIndustrialType.MANUFACTURING;
+    /**
+     * The final products of the manufacturer.
+     */
+    products: ENetworkObjectType[];
+    /**
+     * A list of crafting recipes that the manufacturer will use.
+     */
+    craftingRecipes: ICraftingRecipe[];
+}
+
+/**
+ * An inventory slot of a logistics company.
+ */
+export interface ILogisticsInventoryItem {
+    /**
+     * The item being sold.
+     */
+    item: ENetworkObjectType;
+    /**
+     * The number of items available.
+     */
+    quantity: number;
+    /**
+     * The price of the items.
+     */
+    price: number;
+}
+
+/**
+ * An industrial lot that specializes in trading and shipping resources and objects.
+ */
+export interface ILotLogistics extends ILotIndustrial {
+    zone: ELotZone.INDUSTRIAL;
+    industryType: ELotZoneIndustrialType.LOGISTICS;
 }
 
 /**
@@ -338,7 +616,15 @@ export interface ICar extends INetworkObject {
     /**
      * The direction the car is facing.
      */
-    direction: ECarDirection;
+    direction: ECarDirection
+    /**
+     * The car is a car type.
+     */
+    objectType: ENetworkObjectType.CAR;
+    /**
+     * Path is used to animate smoke trails and semi truck trailers.
+     */
+    path: INpcPathPoint[];
 }
 
 /**
