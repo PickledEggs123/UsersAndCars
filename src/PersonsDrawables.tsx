@@ -9,15 +9,26 @@ import {
     IDrawable,
     ILot,
     INetworkObject,
-    INpc, INpcPathPoint,
+    INpc,
+    INpcPathPoint,
     IObject,
     IPerson,
+    IResource,
     IRoad,
     IRoom,
+    ITree,
     IVendor,
     IVendorInventoryItem
 } from "./types/GameTypes";
 import React from "react";
+import seedrandom from "seedrandom";
+
+/**
+ * Represent a leaf on a tree.
+ */
+interface ITreeLeaf extends IObject {
+    id: string;
+}
 
 /**
  * The input into the base drawables class.
@@ -69,6 +80,10 @@ export interface IPersonsDrawablesState {
      * A list of lots in the current location.
      */
     lots: ILot[];
+    /**
+     * A list of resource producing objects.
+     */
+    resources: IResource[];
     /**
      * The randomly generated ID of the current person shown.
      */
@@ -262,7 +277,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             <g key={person.id} x="0" y="0" width="500" height="300" mask={roomMask}>
                 <g key={person.id} x="0" y="0" width="500" height="300" mask={carMask}>
                     <g key={person.id}
-                       transform={`translate(${x - 50},${y - 100})`}
+                       transform={`translate(${x - 50},${y - 200})`}
                        filter={personFilter}
                        onClick={this.selectNpc(person as INpc)}
                     >
@@ -596,7 +611,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     drawBox = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
-            <g key={`chair-${drawable.id}`} transform={`translate(${x - 50},${y - 50})`} filter={filter}>
+            <g key={`chair-${drawable.id}`} transform={`translate(${x - 50},${y - 100})`} filter={filter}>
                 {
                     this.drawHealthBar(drawable, {
                         x: 0,
@@ -628,7 +643,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     drawVendingMachine = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
-            <g key={`chair-${drawable.id}`} transform={`translate(${x - 50},${y - 100})`} filter={filter} onClick={this.selectVendingOption(drawable as IVendor)}>
+            <g key={`chair-${drawable.id}`} transform={`translate(${x - 50},${y - 200})`} filter={filter} onClick={this.selectVendingOption(drawable as IVendor)}>
                 <polygon fill="blue" stroke="black" strokeWidth={2} points="-50,-100 50,-100 50,100, -50,100"/>
                 <polygon fill="black" points="-30,20 30,20, 30,40 -30,40"/>
                 <polygon fill="white" stroke="black" strokeWidth={2} points="20,-40 40,-40 40,-30 20,-30"/>
@@ -636,6 +651,26 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 <polygon fill="white" stroke="black" strokeWidth={2} points="20,0 40,0 40,10 20,10"/>
             </g>
         );
+    };
+
+    /**
+     * Draw a piece of wood on the ground.
+     * @param drawable The object to draw.
+     * @param filter The filter to apply to the object.
+     * @param previousNetworkObject The previous position of the object for interpolation.
+     */
+    drawWood = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject) => {
+        const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        return (
+            <g key={`wood-${drawable.id}`} transform={`translate(${x},${y})`} filter={filter}>
+                <path fill="tan" stroke="black" strokeWidth={2} d="M -25 0 c -5 -5 -5 -15 0 -20 l 50 0 c 5 5 5 15 0 20 z"/>
+                <path fill="tan" stroke="black" strokeWidth={2} d="M 25 0 c -5 -5 -5 -15 0 -20 c 5 5 5 15 0 20"/>
+                <path fill="tan" stroke="black" strokeWidth={2} d="M 25 0 c -5 -5 -5 -15 0 -20 l 50 0 c 5 5 5 15 0 20 z"/>
+                <path fill="tan" stroke="black" strokeWidth={2} d="M 75 0 c -5 -5 -5 -15 0 -20 c 5 5 5 15 0 20"/>
+                <path fill="tan" stroke="black" strokeWidth={2} d="M 0 -20 c -5 -5 -5 -15 0 -20 l 50 0 c 5 5 5 15 0 20 z"/>
+                <path fill="tan" stroke="black" strokeWidth={2} d="M 50 -20 c -5 -5 -5 -15 0 -20 c 5 5 5 15 0 20"/>
+            </g>
+        )
     };
 
     /**
@@ -688,6 +723,15 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     }
                 };
             }
+            case ENetworkObjectType.WOOD: {
+                return {
+                    ...networkObject,
+                    type: EDrawableType.OBJECT,
+                    draw() {
+                        return component.drawWood(networkObject, filter, previousNetworkObject);
+                    }
+                }
+            }
             default:
             case ENetworkObjectType.BOX: {
                 return {
@@ -697,6 +741,87 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                         return component.drawBox(networkObject, filter, previousNetworkObject);
                     }
                 };
+            }
+        }
+    };
+
+    /**
+     * A function to chop down a tree.
+     */
+    abstract chopDownTree: (tree: ITree) => void;
+
+    /**
+     * Draw a tree.
+     * @param tree The tree data to draw.
+     */
+    drawTree = (tree: ITree): IDrawable[] => {
+        const {x, y} = tree;
+
+        const component = this;
+        const rng: seedrandom.prng = seedrandom.alea(tree.treeSeed);
+
+        if (tree.depleted) {
+            return [{
+                x,
+                y,
+                type: EDrawableType.OBJECT,
+                draw() {
+                    return (
+                        <g key={tree.id} transform={`translate(${x},${y})`} onClick={() => component.chopDownTree(tree)}>
+                            <polygon stroke="black" strokeWidth={2} fill="tan" points="-25,0 -20,-5 -15,-15 -15,-30 15,-30 15,-15 20,-5 25,0"/>
+                        </g>
+                    );
+                }
+            }]
+        } else {
+            // render leaves in random positions using a seeded random number generator
+            const numberOfLeaves = Math.floor(rng.quick() * 20) + 5;
+            const leaves = new Array(numberOfLeaves).fill(0).map((v, i): ITreeLeaf => ({
+                id: `leaves-${i}`,
+                x: Math.floor(rng.quick() * 80) - 50,
+                y: -Math.floor(rng.quick() * 50) - 100
+            })).reduce((arr: ITreeLeaf[], leaf: ITreeLeaf): ITreeLeaf[] => {
+                if (arr.every((l) => Math.sqrt(Math.pow(leaf.x - l.x, 2) + Math.pow(leaf.y - l.y, 2)) >= 15)) {
+                    return [...arr, leaf];
+                } else {
+                    return arr;
+                }
+            }, []);
+
+            return [{
+                x,
+                y,
+                type: EDrawableType.OBJECT,
+                draw() {
+                    return (
+                        <g key={tree.id} transform={`translate(${x},${y})`} onClick={() => component.chopDownTree(tree)}>
+                            <polygon stroke="black" strokeWidth={2} fill="tan" points="-25,0 -20,-5 -15,-15 -15,-110 15,-110 15,-15 20,-5 25,0"/>
+                            <path stroke="black" strokeWidth={2} fill="green" d="M -50 -100 c 25 -100 75 -100 100 0 z "/>
+                            {
+                                leaves.map(leaf => {
+                                    return (
+                                        <path key={leaf.id} stroke="black" strokeWidth={2} fill="green" d={`M ${leaf.x} ${leaf.y} c 5 -20 15 -20 20 0 z `}/>
+                                    );
+                                })
+                            }
+                        </g>
+                    );
+                }
+            }];
+        }
+    };
+
+    /**
+     * Draw resource objects which can generate resources.
+     * @param resource The resource to draw.
+     */
+    drawResource = (resource: IResource): IDrawable[] => {
+        switch (resource.objectType) {
+            case ENetworkObjectType.TREE: {
+                return this.drawTree(resource as ITree);
+            }
+            default: {
+                return [];
             }
         }
     };
@@ -729,7 +854,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 // there is a top door, draw a wall with a top door
                 drawables.push({
                     x,
-                    y: y + 30,
+                    y,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -740,7 +865,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     }
                 }, {
                     x,
-                    y: y + 30,
+                    y,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -751,7 +876,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     }
                 }, {
                     x,
-                    y: y + 30,
+                    y,
                     type: EDrawableType.WALL,
                     draw(this: IDrawable) {
                         return (
@@ -768,7 +893,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 // draw an entrance at the top of the building
                 drawables.push({
                     x,
-                    y: y + 30,
+                    y,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -779,7 +904,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     }
                 }, {
                     x,
-                    y: y + 30,
+                    y,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -790,7 +915,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     }
                 }, {
                     x,
-                    y: y + 30,
+                    y,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -808,7 +933,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 // there is no top door, draw a plain wall
                 drawables.push({
                     x,
-                    y: y + 30,
+                    y,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -819,7 +944,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     }
                 }, {
                     x,
-                    y: y + 30,
+                    y,
                     type: EDrawableType.WALL,
                     draw(this: IDrawable) {
                         return (
@@ -842,7 +967,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 // there is a bottom door, draw a wall with a bottom door
                 drawables.push({
                     x,
-                    y: y + 330,
+                    y: y + 300,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -853,7 +978,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     }
                 }, {
                     x,
-                    y: y + 330,
+                    y: y + 300,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -864,7 +989,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     }
                 }, {
                     x,
-                    y: y + 330,
+                    y: y + 300,
                     type: EDrawableType.WALL,
                     draw(this: IDrawable) {
                         return (
@@ -881,7 +1006,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 // there is an entrance at the bottom of the room
                 drawables.push({
                     x,
-                    y: y + 330,
+                    y: y + 300,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -892,7 +1017,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     }
                 }, {
                     x,
-                    y: y + 330,
+                    y: y + 300,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -903,7 +1028,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     }
                 }, {
                     x,
-                    y: y + 330,
+                    y: y + 300,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -921,7 +1046,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 // there is an entrance at the bottom of the room
                 drawables.push({
                     x,
-                    y: y + 330,
+                    y: y + 300,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -932,7 +1057,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     }
                 }, {
                     x,
-                    y: y + 330,
+                    y: y + 300,
                     type: EDrawableType.WALL,
                     draw(this: IDrawable) {
                         return (
@@ -956,7 +1081,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 // there is a left door, draw a wall with a left door
                 drawables.push({
                     x,
-                    y: y + 30,
+                    y,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -967,7 +1092,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     }
                 }, {
                     x,
-                    y: y + 330,
+                    y: y + 300,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -984,7 +1109,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 // there is no left door, draw a plain wall
                 drawables.push({
                     x,
-                    y: y + 330,
+                    y: y + 300,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -1008,7 +1133,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 // there is a right wall, draw a door with a right wall
                 drawables.push({
                     x,
-                    y: y + 30,
+                    y,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -1019,7 +1144,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     }
                 }, {
                     x,
-                    y: y + 330,
+                    y: y + 300,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -1036,7 +1161,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 // there is no right wall, draw a plain wall
                 drawables.push({
                     x,
-                    y: y + 330,
+                    y: y + 300,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
@@ -1347,6 +1472,14 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 ];
             }, []),
 
+            // for each resource object
+            ...this.state.resources.filter(this.isNearWorldView(worldOffset)).reduce((arr: IDrawable[], resource: IResource): IDrawable[] => {
+                return [
+                    ...arr,
+                    ...this.drawResource(resource)
+                ];
+            }, []),
+
             // for each room
             ...this.state.rooms.filter(this.isNearWorldView(worldOffset)).reduce((arr: IDrawable[], room: IRoom, index: number): IDrawable[] => {
                 return [
@@ -1376,16 +1509,8 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             // by default, sort by height difference
             const heightDifference = a.y - b.y;
 
-            if (a.type === EDrawableType.PERSON && b.type !== EDrawableType.PERSON && heightDifference > 30) {
-                // person has priority over regular objects
-                return 1;
-            } else if (b.type === EDrawableType.PERSON && a.type !== EDrawableType.PERSON && heightDifference < 30) {
-                // person has priority over regular objects
-                return -1;
-            } else {
-                // sort by height differences
-                return heightDifference;
-            }
+            // sort by height differences
+            return heightDifference;
         }).filter((a) => {
             if (a.type === EDrawableType.WALL) {
                 // check if the wall is near the current person horizontally

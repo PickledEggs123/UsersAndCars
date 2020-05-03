@@ -4,6 +4,7 @@ import axios from "axios";
 import {
     ECarDirection,
     ELotZone,
+    ENetworkObjectType,
     IApiLotsBuyPost,
     IApiLotsSellPost,
     IApiPersonsGetResponse,
@@ -20,16 +21,20 @@ import {
     IKeyDownHandler,
     ILot,
     INetworkObject,
-    INpc, INpcPathPoint,
+    INpc,
+    INpcPathPoint,
     IObject,
     IPerson,
+    IResource,
     IRoad,
     IRoom,
+    ITree,
     IVendorInventoryItem
 } from "./types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
 import {IPersonsDrawablesProps, IPersonsDrawablesState, PersonsDrawables} from "./PersonsDrawables";
 import {applyAudioFilters, rtcPeerConnectionConfiguration, userMediaConfig} from "./config";
+import seedrandom from "seedrandom";
 
 /**
  * The input to the [[Persons]] component that changes how the game is rendered.
@@ -196,7 +201,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         connectedVoiceChats: [] as string[],
         npc: null as INpc | null,
         lot: null as ILot | null,
-        lotPrice: null as number | null
+        lotPrice: null as number | null,
+        resources: [] as IResource[]
     };
 
     /**
@@ -654,6 +660,50 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
 
         // begin animation loop
         this.intervalAnimationLoop = requestAnimationFrame(this.animationLoop);
+
+        // add a local copy of a tree
+        const resources: IResource[] = [{
+            x: 125,
+            y: 150,
+            objectType: ENetworkObjectType.TREE,
+            spawnSeed: "test",
+            spawns: [{
+                type: ENetworkObjectType.WOOD,
+                probability: 100
+            }],
+            lastUpdate: new Date().toISOString(),
+            grabbedByPersonId: null,
+            health: {
+                rate: 0.1,
+                max: 100,
+                value: 100
+            },
+            id: "tree-1",
+            treeSeed: "test-tree1",
+            depleted: false
+        } as ITree, {
+            x: 375,
+            y: 150,
+            objectType: ENetworkObjectType.TREE,
+            spawnSeed: "test2",
+            spawns: [{
+                type: ENetworkObjectType.WOOD,
+                probability: 100
+            }],
+            lastUpdate: new Date().toISOString(),
+            grabbedByPersonId: null,
+            health: {
+                rate: 0.1,
+                max: 100,
+                value: 100
+            },
+            id: "tree-2",
+            treeSeed: "test-tree2",
+            depleted: false
+        } as ITree];
+        this.setState({
+            resources
+        });
     };
 
     /**
@@ -1592,6 +1642,73 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      */
     acceptSellOffer = (offer: IApiLotsSellPost) => async () => {
         await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/lots/sell/accept", offer)
+    };
+
+    chopDownTree = (tree: ITree) => {
+        const rng: seedrandom.prng = seedrandom.alea(tree.spawnSeed);
+        const spawn = tree.spawns[Math.floor(rng.quick() * tree.spawns.length)];
+        if (spawn) {
+            // add new wood on the ground
+            const wood: INetworkObject = {
+                x: tree.x + Math.floor(rng.quick() * 200) - 100,
+                y: tree.y + Math.floor(rng.quick() * 200) - 100,
+                objectType: ENetworkObjectType.WOOD,
+                lastUpdate: new Date().toISOString(),
+                health: {
+                    rate: 0,
+                    max: 1,
+                    value: 1
+                },
+                id: `wood-${rng.int32()}`,
+                grabbedByPersonId: null
+            };
+            const objects = [...this.state.objects, wood];
+
+            // deplete the tree
+            const resources = this.state.resources.reduce((arr: IResource[], resource: IResource): IResource[] => {
+                if (resource.id === tree.id) {
+                    // found the tree, deplete it
+                    return [
+                        ...arr,
+                        {
+                            ...resource,
+                            depleted: true
+                        }
+                    ];
+                } else {
+                    // did not find the tree, no change
+                    return [...arr, resource];
+                }
+            }, []);
+
+            // update state
+            this.setState({
+                objects,
+                resources
+            });
+
+            setTimeout(() => {
+                // replenish the tree
+                const resources = this.state.resources.reduce((arr: IResource[], resource: IResource): IResource[] => {
+                    if (resource.id === tree.id) {
+                        // found the tree, deplete it
+                        return [
+                            ...arr,
+                            {
+                                ...resource,
+                                depleted: false
+                            }
+                        ];
+                    } else {
+                        // did not find the tree, no change
+                        return [...arr, resource];
+                    }
+                }, []);
+                this.setState({
+                    resources
+                });
+            }, 30000);
+        }
     };
 
     render() {

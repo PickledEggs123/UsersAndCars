@@ -165,6 +165,10 @@ export interface IResource extends INetworkObject {
      * A list of different spawns and their probability.
      */
     spawns: IResourceSpawn[];
+    /**
+     * If the resource is depleted.
+     */
+    depleted: boolean;
 }
 
 /**
