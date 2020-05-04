@@ -186,6 +186,28 @@ export interface ITree extends IResource {
 }
 
 /**
+ * Represent a terrain tile position.
+ */
+export interface ITerrainTilePosition {
+    tileX: number;
+    tileY: number;
+}
+
+/**
+ * Represent a data structure for a voronoi diagram.
+ */
+export interface IVoronoi {
+    /**
+     * The point of the voronoi diagram.
+     */
+    point: IObject;
+    /**
+     * The points that are adjacent to [[point]].
+     */
+    corners: IObject[];
+}
+
+/**
  * An item in the inventory list of a [[IVendor]].
  */
 export interface IVendorInventoryItem {

@@ -25,10 +25,13 @@ import {
     IObject,
     IPerson,
     IResource,
+    IResourceSpawn,
     IRoad,
     IRoom,
+    ITerrainTilePosition,
     ITree,
-    IVendorInventoryItem
+    IVendorInventoryItem,
+    IVoronoi
 } from "./types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
 import {IPersonsDrawablesProps, IPersonsDrawablesState, PersonsDrawables} from "./PersonsDrawables";
@@ -64,6 +67,10 @@ interface IPersonsState extends IPersonsDrawablesState {
      * The lot price for buying or selling a lot.
      */
     lotPrice: number | null;
+    /**
+     * A list of loaded terrain tiles.
+     */
+    terrainTiles: ITerrainTilePosition[];
 }
 
 /**
@@ -186,7 +193,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         npc: null as INpc | null,
         lot: null as ILot | null,
         lotPrice: null as number | null,
-        resources: [] as IResource[]
+        resources: [] as IResource[],
+        terrainTiles: [] as ITerrainTilePosition[]
     };
 
     /**
@@ -630,6 +638,230 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     };
 
     /**
+     * Compute the voronoi diagram for a set of points.
+     * @param points The input points.
+     */
+    computeVoronoi = (points: IObject[]): IVoronoi[] => {
+        // distance between two points
+        const distance = (a: IObject, b: IObject): number => {
+            return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
+        };
+        // for each point
+        return points.map((point): IVoronoi => {
+            // compute corners
+            const corners = points.filter(otherPoint => {
+                // corners are otherPoints that are closer to point than otherOtherPoints.
+                const distanceFromPointToOtherPoint = distance(point, otherPoint);
+                return points.every(otherOtherPoint => {
+                    return distanceFromPointToOtherPoint <= distance(otherPoint, otherOtherPoint);
+                });
+            });
+            return {
+                point,
+                corners
+            };
+        });
+    };
+
+    lloydRelaxation = (voronois: IVoronoi[]): IObject[] => {
+        // computer the average of the corners of a voronoi cell
+        const averageOfCorners = (corners: IObject[]): IObject => {
+            const sumX = corners.reduce((acc, corner) => acc + corner.x, 0);
+            const sumY = corners.reduce((acc, corner) => acc + corner.y, 0);
+            return {
+                x: sumX / corners.length,
+                y: sumY / corners.length
+            };
+        };
+        // approximate lloyd's relaxation by averaging the corners.
+        return voronois.map((voronoi): IObject => {
+            return averageOfCorners(voronoi.corners);
+        });
+    };
+
+    tileSize = 1000;
+    generateTilePoints = (tileX: number, tileY: number, min: number, max: number): IObject[] => {
+        const rng: seedrandom.prng = seedrandom.alea(`terrain-${tileX}-${tileY}`);
+        const numberOfPoints = Math.floor(rng.double() * (max - min)) + min;
+        return new Array(numberOfPoints).fill(0).map(() => ({
+            x: rng.double() * this.tileSize + tileX * this.tileSize,
+            y: rng.double() * this.tileSize + tileY * this.tileSize
+        }));
+    };
+
+    terrainTilePosition = (offset: IObject): ITerrainTilePosition => {
+        const tileX = Math.floor(offset.x / this.tileSize);
+        const tileY = Math.floor(offset.y / this.tileSize);
+        return {
+            tileX,
+            tileY
+        };
+    };
+
+    /**
+     * Generate points for terrain objects such as trees and rocks.
+     * @param tileX The x axis of the terrain tile position.
+     * @param tileY the y axis of the terrain tile position.
+     */
+    generateTerrainPoints = ({tileX, tileY}: ITerrainTilePosition) => {
+        // generate random points for the center tile and the surrounding tiles
+        // surrounding tiles are required to smoothly generate random points between the edges of each tile
+        let points: IObject[] = [];
+        for (let i = -1; i <= 1; i++) {
+            for (let j = -1; j <= 1; j++) {
+                points.push(...this.generateTilePoints(tileX + i, tileY + i, 10, 25));
+            }
+        }
+
+        // for three steps, use lloyd's relaxation to smooth out the random points
+        for (let step = 0; step < 3; step++) {
+            const voronois = this.computeVoronoi(points);
+            points = this.lloydRelaxation(voronois);
+        }
+
+        // keep only points that are in the current tile
+        return points.filter(point => {
+            const pointTileX = Math.floor(point.x / this.tileSize);
+            const pointTileY = Math.floor(point.y / this.tileSize);
+            return tileX === pointTileX && tileY === pointTileY;
+        }).map(point => {
+            // round position to the nearest 10 to align with the grid
+            return {
+                x: Math.floor(point.x / 10) * 10,
+                y: Math.floor(point.y / 10) * 10
+            };
+        }).reduce((acc: IObject[], point: IObject): IObject[] => {
+            // if point is unique, not in array
+            if (acc.every(p => p.x !== point.x && p.y !== point.y)) {
+                // add unique point
+                return [...acc, point];
+            } else {
+                // do not add duplicate point
+                return acc;
+            }
+        }, []);
+    };
+
+    /**
+     * Terrain tiles that should be loaded given a terrain tile position.
+     * @param tileX Terrain tile position on the x axis.
+     * @param tileY Terrain tile position on the y axis.
+     */
+    terrainTilesThatShouldBeLoaded = ({tileX, tileY}: ITerrainTilePosition) => {
+        const tiles = [];
+        for (let i = -1; i <= 1; i++) {
+            for (let j = -1; j <= 1; j++) {
+                tiles.push({
+                    tileX: tileX + i,
+                    tileY: tileY + j
+                });
+            }
+        }
+        return tiles;
+    };
+
+    /**
+     * Generate a terrain tile.
+     * @param tilePosition The tile position to generate.
+     */
+    generateTerrainTile = (tilePosition: ITerrainTilePosition): IResource[] => {
+        return this.generateTerrainPoints(tilePosition).map((point): IResource => {
+            const {x, y} = point;
+            const rng: seedrandom.prng = seedrandom.alea(`resource(${x},${y})`);
+            const objectType: ENetworkObjectType = rng.quick() > 0.9 ? ENetworkObjectType.ROCK : ENetworkObjectType.TREE;
+            const spawns: IResourceSpawn[] = objectType === ENetworkObjectType.TREE ? [{
+                type: ENetworkObjectType.WOOD,
+                probability: 100
+            }] : [{
+                type: ENetworkObjectType.STONE,
+                probability: 100
+            }];
+            const resource: IResource = {
+                id: `resource(${x},${y})`,
+                x,
+                y,
+                objectType,
+                spawnSeed: `resource(${x},${y})`,
+                spawns,
+                lastUpdate: new Date().toISOString(),
+                grabbedByPersonId: null,
+                health: {
+                    rate: 0,
+                    max: 10,
+                    value: 10
+                },
+                depleted: false
+            };
+            if (objectType === ENetworkObjectType.TREE) {
+                const tree: ITree = {
+                    ...resource as ITree,
+                    treeSeed: `tree(${x},${y})`
+                };
+                return {...tree};
+            } else {
+                return resource;
+            }
+        }).filter(this.filterOldAndInvalidTerrainPoints(tilePosition));
+    };
+
+    /**
+     * Filter terrain points that are not near the current person or inside a room or road. There should be no trees
+     * growing from a road or inside of a building.
+     * @param terrainPoint
+     */
+    filterOldAndInvalidTerrainPoints = (tilePosition: ITerrainTilePosition) => (terrainPoint: IResource): boolean => {
+        // determine if terrain point is near the current person
+        const {tileX, tileY} = this.terrainTilePosition(terrainPoint);
+        const isNearCurrentPerson = Math.abs(tileX - tilePosition.tileX) <= 1 && Math.abs(tileY - tilePosition.tileY) <= 1;
+
+        // terrain point is not in a room or a road
+        const isNotInRoom = !this.state.rooms.some(this.isInRoom(terrainPoint));
+        const isNotInRoad = !this.state.roads.some(this.isInRoad(terrainPoint));
+        return isNearCurrentPerson && isNotInRoom && isNotInRoad;
+    };
+
+    /**
+     * Update the terrain, loading and unloading trees and rocks around the player. It should generate an infinite terrain effect.
+     */
+    updateTerrain = () => {
+        // get current tile position
+        const currentPerson = this.getCurrentPerson();
+        const tilePosition = currentPerson ?
+            this.terrainTilePosition(currentPerson) :
+            {tileX: 0, tileY: 0};
+
+        // get tiles that should be loaded
+        const terrainTilesThatShouldBeLoaded = this.terrainTilesThatShouldBeLoaded(tilePosition);
+        const terrainTilesToLoad = terrainTilesThatShouldBeLoaded.reduce((acc: ITerrainTilePosition[], tile: ITerrainTilePosition): ITerrainTilePosition[] => {
+            // current terrain tiles do not contain the new tile
+            if (!this.state.terrainTiles.some(currentTile => currentTile.tileX === tile.tileX && currentTile.tileY === tile.tileY)) {
+                // add new tile
+                return [...acc, tile];
+            } else {
+                return acc;
+            }
+        }, []);
+
+        // update resources
+        const resources: IResource[] = [
+            // filter old terrain points
+            ...this.state.resources.filter(this.filterOldAndInvalidTerrainPoints(tilePosition)),
+            // load new terrain tiles
+            ...terrainTilesToLoad.reduce((acc: IResource[], terrainTile: ITerrainTilePosition): IResource[] => {
+                return [
+                    ...acc,
+                    ...this.generateTerrainTile(terrainTile)
+                ];
+            }, [])
+        ];
+
+        return {
+            resources,
+            terrainTiles: terrainTilesThatShouldBeLoaded
+        };
+    };
+
+    /**
      * Begin the game loop.
      */
     beginGameLoop = () => {
@@ -644,170 +876,6 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
 
         // begin animation loop
         this.intervalAnimationLoop = requestAnimationFrame(this.animationLoop);
-
-        // add a local copy of a tree
-        const resources: IResource[] = [{
-            x: 125,
-            y: 450,
-            objectType: ENetworkObjectType.TREE,
-            spawnSeed: "test",
-            spawns: [{
-                type: ENetworkObjectType.WOOD,
-                probability: 100
-            }],
-            lastUpdate: new Date().toISOString(),
-            grabbedByPersonId: null,
-            health: {
-                rate: 0.1,
-                max: 100,
-                value: 100
-            },
-            id: "tree-1",
-            treeSeed: "test-tree1",
-            depleted: false
-        } as ITree, {
-            x: 375,
-            y: 450,
-            objectType: ENetworkObjectType.TREE,
-            spawnSeed: "test2",
-            spawns: [{
-                type: ENetworkObjectType.WOOD,
-                probability: 100
-            }],
-            lastUpdate: new Date().toISOString(),
-            grabbedByPersonId: null,
-            health: {
-                rate: 0.1,
-                max: 100,
-                value: 100
-            },
-            id: "tree-2",
-            treeSeed: "test-tree2",
-            depleted: false
-        } as ITree, {
-            x: 50,
-            y: 100,
-            objectType: ENetworkObjectType.ROCK,
-            spawnSeed: "test2",
-            spawns: [{
-                type: ENetworkObjectType.STONE,
-                probability: 50
-            }, {
-                type: ENetworkObjectType.IRON,
-                probability: 30
-            }, {
-                type: ENetworkObjectType.COAL,
-                probability: 20
-            }],
-            lastUpdate: new Date().toISOString(),
-            grabbedByPersonId: null,
-            health: {
-                rate: 0.1,
-                max: 100,
-                value: 100
-            },
-            id: "rock-1",
-            depleted: false
-        } as IResource, {
-            x: 150,
-            y: 100,
-            objectType: ENetworkObjectType.ROCK,
-            spawnSeed: "test2",
-            spawns: [{
-                type: ENetworkObjectType.STONE,
-                probability: 50
-            }, {
-                type: ENetworkObjectType.IRON,
-                probability: 30
-            }, {
-                type: ENetworkObjectType.COAL,
-                probability: 20
-            }],
-            lastUpdate: new Date().toISOString(),
-            grabbedByPersonId: null,
-            health: {
-                rate: 0.1,
-                max: 100,
-                value: 100
-            },
-            id: "rock-2",
-            depleted: false
-        } as IResource, {
-            x: 250,
-            y: 100,
-            objectType: ENetworkObjectType.ROCK,
-            spawnSeed: "test2",
-            spawns: [{
-                type: ENetworkObjectType.STONE,
-                probability: 50
-            }, {
-                type: ENetworkObjectType.IRON,
-                probability: 30
-            }, {
-                type: ENetworkObjectType.COAL,
-                probability: 20
-            }],
-            lastUpdate: new Date().toISOString(),
-            grabbedByPersonId: null,
-            health: {
-                rate: 0.1,
-                max: 100,
-                value: 100
-            },
-            id: "rock-3",
-            depleted: false
-        } as IResource, {
-            x: 350,
-            y: 100,
-            objectType: ENetworkObjectType.ROCK,
-            spawnSeed: "test2",
-            spawns: [{
-                type: ENetworkObjectType.STONE,
-                probability: 50
-            }, {
-                type: ENetworkObjectType.IRON,
-                probability: 30
-            }, {
-                type: ENetworkObjectType.COAL,
-                probability: 20
-            }],
-            lastUpdate: new Date().toISOString(),
-            grabbedByPersonId: null,
-            health: {
-                rate: 0.1,
-                max: 100,
-                value: 100
-            },
-            id: "rock-4",
-            depleted: false
-        } as IResource, {
-            x: 450,
-            y: 100,
-            objectType: ENetworkObjectType.ROCK,
-            spawnSeed: "test2",
-            spawns: [{
-                type: ENetworkObjectType.STONE,
-                probability: 50
-            }, {
-                type: ENetworkObjectType.IRON,
-                probability: 30
-            }, {
-                type: ENetworkObjectType.COAL,
-                probability: 20
-            }],
-            lastUpdate: new Date().toISOString(),
-            grabbedByPersonId: null,
-            health: {
-                rate: 0.1,
-                max: 100,
-                value: 100
-            },
-            id: "rock-5",
-            depleted: false
-        } as IResource];
-        this.setState({
-            resources
-        });
     };
 
     /**
@@ -994,6 +1062,11 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 [];
             const npc = npcs.find(n => this.state.npc && n.id === this.state.npc.id) || null;
             const lot = lots.find(l => this.state.lot && l.id === this.state.lot.id) || null;
+
+            const {
+                resources,
+                terrainTiles
+            } = this.updateTerrain();
             this.setState({
                 persons,
                 npcs,
@@ -1013,7 +1086,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 lots,
                 rooms,
                 npc,
-                lot
+                lot,
+                resources,
+                terrainTiles
             });
         }
 

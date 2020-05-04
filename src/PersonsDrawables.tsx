@@ -148,6 +148,15 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
+     * Determine if an object is inside the road.
+     * @param position The object to test.
+     */
+    isInRoad = (position: IObject) => (road: IRoad): boolean => {
+        return position.x >= road.x && position.x <= road.x + 500 &&
+            position.y >= road.y && position.y <= road.y + 300;
+    };
+
+    /**
      * Determine if an object is inside the car.
      * @param position The object to test.
      */

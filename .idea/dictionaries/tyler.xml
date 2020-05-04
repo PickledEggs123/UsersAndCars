@@ -8,6 +8,8 @@
       <w>pathfinding</w>
       <w>teleport</w>
       <w>teleporting</w>
+      <w>voronoi</w>
+      <w>voronois</w>
     </words>
   </dictionary>
 </component>
