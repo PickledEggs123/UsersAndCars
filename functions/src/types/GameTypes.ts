@@ -165,6 +165,10 @@ export interface IResource extends INetworkObject {
      * A list of different spawns and their probability.
      */
     spawns: IResourceSpawn[];
+    /**
+     * If the resource is depleted.
+     */
+    depleted: boolean;
 }
 
 /**
@@ -179,6 +183,28 @@ export interface ITree extends IResource {
      * The tree is of object type tree.
      */
     objectType: ENetworkObjectType.TREE;
+}
+
+/**
+ * Represent a terrain tile position.
+ */
+export interface ITerrainTilePosition {
+    tileX: number;
+    tileY: number;
+}
+
+/**
+ * Represent a data structure for a voronoi diagram.
+ */
+export interface IVoronoi {
+    /**
+     * The point of the voronoi diagram.
+     */
+    point: IObject;
+    /**
+     * The points that are adjacent to [[point]].
+     */
+    corners: IObject[];
 }
 
 /**

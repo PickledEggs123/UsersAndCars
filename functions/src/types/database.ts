@@ -65,7 +65,7 @@ export interface IPersonDatabase {
     carId: string | null;
     grabbedByPersonId: string | null;
     password: string;
-    objectType: ENetworkObjectType;
+    objectType: ENetworkObjectType.PERSON;
     cash: number;
     creditLimit: number;
     health: IObjectHealth;
@@ -82,7 +82,7 @@ export interface INpcDatabase {
     carId: string | null;
     grabbedByPersonId: string | null;
     password: string;
-    objectType: ENetworkObjectType;
+    objectType: ENetworkObjectType.PERSON;
     cash: number;
     creditLimit: number;
     health: IObjectHealth;
