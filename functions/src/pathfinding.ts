@@ -373,7 +373,8 @@ const findCellTimesBetweenTwoPathPoints = (npc: INpcDatabase, a: INpcPathPoint, 
                     cell: getNetworkObjectCellString({
                         x: a.location.x + dx * t,
                         y: a.location.y + dy * t
-                    })
+                    }),
+                    expired: false
                 });
             }
         }
@@ -386,7 +387,8 @@ const findCellTimesBetweenTwoPathPoints = (npc: INpcDatabase, a: INpcPathPoint, 
             cell: getNetworkObjectCellString({
                 x: a.location.x + dx * t,
                 y: a.location.y + dy * t
-            })
+            }),
+            expired: false
         });
     } else {
         // no cell change, return the cell location for the two points
@@ -394,7 +396,8 @@ const findCellTimesBetweenTwoPathPoints = (npc: INpcDatabase, a: INpcPathPoint, 
             npcId: npc.id,
             startTime: admin.firestore.Timestamp.fromMillis(Math.round(Date.parse(a.time))),
             endTime: admin.firestore.Timestamp.fromMillis(Math.round(Date.parse(b.time))),
-            cell: getNetworkObjectCellString(a.location)
+            cell: getNetworkObjectCellString(a.location),
+            expired: false
         });
     }
 
@@ -420,7 +423,8 @@ const findCellTimesInPath = (npc: INpcDatabase, path: INpcPathPoint[]): INpcCell
             npcId: npc.id,
             startTime: admin.firestore.Timestamp.now(),
             endTime: admin.firestore.Timestamp.fromDate(new Date(Date.parse(firstPoint.time))),
-            cell: getNetworkObjectCellString(npc)
+            cell: getNetworkObjectCellString(npc),
+            expired: false
         });
 
         // for each line segment
@@ -437,7 +441,8 @@ const findCellTimesInPath = (npc: INpcDatabase, path: INpcPathPoint[]): INpcCell
             npcId: npc.id,
             startTime: admin.firestore.Timestamp.fromMillis(Math.round(Date.parse(lastPoint.time))),
             endTime: admin.firestore.Timestamp.fromDate(longTimeFromNow),
-            cell: getNetworkObjectCellString(lastPoint.location)
+            cell: getNetworkObjectCellString(lastPoint.location),
+            expired: false
         });
     } else {
         // no path data, render one cell time
@@ -445,7 +450,8 @@ const findCellTimesInPath = (npc: INpcDatabase, path: INpcPathPoint[]): INpcCell
             npcId: npc.id,
             startTime: admin.firestore.Timestamp.now(),
             endTime: admin.firestore.Timestamp.fromDate(longTimeFromNow),
-            cell: getNetworkObjectCellString(npc)
+            cell: getNetworkObjectCellString(npc),
+            expired: false
         });
     }
 

@@ -807,23 +807,34 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     /**
      * Filter terrain points that are not near the current person or inside a room or road. There should be no trees
      * growing from a road or inside of a building.
-     * @param terrainPoint
+     * @param terrainPoint The terrain position of the current person.
+     * @param rooms A list of current rooms
+     * @param roads A list of current roads
      */
-    filterOldAndInvalidTerrainPoints = (tilePosition: ITerrainTilePosition) => (terrainPoint: IResource): boolean => {
+    filterOldAndInvalidTerrainPoints = (tilePosition: ITerrainTilePosition, {
+        rooms,
+        roads
+    }: {
+        rooms: IRoom[],
+        roads: IRoad[]
+    } = {
+        rooms: this.state.rooms,
+        roads: this.state.roads
+    }) => (terrainPoint: IResource): boolean => {
         // determine if terrain point is near the current person
         const {tileX, tileY} = this.terrainTilePosition(terrainPoint);
         const isNearCurrentPerson = Math.abs(tileX - tilePosition.tileX) <= 1 && Math.abs(tileY - tilePosition.tileY) <= 1;
 
         // terrain point is not in a room or a road
-        const isNotInRoom = !this.state.rooms.some(this.isInRoom(terrainPoint));
-        const isNotInRoad = !this.state.roads.some(this.isInRoad(terrainPoint));
+        const isNotInRoom = !rooms.some(this.isInRoom(terrainPoint));
+        const isNotInRoad = !roads.some(this.isInRoad(terrainPoint));
         return isNearCurrentPerson && isNotInRoom && isNotInRoad;
     };
 
     /**
      * Update the terrain, loading and unloading trees and rocks around the player. It should generate an infinite terrain effect.
      */
-    updateTerrain = () => {
+    updateTerrain = ({rooms, roads}: {rooms: IRoom[], roads: IRoad[]}) => {
         // get current tile position
         const currentPerson = this.getCurrentPerson();
         const tilePosition = currentPerson ?
@@ -845,7 +856,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         // update resources
         const resources: IResource[] = [
             // filter old terrain points
-            ...this.state.resources.filter(this.filterOldAndInvalidTerrainPoints(tilePosition)),
+            ...this.state.resources.filter(this.filterOldAndInvalidTerrainPoints(tilePosition, {rooms, roads})),
             // load new terrain tiles
             ...terrainTilesToLoad.reduce((acc: IResource[], terrainTile: ITerrainTilePosition): IResource[] => {
                 return [
@@ -1066,7 +1077,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             const {
                 resources,
                 terrainTiles
-            } = this.updateTerrain();
+            } = this.updateTerrain({rooms, roads});
             this.setState({
                 persons,
                 npcs,

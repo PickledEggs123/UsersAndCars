@@ -45,6 +45,10 @@ export interface INpcCellTimeDatabase {
      * The cell the NPC is in.
      */
     cell: string;
+    /**
+     * If the time cell has expired.
+     */
+    expired: boolean;
 }
 
 /**

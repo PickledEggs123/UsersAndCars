@@ -37,7 +37,7 @@ import {
 import {defaultCarHealthObject, defaultObjectHealthObject, defaultPersonHealthObject} from "./config";
 import {giveEveryoneCash, handleVend} from "./cash";
 import {performHealthTickOnCollectionOfNetworkObjects} from "./health";
-import {addCellStringToBlankCellObjects, getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell";
+import {getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell";
 import {getThirtySecondsAgo, handleLogin} from "./authentication";
 import {generateCityMapWithRooms, getCityMapWithRooms, getDirectionMap, getLots, streetWalkerPath} from "./pathfinding";
 
@@ -131,7 +131,22 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
             const querySnapshot = await admin.firestore().collection("npcTimes")
                 .where("startTime", "<=", admin.firestore.Timestamp.now())
                 .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData))
+                .where("expired", "==", false)
                 .get();
+
+            // set old time cells expired
+            const expiredTimeCells = querySnapshot.docs.filter(document => {
+                // select time cells that ended before now
+                const data = document.data() as INpcCellTimeDatabase;
+                return +new Date() >= data.endTime.toMillis();
+            });
+            // update time cells by setting expired to true
+            await Promise.all(expiredTimeCells.map(timeCell => {
+                const data: Partial<INpcCellTimeDatabase> = {
+                    expired: true
+                };
+                return timeCell.ref.set(data, {merge: true});
+            }));
 
             // get npc ids
             const npcIds = [...new Set(querySnapshot.docs.map(document => {
@@ -668,7 +683,7 @@ npcsApp.post("/refresh", (req, res, next) => {
 
         // generate 200 npcs
         const pubSubClient = new PubSub();
-        const npcIds = new Array(200).fill(0).map((v, i) => `npc-${i}`);
+        const npcIds = new Array(50).fill(0).map((v, i) => `npc-${i}`);
         await Promise.all(npcIds.map(id => {
             const data = Buffer.from(JSON.stringify({id}));
             return pubSubClient.topic("npc").publish(data);
@@ -807,6 +822,7 @@ interface IDirectionMapItem extends IObject {
 /**
  * Generate all possible direction maps once to speed up NPC path finding.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const generateDirectionMaps = async () => {
     // get direction maps that already exist
     const directionMapSnapshots = await admin.firestore().collection("directionMaps").get();
@@ -859,15 +875,6 @@ export const personsTick = functions.pubsub.schedule("every 1 minutes").onRun(()
         await performHealthTickOnCollectionOfNetworkObjects("persons", defaultPersonHealthObject);
         await performHealthTickOnCollectionOfNetworkObjects("personalCars", defaultCarHealthObject);
         await performHealthTickOnCollectionOfNetworkObjects("objects", defaultObjectHealthObject);
-
-        // add cell string to objects with no cell string
-        await addCellStringToBlankCellObjects("persons");
-        await addCellStringToBlankCellObjects("personalCars");
-        await addCellStringToBlankCellObjects("objects");
-
-        // generate every direction map so NPCs can recycle the previous direction map instead of creating a new one
-        // from scratch, map generation can take 3 or 4 seconds per map.
-        await generateDirectionMaps();
 
         // handle each npc
         await performNpcTick();
