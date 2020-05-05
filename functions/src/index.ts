@@ -822,49 +822,48 @@ interface IDirectionMapItem extends IObject {
 /**
  * Generate all possible direction maps once to speed up NPC path finding.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const generateDirectionMaps = async () => {
-    // get direction maps that already exist
-    const directionMapSnapshots = await admin.firestore().collection("directionMaps").get();
-    const directionMapIdsThatExist = directionMapSnapshots.docs.map(doc => doc.id);
-
-    // get direction maps that should exist given the city map
-    const cityMapWithRooms = await getCityMapWithRooms();
-    const directionMapsIdsThatShouldExist = cityMapWithRooms.split(/\r|\n|\r\n/).reduce((acc: IDirectionMapItem[], row, rowIndex): IDirectionMapItem[] => {
-        return [
-            ...acc,
-            ...row.split("").map((column, columnIndex): IDirectionMapItem => {
-                return {
-                    id: `city1(${columnIndex},${rowIndex})`,
-                    x: columnIndex,
-                    y: rowIndex
-                };
-            })
-        ];
-    }, []);
-
-    // find a list of direction maps to create (they don't exist yet)
-    const directionMapsToCreate = directionMapsIdsThatShouldExist.reduce((acc: IObject[], directionMapItem): IObject[] => {
-        if (!directionMapIdsThatExist.includes(directionMapItem.id)) {
-            return [
-                ...acc,
-                {
-                    x: directionMapItem.x,
-                    y: directionMapItem.y
-                }
-            ];
-        } else {
-            return acc;
-        }
-    }, []);
-
-    // create worker threads to process all direction maps
-    const pubSub = new PubSub();
-    await Promise.all(directionMapsToCreate.map(to => {
-        const data = Buffer.from(JSON.stringify({to}));
-        return pubSub.topic("directionMaps").publish(data);
-    }));
-};
+// const generateDirectionMaps = async () => {
+//     // get direction maps that already exist
+//     const directionMapSnapshots = await admin.firestore().collection("directionMaps").get();
+//     const directionMapIdsThatExist = directionMapSnapshots.docs.map(doc => doc.id);
+//
+//     // get direction maps that should exist given the city map
+//     const cityMapWithRooms = await getCityMapWithRooms();
+//     const directionMapsIdsThatShouldExist = cityMapWithRooms.split(/\r|\n|\r\n/).reduce((acc: IDirectionMapItem[], row, rowIndex): IDirectionMapItem[] => {
+//         return [
+//             ...acc,
+//             ...row.split("").map((column, columnIndex): IDirectionMapItem => {
+//                 return {
+//                     id: `city1(${columnIndex},${rowIndex})`,
+//                     x: columnIndex,
+//                     y: rowIndex
+//                 };
+//             })
+//         ];
+//     }, []);
+//
+//     // find a list of direction maps to create (they don't exist yet)
+//     const directionMapsToCreate = directionMapsIdsThatShouldExist.reduce((acc: IObject[], directionMapItem): IObject[] => {
+//         if (!directionMapIdsThatExist.includes(directionMapItem.id)) {
+//             return [
+//                 ...acc,
+//                 {
+//                     x: directionMapItem.x,
+//                     y: directionMapItem.y
+//                 }
+//             ];
+//         } else {
+//             return acc;
+//         }
+//     }, []);
+//
+//     // create worker threads to process all direction maps
+//     const pubSub = new PubSub();
+//     await Promise.all(directionMapsToCreate.map(to => {
+//         const data = Buffer.from(JSON.stringify({to}));
+//         return pubSub.topic("directionMaps").publish(data);
+//     }));
+// };
 
 // every minute, run a tick to update all persons
 export const personsTick = functions.pubsub.schedule("every 1 minutes").onRun(() => {
