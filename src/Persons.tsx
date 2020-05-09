@@ -3,7 +3,6 @@ import './App.scss';
 import axios from "axios";
 import {
     ECarDirection,
-    ENetworkObjectType,
     IApiLotsBuyPost,
     IApiLotsSellPost,
     IApiPersonsGetResponse,
@@ -25,19 +24,16 @@ import {
     IObject,
     IPerson,
     IResource,
-    IResourceSpawn,
     IRoad,
     IRoom,
     ITerrainTilePosition,
     ITree,
-    IVendorInventoryItem,
-    IVoronoi
+    IVendorInventoryItem
 } from "./types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
 import {IPersonsDrawablesProps, IPersonsDrawablesState, PersonsDrawables} from "./PersonsDrawables";
 import {applyAudioFilters, rtcPeerConnectionConfiguration, userMediaConfig} from "./config";
 import seedrandom from "seedrandom";
-import shajs from "sha.js";
 
 /**
  * The input to the [[Persons]] component that changes how the game is rendered.
@@ -639,285 +635,6 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     };
 
     /**
-     * Compute the voronoi diagram for a set of points.
-     * @param points The input points.
-     */
-    computeVoronoi = (points: IObject[]): IVoronoi[] => {
-        // distance between two points
-        const distance = (a: IObject, b: IObject): number => {
-            return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
-        };
-        // for each point
-        return points.map((point, i, acc): IVoronoi => {
-            // compute corners
-            const corners = points.filter(otherPoint => {
-                return otherPoint !== point;
-            }).filter(otherPoint => {
-                // corners are otherPoints that are closer to point than otherOtherPoints.
-                const distanceFromPointToOtherPoint = distance(point, otherPoint);
-                return distanceFromPointToOtherPoint > 0 && points.filter(otherOtherPoint => {
-                    return otherOtherPoint !== point && otherOtherPoint !== otherPoint && distance(otherPoint, otherOtherPoint) > 0;
-                }).every(otherOtherPoint => {
-                    return distanceFromPointToOtherPoint <= distance(otherPoint, otherOtherPoint);
-                });
-            });
-            return {
-                point,
-                corners
-            };
-        });
-    };
-
-    /**
-     * Spread out voronoi cells evenly by removing tight knit clusters of random points.
-     * @param voronois A random set of points with voronoi information included.
-     */
-    lloydRelaxation = (voronois: IVoronoi[]): IObject[] => {
-        const weightedDistance = (a: IObject, b: IObject) => {
-            return 1;
-        };
-        // computer the weighted average of the corners of a voronoi cell
-        const weightedAverageOfCorners = (voronoi: IVoronoi): IObject => {
-            // compute weights for each point based on squared distance, farther away points will have more weights,
-            // assume that by moving towards farther away points, the clusters of random points will spread out
-            const pointsWithWeights = voronoi.corners.reduce((acc: Array<{weight: number, corner: IObject}>, corner: IObject) => {
-                const weight = weightedDistance(voronoi.point, corner);
-                return [
-                    ...acc,
-                    {
-                        weight,
-                        corner
-                    }
-                ];
-            }, []);
-
-            // compute the sum point and sum weight
-            const newPointWithWeight = pointsWithWeights.reduce((acc, pointWithWeight) => {
-                return {
-                    weight: acc.weight + pointWithWeight.weight,
-                    corner: {
-                        x: acc.corner.x + pointWithWeight.corner.x * pointWithWeight.weight,
-                        y: acc.corner.y + pointWithWeight.corner.y * pointWithWeight.weight
-                    }
-                }
-            }, {
-                weight: 0,
-                corner: {
-                    x: 0,
-                    y: 0
-                }
-            });
-
-            // divide sum point by sum weight to get a weighted average
-            return {
-                x: newPointWithWeight.corner.x / newPointWithWeight.weight,
-                y: newPointWithWeight.corner.y / newPointWithWeight.weight
-            };
-        };
-        // approximate lloyd's relaxation by averaging the corners.
-        return voronois.map((voronoi): IObject => {
-            return weightedAverageOfCorners(voronoi);
-        });
-    };
-
-    /**
-     * The size of a terrain tile. This is the smallest unit of terrain generation.
-     */
-    tileSize = 1000;
-    generateTilePoints = (tileX: number, tileY: number, min: number, max: number): IObject[] => {
-        const sha = shajs("sha256").update(`terrain-${tileX}-${tileY}`).digest("base64");
-        const rng: seedrandom.prng = seedrandom.alea(sha);
-        const numberOfPoints = Math.floor(rng.double() * (max - min)) + min;
-        return new Array(numberOfPoints).fill(0).map(() => ({
-            x: rng.double() * this.tileSize + tileX * this.tileSize,
-            y: rng.double() * this.tileSize + tileY * this.tileSize
-        }));
-    };
-
-    terrainTilePosition = (offset: IObject): ITerrainTilePosition => {
-        const tileX = Math.floor(offset.x / this.tileSize);
-        const tileY = Math.floor(offset.y / this.tileSize);
-        return {
-            tileX,
-            tileY
-        };
-    };
-
-    /**
-     * Generate points for terrain objects such as trees and rocks.
-     * @param tileX The x axis of the terrain tile position.
-     * @param tileY the y axis of the terrain tile position.
-     */
-    generateTerrainPoints = ({tileX, tileY}: ITerrainTilePosition) => {
-        // generate random points for the center tile and the surrounding tiles
-        // surrounding tiles are required to smoothly generate random points between the edges of each tile
-        let points: IObject[] = [];
-        for (let i = -1; i <= 1; i++) {
-            for (let j = -1; j <= 1; j++) {
-                points.push(...this.generateTilePoints(tileX + i, tileY + i, 10, 25));
-            }
-        }
-
-        // for five steps, use lloyd's relaxation to smooth out the random points
-        for (let step = 0; step < 5; step++) {
-            const voronois = this.computeVoronoi(points);
-            points = this.lloydRelaxation(voronois);
-        }
-
-        // keep only points that are in the current tile
-        return points.filter(point => {
-            const pointTileX = Math.floor(point.x / this.tileSize);
-            const pointTileY = Math.floor(point.y / this.tileSize);
-            return tileX === pointTileX && tileY === pointTileY;
-        }).map(point => {
-            // round position to the nearest 10 to align with the grid
-            return {
-                x: Math.floor(point.x / 10) * 10,
-                y: Math.floor(point.y / 10) * 10
-            };
-        }).reduce((acc: IObject[], point: IObject): IObject[] => {
-            // if point is unique, not in array
-            if (acc.every(p => p.x !== point.x && p.y !== point.y)) {
-                // add unique point
-                return [...acc, point];
-            } else {
-                // do not add duplicate point
-                return acc;
-            }
-        }, []);
-    };
-
-    /**
-     * Terrain tiles that should be loaded given a terrain tile position.
-     * @param tileX Terrain tile position on the x axis.
-     * @param tileY Terrain tile position on the y axis.
-     */
-    terrainTilesThatShouldBeLoaded = ({tileX, tileY}: ITerrainTilePosition) => {
-        const tiles = [];
-        for (let i = -1; i <= 1; i++) {
-            for (let j = -1; j <= 1; j++) {
-                tiles.push({
-                    tileX: tileX + i,
-                    tileY: tileY + j
-                });
-            }
-        }
-        return tiles;
-    };
-
-    /**
-     * Generate a terrain tile.
-     * @param tilePosition The tile position to generate.
-     */
-    generateTerrainTile = (tilePosition: ITerrainTilePosition): IResource[] => {
-        return this.generateTerrainPoints(tilePosition).map((point): IResource => {
-            const {x, y} = point;
-            const rng: seedrandom.prng = seedrandom.alea(`resource(${x},${y})`);
-            const objectType: ENetworkObjectType = rng.quick() > 0.9 ? ENetworkObjectType.ROCK : ENetworkObjectType.TREE;
-            const spawns: IResourceSpawn[] = objectType === ENetworkObjectType.TREE ? [{
-                type: ENetworkObjectType.WOOD,
-                probability: 100
-            }] : [{
-                type: ENetworkObjectType.STONE,
-                probability: 100
-            }];
-            const resource: IResource = {
-                id: `resource(${x},${y})`,
-                x,
-                y,
-                objectType,
-                spawnSeed: `resource(${x},${y})`,
-                spawns,
-                lastUpdate: new Date().toISOString(),
-                grabbedByPersonId: null,
-                health: {
-                    rate: 0,
-                    max: 10,
-                    value: 10
-                },
-                depleted: false
-            };
-            if (objectType === ENetworkObjectType.TREE) {
-                const tree: ITree = {
-                    ...resource as ITree,
-                    treeSeed: `tree(${x},${y})`
-                };
-                return {...tree};
-            } else {
-                return resource;
-            }
-        }).filter(this.filterOldAndInvalidTerrainPoints(tilePosition));
-    };
-
-    /**
-     * Filter terrain points that are not near the current person or inside a room or road. There should be no trees
-     * growing from a road or inside of a building.
-     * @param terrainPoint The terrain position of the current person.
-     * @param rooms A list of current rooms
-     * @param roads A list of current roads
-     */
-    filterOldAndInvalidTerrainPoints = (tilePosition: ITerrainTilePosition, {
-        rooms,
-        roads
-    }: {
-        rooms: IRoom[],
-        roads: IRoad[]
-    } = {
-        rooms: this.state.rooms,
-        roads: this.state.roads
-    }) => (terrainPoint: IResource): boolean => {
-        // determine if terrain point is near the current person
-        const {tileX, tileY} = this.terrainTilePosition(terrainPoint);
-        const isNearCurrentPerson = Math.abs(tileX - tilePosition.tileX) <= 1 && Math.abs(tileY - tilePosition.tileY) <= 1;
-
-        // terrain point is not in a room or a road
-        const isNotInRoom = !rooms.some(this.isInRoom(terrainPoint));
-        const isNotInRoad = !roads.some(this.isInRoad(terrainPoint));
-        return isNearCurrentPerson && isNotInRoom && isNotInRoad;
-    };
-
-    /**
-     * Update the terrain, loading and unloading trees and rocks around the player. It should generate an infinite terrain effect.
-     */
-    updateTerrain = ({rooms, roads}: {rooms: IRoom[], roads: IRoad[]}) => {
-        // get current tile position
-        const currentPerson = this.getCurrentPerson();
-        const tilePosition = currentPerson ?
-            this.terrainTilePosition(currentPerson) :
-            {tileX: 0, tileY: 0};
-
-        // get tiles that should be loaded
-        const terrainTilesThatShouldBeLoaded = this.terrainTilesThatShouldBeLoaded(tilePosition);
-        const terrainTilesToLoad = terrainTilesThatShouldBeLoaded.reduce((acc: ITerrainTilePosition[], tile: ITerrainTilePosition): ITerrainTilePosition[] => {
-            // current terrain tiles do not contain the new tile
-            if (!this.state.terrainTiles.some(currentTile => currentTile.tileX === tile.tileX && currentTile.tileY === tile.tileY)) {
-                // add new tile
-                return [...acc, tile];
-            } else {
-                return acc;
-            }
-        }, []);
-
-        // update resources
-        const resources: IResource[] = [
-            // filter old terrain points
-            ...this.state.resources.filter(this.filterOldAndInvalidTerrainPoints(tilePosition, {rooms, roads})),
-            // load new terrain tiles
-            ...terrainTilesToLoad.reduce((acc: IResource[], terrainTile: ITerrainTilePosition): IResource[] => {
-                return [
-                    ...acc,
-                    ...this.generateTerrainTile(terrainTile)
-                ];
-            }, [])
-        ];
-
-        return {
-            resources,
-            terrainTiles: terrainTilesThatShouldBeLoaded
-        };
-    };
-
-    /**
      * Begin the game loop.
      */
     beginGameLoop = () => {
@@ -1083,6 +800,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 npcs,
                 cars: serverCars,
                 objects: serverObjects,
+                resources: serverResources,
                 voiceMessages: {
                     candidates,
                     offers,
@@ -1111,6 +829,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             const objects = serverObjects.reduce((arr: INetworkObject[], networkObject: INetworkObject): INetworkObject[] => {
                 return this.updateMergeLocalAndNetworkData(this.state.objects, arr, networkObject);
             }, []);
+            const resources = serverResources.reduce((arr: IResource[], networkObject: IResource): IResource[] => {
+                return this.updateMergeLocalAndNetworkData(this.state.resources, arr, networkObject);
+            }, []);
             const newCurrentPerson = persons.find(person => person.id === this.state.currentPersonId);
             const nearbyObjects = this.getNearbyObjects(newCurrentPerson, objects);
             const nearestPersons = this.getCurrentPerson() ?
@@ -1119,10 +840,6 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             const npc = npcs.find(n => this.state.npc && n.id === this.state.npc.id) || null;
             const lot = lots.find(l => this.state.lot && l.id === this.state.lot.id) || null;
 
-            const {
-                resources,
-                terrainTiles
-            } = this.updateTerrain({rooms, roads});
             this.setState({
                 persons,
                 npcs,
@@ -1143,8 +860,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 rooms,
                 npc,
                 lot,
-                resources,
-                terrainTiles
+                resources
             });
         }
 

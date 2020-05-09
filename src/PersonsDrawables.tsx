@@ -148,15 +148,6 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
-     * Determine if an object is inside the road.
-     * @param position The object to test.
-     */
-    isInRoad = (position: IObject) => (road: IRoad): boolean => {
-        return position.x >= road.x && position.x <= road.x + 500 &&
-            position.y >= road.y && position.y <= road.y + 300;
-    };
-
-    /**
      * Determine if an object is inside the car.
      * @param position The object to test.
      */
@@ -240,7 +231,6 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * Draw a person as some SVG elements.
      * @param person The person to draw.
      * @param previousPerson The previous position used for interpolation.
-     * @param isNpc The person is an NPC.
      */
     drawPerson = (person: IPerson, previousPerson?: IPerson, isNpc?: boolean) => {
         const {x, y} = this.interpolateObjectPosition(person, previousPerson);
@@ -1585,10 +1575,8 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         // sort drawable objects from top to bottom
         return drawables.sort((a, b) => {
             // by default, sort by height difference
-            const heightDifference = a.y - b.y;
-
             // sort by height differences
-            return heightDifference;
+            return a.y - b.y;
         }).filter((a) => {
             if (a.type === EDrawableType.WALL) {
                 // check if the wall is near the current person horizontally

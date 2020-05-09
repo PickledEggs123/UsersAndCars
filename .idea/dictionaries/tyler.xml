@@ -6,6 +6,7 @@
       <w>multiplayer</w>
       <w>npcs</w>
       <w>pathfinding</w>
+      <w>pubsub</w>
       <w>teleport</w>
       <w>teleporting</w>
       <w>voronoi</w>

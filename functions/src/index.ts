@@ -19,7 +19,7 @@ import {
     INetworkObject,
     INpc, INpcSchedule,
     IObject,
-    IPerson, IRoad, IRoom, TDayNightTimeHour
+    IPerson, IResource, IRoad, IRoom, TDayNightTimeHour
 } from "./types/GameTypes";
 import {
     getVoiceMessages,
@@ -40,6 +40,7 @@ import {performHealthTickOnCollectionOfNetworkObjects} from "./health";
 import {getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell";
 import {getThirtySecondsAgo, handleLogin} from "./authentication";
 import {generateCityMapWithRooms, getDirectionMap, getLots, streetWalkerPath} from "./pathfinding";
+import {handleGenerateTerrainTile, updateTerrain} from "./terrain";
 
 const matchAll = require("string.prototype.matchall");
 matchAll.shim();
@@ -77,6 +78,9 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
         // get current person, render data relative to current person's position
         const currentPerson = await admin.firestore().collection("persons").doc(id).get();
         const currentPersonData = currentPerson.exists ? currentPerson.data() as IPersonDatabase : {x: 0, y: 0} as IPersonDatabase;
+
+        // begin terrain update
+        await updateTerrain({currentPerson: currentPersonData});
 
         /**
          * The distance from the object to the current person.
@@ -270,6 +274,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
             objects: await getSimpleCollection<INetworkObject>("objects"),
             roads: await getSimpleCollection<IRoad>("roads"),
             rooms: await getSimpleCollection<IRoom>("rooms"),
+            resources: await getSimpleCollection<IResource>("resources"),
             voiceMessages: await getVoiceMessages(id)
         };
         res.json(jsonData);
@@ -804,6 +809,12 @@ export const lots = functions.https.onRequest(lotsApp);
 export const npcTick = functions.pubsub.topic("npc").onPublish((message) => {
     const id = message.json.id;
     return handleStreetWalkingNpc({id});
+});
+
+// handle the terrain generation using a pubsub topic
+export const generateTerrain = functions.pubsub.topic("generateTerrain").onPublish((message) => {
+    const terrainTile = message.json.terrainTile;
+    return handleGenerateTerrainTile(terrainTile);
 });
 
 // generate a direction map for a location

@@ -693,6 +693,7 @@ export interface IApiPersonsGetResponse {
     npcs: INpc[],
     cars: ICar[];
     objects: INetworkObject[];
+    resources: IResource[];
     lots: ILot[];
     rooms: IRoom[];
     roads: IRoad[];
