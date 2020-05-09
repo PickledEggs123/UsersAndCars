@@ -37,6 +37,7 @@ import {PersonsLogin} from "./PersonsLogin";
 import {IPersonsDrawablesProps, IPersonsDrawablesState, PersonsDrawables} from "./PersonsDrawables";
 import {applyAudioFilters, rtcPeerConnectionConfiguration, userMediaConfig} from "./config";
 import seedrandom from "seedrandom";
+import shajs from "sha.js";
 
 /**
  * The input to the [[Persons]] component that changes how the game is rendered.
@@ -647,12 +648,16 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
         };
         // for each point
-        return points.map((point): IVoronoi => {
+        return points.map((point, i, acc): IVoronoi => {
             // compute corners
             const corners = points.filter(otherPoint => {
+                return otherPoint !== point;
+            }).filter(otherPoint => {
                 // corners are otherPoints that are closer to point than otherOtherPoints.
                 const distanceFromPointToOtherPoint = distance(point, otherPoint);
-                return points.every(otherOtherPoint => {
+                return distanceFromPointToOtherPoint > 0 && points.filter(otherOtherPoint => {
+                    return otherOtherPoint !== point && otherOtherPoint !== otherPoint && distance(otherPoint, otherOtherPoint) > 0;
+                }).every(otherOtherPoint => {
                     return distanceFromPointToOtherPoint <= distance(otherPoint, otherOtherPoint);
                 });
             });
@@ -663,25 +668,65 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         });
     };
 
+    /**
+     * Spread out voronoi cells evenly by removing tight knit clusters of random points.
+     * @param voronois A random set of points with voronoi information included.
+     */
     lloydRelaxation = (voronois: IVoronoi[]): IObject[] => {
-        // computer the average of the corners of a voronoi cell
-        const averageOfCorners = (corners: IObject[]): IObject => {
-            const sumX = corners.reduce((acc, corner) => acc + corner.x, 0);
-            const sumY = corners.reduce((acc, corner) => acc + corner.y, 0);
+        const weightedDistance = (a: IObject, b: IObject) => {
+            return 1;
+        };
+        // computer the weighted average of the corners of a voronoi cell
+        const weightedAverageOfCorners = (voronoi: IVoronoi): IObject => {
+            // compute weights for each point based on squared distance, farther away points will have more weights,
+            // assume that by moving towards farther away points, the clusters of random points will spread out
+            const pointsWithWeights = voronoi.corners.reduce((acc: Array<{weight: number, corner: IObject}>, corner: IObject) => {
+                const weight = weightedDistance(voronoi.point, corner);
+                return [
+                    ...acc,
+                    {
+                        weight,
+                        corner
+                    }
+                ];
+            }, []);
+
+            // compute the sum point and sum weight
+            const newPointWithWeight = pointsWithWeights.reduce((acc, pointWithWeight) => {
+                return {
+                    weight: acc.weight + pointWithWeight.weight,
+                    corner: {
+                        x: acc.corner.x + pointWithWeight.corner.x * pointWithWeight.weight,
+                        y: acc.corner.y + pointWithWeight.corner.y * pointWithWeight.weight
+                    }
+                }
+            }, {
+                weight: 0,
+                corner: {
+                    x: 0,
+                    y: 0
+                }
+            });
+
+            // divide sum point by sum weight to get a weighted average
             return {
-                x: sumX / corners.length,
-                y: sumY / corners.length
+                x: newPointWithWeight.corner.x / newPointWithWeight.weight,
+                y: newPointWithWeight.corner.y / newPointWithWeight.weight
             };
         };
         // approximate lloyd's relaxation by averaging the corners.
         return voronois.map((voronoi): IObject => {
-            return averageOfCorners(voronoi.corners);
+            return weightedAverageOfCorners(voronoi);
         });
     };
 
+    /**
+     * The size of a terrain tile. This is the smallest unit of terrain generation.
+     */
     tileSize = 1000;
     generateTilePoints = (tileX: number, tileY: number, min: number, max: number): IObject[] => {
-        const rng: seedrandom.prng = seedrandom.alea(`terrain-${tileX}-${tileY}`);
+        const sha = shajs("sha256").update(`terrain-${tileX}-${tileY}`).digest("base64");
+        const rng: seedrandom.prng = seedrandom.alea(sha);
         const numberOfPoints = Math.floor(rng.double() * (max - min)) + min;
         return new Array(numberOfPoints).fill(0).map(() => ({
             x: rng.double() * this.tileSize + tileX * this.tileSize,
@@ -713,8 +758,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             }
         }
 
-        // for three steps, use lloyd's relaxation to smooth out the random points
-        for (let step = 0; step < 3; step++) {
+        // for five steps, use lloyd's relaxation to smooth out the random points
+        for (let step = 0; step < 5; step++) {
             const voronois = this.computeVoronoi(points);
             points = this.lloydRelaxation(voronois);
         }

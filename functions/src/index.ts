@@ -39,7 +39,7 @@ import {giveEveryoneCash, handleVend} from "./cash";
 import {performHealthTickOnCollectionOfNetworkObjects} from "./health";
 import {getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell";
 import {getThirtySecondsAgo, handleLogin} from "./authentication";
-import {generateCityMapWithRooms, getCityMapWithRooms, getDirectionMap, getLots, streetWalkerPath} from "./pathfinding";
+import {generateCityMapWithRooms, getDirectionMap, getLots, streetWalkerPath} from "./pathfinding";
 
 const matchAll = require("string.prototype.matchall");
 matchAll.shim();
@@ -815,9 +815,9 @@ export const generateDirectionMap = functions.pubsub.topic("directionMaps").onPu
 /**
  * A direction map item used to determine which direction maps to create.
  */
-interface IDirectionMapItem extends IObject {
-    id: string;
-}
+// interface IDirectionMapItem extends IObject {
+//     id: string;
+// }
 
 /**
  * Generate all possible direction maps once to speed up NPC path finding.
