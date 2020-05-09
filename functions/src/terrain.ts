@@ -1,5 +1,5 @@
 import {
-    ENetworkObjectType,
+    ENetworkObjectType, IApiPersonsResourceHarvestPost,
     IObject,
     IResource,
     IResourceSpawn,
@@ -9,10 +9,11 @@ import {
 } from "./types/GameTypes";
 import * as shajs from "sha.js";
 import * as seedrandom from "seedrandom";
-import {IPersonDatabase} from "./types/database";
+import {INetworkObjectDatabase, IPersonDatabase, IResourceDatabase} from "./types/database";
 import admin from "firebase-admin";
 import {PubSub} from "@google-cloud/pubsub";
 import {getNetworkObjectCellString} from "./cell";
+import express from "express";
 
 /**
  * Convert terrain tile to an id.
@@ -198,10 +199,20 @@ const generateTerrainTile = (tilePosition: ITerrainTilePosition): IResource[] =>
         const objectType: ENetworkObjectType = rng.quick() > 0.9 ? ENetworkObjectType.ROCK : ENetworkObjectType.TREE;
         const spawns: IResourceSpawn[] = objectType === ENetworkObjectType.TREE ? [{
             type: ENetworkObjectType.WOOD,
-            probability: 100
+            probability: 100,
+            spawnTime: 60000
         }] : [{
             type: ENetworkObjectType.STONE,
-            probability: 100
+            probability: 70,
+            spawnTime: 60000
+        }, {
+            type: ENetworkObjectType.COAL,
+            probability: 20,
+            spawnTime: 120000
+        }, {
+            type: ENetworkObjectType.IRON,
+            probability: 10,
+            spawnTime: 180000
         }];
         const resource: IResource = {
             id: `resource(${x},${y})`,
@@ -217,7 +228,9 @@ const generateTerrainTile = (tilePosition: ITerrainTilePosition): IResource[] =>
                 max: 10,
                 value: 10
             },
-            depleted: false
+            depleted: false,
+            readyTime: new Date().toISOString(),
+            spawnState: true
         };
         if (objectType === ENetworkObjectType.TREE) {
             const tree: ITree = {
@@ -287,4 +300,68 @@ export const handleGenerateTerrainTile = async (terrainTile: ITerrainTilePositio
 
     // save new terrain tiles
     await admin.firestore().collection("terrainTiles").doc(terrainTileToId(terrainTile)).set(terrainTile, {merge: true});
+};
+
+const harvestResource = async (resourceId: string) => {
+    // check to see if resource exists
+    const resourceDocument = await admin.firestore().collection("resources").doc(resourceId).get();
+    if (resourceDocument.exists) {
+        const resource = resourceDocument.data() as IResourceDatabase;
+        // resource is ready to be harvested
+        if (!resource.depleted || resource.readyTime.toMillis() <= +new Date()) {
+            // determine the spawn using a seeded random number generator
+            const rng = seedrandom.alea(resource.spawnState === true ? resource.spawnSeed : "", {
+                state: resource.spawnState
+            });
+            const spawns = resource.spawns;
+            const spawn = spawns[Math.floor(rng.quick() * spawns.length)];
+
+            // if spawn exists, create it and update random number generator
+            if (spawn) {
+                let spawnData: INetworkObjectDatabase = {
+                    x: resource.x + Math.floor(rng.quick() * 200) - 100,
+                    y: resource.y + Math.floor(rng.quick() * 200) - 100,
+                    objectType: spawn.type,
+                    lastUpdate: admin.firestore.Timestamp.now(),
+                    health: {
+                        rate: 0,
+                        max: 1,
+                        value: 1
+                    },
+                    id: `object-${rng.int32()}`,
+                    grabbedByPersonId: null,
+                    cell: ""
+                };
+                spawnData = {
+                    ...spawnData,
+                    cell: getNetworkObjectCellString(spawnData)
+                };
+                const respawnTime = Math.ceil(rng.quick() * spawn.spawnTime);
+                const resourceUpdate: Partial<IResourceDatabase> = {
+                    spawnState: rng.state(),
+                    lastUpdate: admin.firestore.Timestamp.now(),
+                    depleted: true,
+                    readyTime: admin.firestore.Timestamp.fromMillis(+new Date() + respawnTime)
+                };
+                await Promise.all([
+                    admin.firestore().collection("objects").doc(spawnData.id).set(spawnData, {merge: true}),
+                    admin.firestore().collection("resources").doc(resourceId).set(resourceUpdate, {merge: true})
+                ]);
+            }
+        }
+    }
+};
+
+export const handleHarvestResource = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    (async () => {
+        const resourceId = req.body.resourceId as IApiPersonsResourceHarvestPost;
+        if (typeof resourceId === "string") {
+            await harvestResource(resourceId);
+            res.sendStatus(200);
+        } else {
+            res.status(400).json({
+                message: "include the resourceId to harvest a specific resource"
+            });
+        }
+    })().catch((err) => next(err));
 };

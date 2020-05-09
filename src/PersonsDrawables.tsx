@@ -688,6 +688,36 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
+     * Draw a piece of coal on the ground.
+     * @param drawable The object to draw.
+     * @param filter The filter to apply to the object.
+     * @param previousNetworkObject The previous position of the object for interpolation.
+     */
+    drawCoal = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject) => {
+        const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        return (
+            <g key={`stone-${drawable.id}`} transform={`translate(${x},${y})`} filter={filter}>
+                <path fill="black" stroke="black" strokeWidth={2} d="m -20 0 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+            </g>
+        )
+    };
+
+    /**
+     * Draw a piece of iron on the ground.
+     * @param drawable The object to draw.
+     * @param filter The filter to apply to the object.
+     * @param previousNetworkObject The previous position of the object for interpolation.
+     */
+    drawIron = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject) => {
+        const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        return (
+            <g key={`stone-${drawable.id}`} transform={`translate(${x},${y})`} filter={filter}>
+                <path fill="maroon" stroke="black" strokeWidth={2} d="m -20 0 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+            </g>
+        )
+    };
+
+    /**
      * Draw a networked object onto the screen.
      * @param networkObject The network object to draw.
      * @param previousNetworkObject The previous network object used for interpolation.
@@ -755,6 +785,24 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     }
                 }
             }
+            case ENetworkObjectType.COAL: {
+                return {
+                    ...networkObject,
+                    type: EDrawableType.OBJECT,
+                    draw() {
+                        return component.drawCoal(networkObject, filter, previousNetworkObject);
+                    }
+                }
+            }
+            case ENetworkObjectType.IRON: {
+                return {
+                    ...networkObject,
+                    type: EDrawableType.OBJECT,
+                    draw() {
+                        return component.drawIron(networkObject, filter, previousNetworkObject);
+                    }
+                }
+            }
             default:
             case ENetworkObjectType.BOX: {
                 return {
@@ -769,11 +817,9 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
-     * A function to chop down a tree.
+     * A function to harvest some resource.
      */
-    abstract chopDownTree: (tree: ITree) => void;
-
-    abstract mineRock: (rock: IResource) => void;
+    abstract harvestResource: (resource: IResource) => void;
 
     /**
      * Draw a tree.
@@ -792,7 +838,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 type: EDrawableType.OBJECT,
                 draw() {
                     return (
-                        <g key={tree.id} transform={`translate(${x},${y})`} onClick={() => component.chopDownTree(tree)}>
+                        <g key={tree.id} transform={`translate(${x},${y})`}>
                             <polygon stroke="black" strokeWidth={2} fill="tan" points="-25,0 -20,-5 -15,-15 -15,-30 15,-30 15,-15 20,-5 25,0"/>
                         </g>
                     );
@@ -819,7 +865,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 type: EDrawableType.OBJECT,
                 draw() {
                     return (
-                        <g key={tree.id} transform={`translate(${x},${y})`} onClick={() => component.chopDownTree(tree)}>
+                        <g key={tree.id} transform={`translate(${x},${y})`} onClick={() => component.harvestResource(tree)}>
                             <polygon stroke="black" strokeWidth={2} fill="tan" points="-25,0 -20,-5 -15,-15 -15,-110 15,-110 15,-15 20,-5 25,0"/>
                             <path stroke="black" strokeWidth={2} fill="green" d="M -50 -100 c 25 -100 75 -100 100 0 z "/>
                             {
@@ -852,9 +898,9 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 type: EDrawableType.OBJECT,
                 draw() {
                     return (
-                        <g key={rock.id} transform={`translate(${x},${y})`} onClick={() => component.mineRock(rock)}>
-                            <path stroke="black" strokeWidth={2} fill="darkgrey" d="m -50 0 c 0 -75 50 -25 50 0 c 0 -50 50 -75 50 0 z"/>
-                            <path stroke="black" strokeWidth={2} fill="darkgrey" d="m -25 0 c 0 -75 50 -75 50 0 z"/>
+                        <g key={rock.id} transform={`translate(${x},${y})`}>
+                            <path stroke="black" strokeWidth={2} fill="darkgrey" d="m -50 0 c 0 -50 50 -25 50 0 c 0 -25 50 -50 50 0 z"/>
+                            <path stroke="black" strokeWidth={2} fill="darkgrey" d="m -25 0 c 0 -50 50 -75 50 0 z"/>
                         </g>
                     );
                 }
@@ -866,7 +912,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 type: EDrawableType.OBJECT,
                 draw() {
                     return (
-                        <g key={rock.id} transform={`translate(${x},${y})`} onClick={() => component.mineRock(rock)}>
+                        <g key={rock.id} transform={`translate(${x},${y})`} onClick={() => component.harvestResource(rock)}>
                             <path stroke="black" strokeWidth={2} fill="grey" d="m -50 0 c 0 -75 50 -25 50 0 c 0 -50 50 -75 50 0 z"/>
                             <path stroke="black" strokeWidth={2} fill="grey" d="m -25 0 c 0 -75 50 -75 50 0 z"/>
                         </g>
@@ -1500,6 +1546,22 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
+     * Interpolate the resource state across time. The data will store a time in the future that the resource will respawn
+     * without actually changing the data. Instead the depleted state must be interpolated to draw the resource correctly.
+     * @param resource The resource with state that should be interpolated.
+     */
+    interpolateResource = (resource: IResource): IResource => {
+        if (resource.depleted) {
+            return {
+                ...resource,
+                depleted: +new Date() < Date.parse(resource.readyTime)
+            };
+        } else {
+            return resource;
+        }
+    };
+
+    /**
      * Create a sorted list of all drawable objects for final rendering. Objects at the bottom should overlap objects
      * above them to create a 2D Stereographic Projection, like a 2D with 3D movement arcade game. Sort [[IDrawable]]s
      * from top to bottom so bottom is drawn last, on top of the [[IDrawable]] above it.
@@ -1541,7 +1603,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             }, []),
 
             // for each resource object
-            ...this.state.resources.filter(this.isNearWorldView(worldOffset)).reduce((arr: IDrawable[], resource: IResource): IDrawable[] => {
+            ...this.state.resources.filter(this.isNearWorldView(worldOffset)).map(this.interpolateResource).reduce((arr: IDrawable[], resource: IResource): IDrawable[] => {
                 return [
                     ...arr,
                     ...this.drawResource(resource)

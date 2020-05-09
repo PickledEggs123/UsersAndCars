@@ -1,3 +1,5 @@
+import * as seedrandom from "seedrandom";
+
 /**
  * The base interface for all game objects.
  */
@@ -150,6 +152,10 @@ export interface IResourceSpawn {
      * The probability of the object spawning.
      */
     probability: number;
+    /**
+     * The amount of milliseconds for the resource to spawn again.
+     */
+    spawnTime: number;
 }
 
 /**
@@ -166,9 +172,17 @@ export interface IResource extends INetworkObject {
      */
     spawns: IResourceSpawn[];
     /**
+     * The current state of the random number generator.
+     */
+    spawnState: seedrandom.State | true;
+    /**
      * If the resource is depleted.
      */
     depleted: boolean;
+    /**
+     * The time of the resource being ready.
+     */
+    readyTime: string;
 }
 
 /**
@@ -841,6 +855,13 @@ export interface IApiLotsSellPost {
     lotId: string;
     price: number;
     personId: string;
+}
+
+/**
+ * The HTTP POST /persons/resource/harvest request. Used to harvest a resource on the map.
+ */
+export interface IApiPersonsResourceHarvestPost {
+    resourceId: string;
 }
 
 /**

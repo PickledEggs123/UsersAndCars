@@ -5,9 +5,10 @@ import {
     ILot,
     INetworkObject,
     INpcPathPoint, INpcSchedule,
-    IObjectHealth
+    IObjectHealth, IResourceSpawn
 } from "./GameTypes";
 import * as admin from "firebase-admin";
+import * as seedrandom from "seedrandom";
 
 export interface ILotFillerLotAndObjects {
     lot: ILot;
@@ -59,58 +60,6 @@ export interface INpcCellTimeDatabase {
  * if you use the API for less than 12 hours out of a 24 hour day.
  */
 
-export interface IPersonDatabase {
-    id: string;
-    x: number;
-    y: number;
-    shirtColor: string;
-    pantColor: string;
-    lastUpdate: admin.firestore.Timestamp;
-    carId: string | null;
-    grabbedByPersonId: string | null;
-    password: string;
-    objectType: ENetworkObjectType.PERSON;
-    cash: number;
-    creditLimit: number;
-    health: IObjectHealth;
-    cell: string;
-}
-
-export interface INpcDatabase {
-    id: string;
-    x: number;
-    y: number;
-    shirtColor: string;
-    pantColor: string;
-    lastUpdate: admin.firestore.Timestamp;
-    carId: string | null;
-    grabbedByPersonId: string | null;
-    password: string;
-    objectType: ENetworkObjectType.PERSON;
-    cash: number;
-    creditLimit: number;
-    health: IObjectHealth;
-    path: INpcPathPoint[];
-    directionMap: string;
-    doneWalking: admin.firestore.Timestamp;
-    /**
-     * A list of actions to perform every 4 hours.
-     */
-    schedule: INpcSchedule[];
-}
-
-export interface ICarDatabase {
-    id: string;
-    x: number;
-    y: number;
-    direction: ECarDirection;
-    lastUpdate: admin.firestore.Timestamp;
-    grabbedByPersonId: string | null;
-    objectType: ENetworkObjectType;
-    health: IObjectHealth;
-    cell: string;
-}
-
 /**
  * An object that should be networked in multiplayer.
  */
@@ -137,4 +86,37 @@ export interface INetworkObjectCellPosition {
      * Y axis cell number.
      */
     y: number;
+}
+
+export interface IPersonDatabase extends INetworkObjectDatabase {
+    shirtColor: string;
+    pantColor: string;
+    carId: string | null;
+    password: string;
+    objectType: ENetworkObjectType.PERSON;
+    cash: number;
+    creditLimit: number;
+}
+
+export interface INpcDatabase extends IPersonDatabase {
+    path: INpcPathPoint[];
+    directionMap: string;
+    doneWalking: admin.firestore.Timestamp;
+    /**
+     * A list of actions to perform every 4 hours.
+     */
+    schedule: INpcSchedule[];
+}
+
+export interface ICarDatabase extends INetworkObjectDatabase {
+    direction: ECarDirection;
+    objectType: ENetworkObjectType;
+}
+
+export interface IResourceDatabase extends INetworkObjectDatabase {
+    spawnSeed: string;
+    spawns: IResourceSpawn[];
+    spawnState: seedrandom.State | true;
+    depleted: boolean;
+    readyTime: admin.firestore.Timestamp
 }

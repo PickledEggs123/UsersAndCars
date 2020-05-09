@@ -6,7 +6,7 @@ import {
     IApiLotsBuyPost,
     IApiLotsSellPost,
     IApiPersonsGetResponse,
-    IApiPersonsPut,
+    IApiPersonsPut, IApiPersonsResourceHarvestPost,
     IApiPersonsVendPost,
     IApiPersonsVoiceAnswerMessage,
     IApiPersonsVoiceAnswerPost,
@@ -27,7 +27,6 @@ import {
     IRoad,
     IRoom,
     ITerrainTilePosition,
-    ITree,
     IVendorInventoryItem
 } from "./types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
@@ -1612,33 +1611,34 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     /**
      * Deplete the resource.
      * @param resourceId The id of the resource to deplete.
+     * @param respawnTime The amount of time for the resource to respawn.
      */
-    depleteResource = (resourceId: string): IResource[] => {
+    depleteResource = (resourceId: string, respawnTime: number): IResource[] => {
         return this.updateResource(resourceId, (resource: IResource): IResource => ({
             ...resource,
-            depleted: true
+            depleted: true,
+            readyTime: new Date(+new Date() + respawnTime).toISOString()
         }));
     };
 
     /**
-     * Replenish the resource.
-     * @param resourceId The id of the resource to replenish.
+     * Harvest a resource on the map.
      */
-    replenishResource = (resourceId: string): IResource[] => {
-        return this.updateResource(resourceId, (resource: IResource): IResource => ({
-            ...resource,
-            depleted: false
-        }));
-    };
+    harvestResource = async (resource: IResource) => {
+        const postData: IApiPersonsResourceHarvestPost = {
+            resourceId: resource.id
+        };
+        await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/resource/harvest", postData);
 
-    chopDownTree = (tree: ITree) => {
-        const rng: seedrandom.prng = seedrandom.alea(tree.spawnSeed);
-        const spawn = tree.spawns[Math.floor(rng.quick() * tree.spawns.length)];
+        const rng: seedrandom.prng = seedrandom.alea(resource.spawnState === true ? resource.spawnSeed : "", {
+            state: resource.spawnState
+        });
+        const spawn = resource.spawns[Math.floor(rng.quick() * resource.spawns.length)];
         if (spawn) {
             // add new wood on the ground
-            const wood: INetworkObject = {
-                x: tree.x + Math.floor(rng.quick() * 200) - 100,
-                y: tree.y + Math.floor(rng.quick() * 200) - 100,
+            const spawnItem: INetworkObject = {
+                x: resource.x + Math.floor(rng.quick() * 200) - 100,
+                y: resource.y + Math.floor(rng.quick() * 200) - 100,
                 objectType: spawn.type,
                 lastUpdate: new Date().toISOString(),
                 health: {
@@ -1646,66 +1646,20 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     max: 1,
                     value: 1
                 },
-                id: `wood-${rng.int32()}`,
+                id: `object-${rng.int32()}`,
                 grabbedByPersonId: null
             };
-            const objects = [...this.state.objects, wood];
+            const respawnTime = Math.ceil(rng.quick() * spawn.spawnTime);
+            const objects = [...this.state.objects.filter(o => o.id !== spawnItem.id), spawnItem];
 
             // deplete the tree
-            const resources = this.depleteResource(tree.id);
+            const resources = this.depleteResource(resource.id, respawnTime);
 
             // update state
             this.setState({
                 objects,
                 resources
             });
-
-            setTimeout(() => {
-                // replenish the tree
-                const resources = this.replenishResource(tree.id);
-                this.setState({
-                    resources
-                });
-            }, 30000);
-        }
-    };
-
-    mineRock = (rock: IResource) => {
-        const rng: seedrandom.prng = seedrandom.alea(rock.spawnSeed);
-        const spawn = rock.spawns[Math.floor(rng.quick() * rock.spawns.length)];
-        if (spawn) {
-            // add new wood on the ground
-            const stone: INetworkObject = {
-                x: rock.x + Math.floor(rng.quick() * 200) - 100,
-                y: rock.y + Math.floor(rng.quick() * 200) - 100,
-                objectType: spawn.type,
-                lastUpdate: new Date().toISOString(),
-                health: {
-                    rate: 0,
-                    max: 1,
-                    value: 1
-                },
-                id: `stone-${rng.int32()}`,
-                grabbedByPersonId: null
-            };
-            const objects = [...this.state.objects, stone];
-
-            // deplete the rock
-            const resources = this.depleteResource(rock.id);
-
-            // update state
-            this.setState({
-                objects,
-                resources
-            });
-
-            setTimeout(() => {
-                // replenish the rock
-                const resources = this.replenishResource(rock.id);
-                this.setState({
-                    resources
-                });
-            }, 30000);
         }
     };
 
