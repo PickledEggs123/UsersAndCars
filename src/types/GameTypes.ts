@@ -31,6 +31,7 @@ export enum ENetworkObjectType {
      * Forestry objects.
      */
     TREE = "TREE",
+    STICK = "STICK",
     WOOD = "WOOD",
     AXE = "AXE",
     CHAINSAW = "CHAINSAW",
@@ -63,6 +64,18 @@ export enum ENetworkObjectType {
     GAS_WELL = "GAS_WELL",
     PROPANE = "PROPANE",
 }
+
+/**
+ * The max number of items that can be stored in an object stack.
+ * @param objectType
+ */
+export const getMaxStackSize = (objectType: ENetworkObjectType): number => {
+    if (objectType === ENetworkObjectType.STICK) {
+        return 10;
+    } else {
+        return 1;
+    }
+};
 
 /**
  * Contains all health related information for an object.
@@ -116,6 +129,10 @@ export interface INetworkObject extends IObject {
      * Contains the health related information of the object.
      */
     health: IObjectHealth;
+    /**
+     * How many copies of an item is in this stack of items.
+     */
+    amount: number;
 }
 
 /**

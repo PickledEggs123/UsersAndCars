@@ -74,6 +74,7 @@ export interface INetworkObjectDatabase {
     lastUpdate: admin.firestore.Timestamp;
     health: IObjectHealth;
     cell: string;
+    amount: number;
 }
 
 /**

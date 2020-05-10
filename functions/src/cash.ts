@@ -68,7 +68,8 @@ export const handleVend = (req: { body: IApiPersonsVendPost; }, res: any, next: 
                         cell: getNetworkObjectCellString({
                             x,
                             y
-                        })
+                        }),
+                        amount: 1
                     };
 
                     // update two database objects
@@ -98,7 +99,8 @@ export const handleVend = (req: { body: IApiPersonsVendPost; }, res: any, next: 
                         cell: getNetworkObjectCellString({
                             x,
                             y
-                        })
+                        }),
+                        amount: 1
                     };
 
                     // update two database objects

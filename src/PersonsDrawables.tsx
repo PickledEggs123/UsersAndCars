@@ -665,12 +665,29 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
             <g key={`wood-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
-                <path fill="tan" stroke="black" strokeWidth={2} d="M -25 0 c -5 -5 -5 -15 0 -20 l 50 0 c 5 5 5 15 0 20 z"/>
-                <path fill="tan" stroke="black" strokeWidth={2} d="M 25 0 c -5 -5 -5 -15 0 -20 c 5 5 5 15 0 20"/>
-                <path fill="tan" stroke="black" strokeWidth={2} d="M 25 0 c -5 -5 -5 -15 0 -20 l 50 0 c 5 5 5 15 0 20 z"/>
-                <path fill="tan" stroke="black" strokeWidth={2} d="M 75 0 c -5 -5 -5 -15 0 -20 c 5 5 5 15 0 20"/>
+                <path fill="tan" stroke="black" strokeWidth={2} d="M -50 -20 c -5 -5 -5 -15 0 -20 l 50 0 c 5 5 5 15 0 20 z"/>
+                <path fill="tan" stroke="black" strokeWidth={2} d="M 0 -20 c -5 -5 -5 -15 0 -20 c 5 5 5 15 0 20"/>
                 <path fill="tan" stroke="black" strokeWidth={2} d="M 0 -20 c -5 -5 -5 -15 0 -20 l 50 0 c 5 5 5 15 0 20 z"/>
                 <path fill="tan" stroke="black" strokeWidth={2} d="M 50 -20 c -5 -5 -5 -15 0 -20 c 5 5 5 15 0 20"/>
+                <path fill="tan" stroke="black" strokeWidth={2} d="M -25 -40 c -5 -5 -5 -15 0 -20 l 50 0 c 5 5 5 15 0 20 z"/>
+                <path fill="tan" stroke="black" strokeWidth={2} d="M 25 -40 c -5 -5 -5 -15 0 -20 c 5 5 5 15 0 20"/>
+            </g>
+        )
+    };
+
+    /**
+     * Draw a stick on the ground.
+     * @param drawable The object to draw.
+     * @param filter The filter to apply to the object.
+     * @param previousNetworkObject The previous position of the object for interpolation.
+     * @param inventory The object is in an inventory.
+     */
+    drawStick = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
+        const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        return (
+            <g key={`stick-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
+                <path fill="tan" stroke="black" strokeWidth={2} d="M -25 0 l 50 0 l 0 -5 l -50 0 z "/>
+                <text x={-25} y={-30} fontSize={14}>{drawable.amount}</text>
             </g>
         )
     };
@@ -686,7 +703,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
             <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
-                <path fill="grey" stroke="black" strokeWidth={2} d="m -20 0 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+                <path fill="grey" stroke="black" strokeWidth={2} d="m -40 -40 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
             </g>
         )
     };
@@ -702,7 +719,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
             <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
-                <path fill="black" stroke="black" strokeWidth={2} d="m -20 0 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+                <path fill="black" stroke="black" strokeWidth={2} d="m -40 -40 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
             </g>
         )
     };
@@ -718,7 +735,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
             <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
-                <path fill="maroon" stroke="black" strokeWidth={2} d="m -20 0 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+                <path fill="maroon" stroke="black" strokeWidth={2} d="m -40 -40 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
             </g>
         )
     };
@@ -780,6 +797,15 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawWood(networkObject, filter, previousNetworkObject, inventory);
+                    }
+                }
+            }
+            case ENetworkObjectType.STICK: {
+                return {
+                    ...networkObject,
+                    type: EDrawableType.OBJECT,
+                    draw() {
+                        return component.drawStick(networkObject, filter, previousNetworkObject, inventory);
                     }
                 }
             }

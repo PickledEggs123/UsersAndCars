@@ -63,7 +63,8 @@ export const handleLogin = (req: { body: IApiPersonsLoginPost; }, res: any, next
                     rows: 1,
                     columns: 10,
                     slots: []
-                }
+                },
+                amount: 1
             };
             await admin.firestore().collection("persons").doc(id).set(data);
 

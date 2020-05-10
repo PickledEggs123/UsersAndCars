@@ -671,7 +671,8 @@ const handleStreetWalkingNpc = async ({id}: {
                 rows: 1,
                 columns: 10,
                 slots: []
-            }
+            },
+            amount: 1
         };
         const streetWalkerData = await streetWalkerPath(data, {x: 0, y: 0});
         data = {

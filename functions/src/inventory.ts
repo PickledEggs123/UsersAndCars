@@ -1,7 +1,7 @@
 import express from "express";
 import admin from "firebase-admin";
 import {INetworkObjectDatabase, IPersonDatabase} from "./types/database";
-import {IApiPersonsObjectDropPost, IApiPersonsObjectPickUpPost} from "./types/GameTypes";
+import {getMaxStackSize, IApiPersonsObjectDropPost, IApiPersonsObjectPickUpPost} from "./types/GameTypes";
 
 /**
  * Pick an object up.
@@ -17,22 +17,36 @@ const pickUpObject = async ({objectId, personId}: {objectId: string, personId: s
         const objectData = objectDocument.data() as INetworkObjectDatabase;
         const personData = personDocument.data() as IPersonDatabase;
 
-        // create new object with isInInventory and grabbed by person
-        const newObjectData: INetworkObjectDatabase = {
-            ...objectData,
-            isInInventory: true,
-            grabbedByPersonId: personId,
-            lastUpdate: admin.firestore.Timestamp.now()
-        };
-
         // determine there is room for one more object
         const maxSlots = personData.inventory.rows * personData.inventory.columns;
-        if (personData.inventory.slots.length < maxSlots) {
+        const stackableSlot = personData.inventory.slots.find(slot => {
+            return slot.objectType === objectData.objectType && slot.amount < getMaxStackSize(slot.objectType);
+        });
+        if (personData.inventory.slots.length < maxSlots || stackableSlot) {
+            // create new object with isInInventory and grabbed by person
+            const newObjectData: INetworkObjectDatabase | null = stackableSlot ? null : {
+                ...objectData,
+                isInInventory: true,
+                grabbedByPersonId: personId,
+                lastUpdate: admin.firestore.Timestamp.now()
+            };
+
             // there is room, update slot with the new object
-            const slots: INetworkObjectDatabase[] = [
-                ...personData.inventory.slots,
-                newObjectData
-            ];
+            const slots: INetworkObjectDatabase[] = personData.inventory.slots.filter(slot => {
+                return !newObjectData || (newObjectData && slot.id !== newObjectData.id);
+            }).map(slot => {
+                if (stackableSlot && slot.id === stackableSlot.id) {
+                    return {
+                        ...slot,
+                        amount: slot.amount + 1
+                    };
+                } else {
+                    return slot;
+                }
+            });
+            if (newObjectData) {
+                slots.push(newObjectData);
+            }
 
             // create new person data, with the person storing the object in their inventory
             const newPersonData: Partial<IPersonDatabase> = {
@@ -46,7 +60,14 @@ const pickUpObject = async ({objectId, personId}: {objectId: string, personId: s
             // update both the person and the object
             await Promise.all([
                 admin.firestore().collection("persons").doc(personId).set(newPersonData, {merge: true}),
-                admin.firestore().collection("objects").doc(objectId).set(newObjectData, {merge: true})
+                newObjectData ?
+                    admin.firestore().collection("objects").doc(objectId).set(newObjectData, {merge: true}) :
+                    admin.firestore().collection("objects").doc(objectId).delete(),
+                stackableSlot ?
+                    admin.firestore().collection("objects").doc(stackableSlot.id).set({
+                        amount: stackableSlot.amount + 1
+                    }, {merge: true}) :
+                    null
             ]);
         }
     }

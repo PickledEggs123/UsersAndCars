@@ -2,7 +2,7 @@ import React from 'react';
 import './App.scss';
 import axios from "axios";
 import {
-    ECarDirection,
+    ECarDirection, getMaxStackSize,
     IApiLotsBuyPost,
     IApiLotsSellPost,
     IApiPersonsGetResponse, IApiPersonsObjectDropPost, IApiPersonsObjectPickUpPost,
@@ -23,7 +23,7 @@ import {
     INpcPathPoint,
     IObject,
     IPerson, IPersonsInventory,
-    IResource,
+    IResource, IResourceSpawn,
     IRoad,
     IRoom,
     IVendorInventoryItem
@@ -1641,7 +1641,24 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         const rng: seedrandom.prng = seedrandom.alea(resource.spawnState === true ? resource.spawnSeed : "", {
             state: resource.spawnState
         });
-        const spawn = resource.spawns[Math.floor(rng.quick() * resource.spawns.length)];
+        // the total cumulative probability, multiplied against random to get a value between 0 and sum cumulative probability.
+        const sumCumulativeProbability = resource.spawns.reduce((acc: number, s: IResourceSpawn): number => {
+            return acc + s.probability
+        }, 0);
+        // convert spawns array to cumulative probabilities
+        const spawnsCumulativeProbability = resource.spawns.map((s, index, arr) => {
+            const sumWeightsBelow = arr.slice(0, index).reduce((acc: number, s1: IResourceSpawn): number => {
+                return acc + s1.probability;
+            }, 0);
+            return {
+                ...s,
+                probability: sumWeightsBelow
+            };
+        });
+        // compute a random cumulative probability to pick a random item
+        const cumulativeProbability = rng.quick() * sumCumulativeProbability;
+        // pick a random item using cumulative probability
+        const spawn = spawnsCumulativeProbability.find(s => s.probability < cumulativeProbability);
         if (spawn) {
             // add new wood on the ground
             const spawnItem: INetworkObject = {
@@ -1657,7 +1674,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 id: `object-${rng.int32()}`,
                 grabbedByPersonId: null,
                 grabbedByNpcId: null,
-                isInInventory: false
+                isInInventory: false,
+                amount: 1
             };
             const respawnTime = Math.ceil(rng.quick() * spawn.spawnTime);
             const objects = [...this.state.objects.filter(o => o.id !== spawnItem.id), spawnItem];
@@ -1679,7 +1697,11 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         if (currentPerson) {
             // check if there is room for one more object
             const maxSlots = currentPerson.inventory.rows * currentPerson.inventory.columns;
-            if (currentPerson.inventory.slots.length < maxSlots) {
+            // find stackable item in inventory
+            const stackableSlot = currentPerson.inventory.slots.find(slot => {
+                return slot.objectType === networkObject.objectType && slot.amount < getMaxStackSize(slot.objectType);
+            });
+            if (currentPerson.inventory.slots.length < maxSlots || stackableSlot) {
                 // make http request to pick up item
                 const pickUpRequest: IApiPersonsObjectPickUpPost = {
                     personId: this.state.currentPersonId,
@@ -1692,28 +1714,67 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 // this will occur before the official object pick up
                 // place the object into the inventory
                 let newObjectData: INetworkObject | null = null;
-                const objects = this.state.objects.map(o => {
-                    if (o.id === networkObject.id) {
-                        newObjectData = {
-                            ...o,
-                            grabbedByPersonId: this.state.currentPersonId,
-                            isInInventory: true
-                        };
-                        return newObjectData;
+                const objects = this.state.objects.reduce((acc: INetworkObject[], o: INetworkObject): INetworkObject[] => {
+                    if (stackableSlot) {
+                        // found stackable item in inventory
+                        if (o.id === stackableSlot.id) {
+                            // accumulate stack
+                            return [
+                                ...acc,
+                                {
+                                    ...o,
+                                    amount: o.amount + 1
+                                }
+                            ];
+                        } else if (o.id === networkObject.id) {
+                            // delete original item
+                            return acc;
+                        }
                     } else {
-                        return o;
+                        if (o.id === networkObject.id) {
+                            // move original item into stack
+                            newObjectData = {
+                                ...o,
+                                grabbedByPersonId: this.state.currentPersonId,
+                                isInInventory: true
+                            };
+                            return [
+                                ...acc,
+                                newObjectData
+                            ];
+                        }
                     }
-                });
+                    // neither, do nothing
+                    return [
+                        ...acc,
+                        o
+                    ];
+                }, []);
                 const persons = this.state.persons.map(p => {
                     if (p.id === this.state.currentPersonId && newObjectData) {
+                        const slots: INetworkObject[] = p.inventory.slots.filter(slot => {
+                            // remove duplicate copies of new object
+                            return newObjectData && slot.id !== newObjectData.id;
+                        }).map(slot => {
+                            // increment stackable slots
+                            if (stackableSlot && slot.id === stackableSlot.id) {
+                                return {
+                                    ...slot,
+                                    amount: slot.amount + 1
+                                };
+                            } else {
+                                return slot;
+                            }
+                        });
+                        // add new copy of slot data
+                        if (newObjectData) {
+                            slots.push(newObjectData);
+                        }
                         return {
                             ...p,
                             inventory: {
                                 ...p.inventory,
-                                slots: [
-                                    ...p.inventory.slots,
-                                    newObjectData
-                                ]
+                                slots
                             }
                         }
                     } else {
@@ -2011,11 +2072,11 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                             }
 
                                             return (
-                                                <g>
-                                                    <rect key={`inventory-slot(${rowIndex},${columnIndex})`} x={50 + 80 * columnIndex} y={50 + 80 * rowIndex} width={60} height={60} fill="tan" opacity={0.3}/>
+                                                <g key={`inventory-slot(${rowIndex},${columnIndex})`}>
+                                                    <rect x={50 + 80 * columnIndex} y={50 + 80 * rowIndex} width={60} height={60} fill="tan" opacity={0.3}/>
                                                     {
                                                         inventoryRender ? (
-                                                            <g transform={`translate(${50 + 80 * columnIndex},${50 + 80 * (rowIndex + 1)})`} onClick={inventoryObject ? () => this.dropObject(inventoryObject) : undefined}>
+                                                            <g transform={`translate(${50 + 80 * columnIndex + 40},${50 + 80 * rowIndex + 80})`} onClick={inventoryObject ? () => this.dropObject(inventoryObject) : undefined}>
                                                                 {inventoryRender}
                                                             </g>
                                                         ) : null

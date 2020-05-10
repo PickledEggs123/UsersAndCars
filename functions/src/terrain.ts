@@ -31,7 +31,7 @@ const computeVoronoi = (points: IObject[]): IVoronoi[] => {
         return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
     };
     // for each point
-    return points.map((point, i, acc): IVoronoi => {
+    return points.map((point): IVoronoi => {
         // compute corners
         const corners = points.filter(otherPoint => {
             return otherPoint !== point;
@@ -56,7 +56,7 @@ const computeVoronoi = (points: IObject[]): IVoronoi[] => {
  * @param voronois A random set of points with voronoi information included.
  */
 const lloydRelaxation = (voronois: IVoronoi[]): IObject[] => {
-    const weightedDistance = (a: IObject, b: IObject) => {
+    const weightedDistance = () => {
         return 1;
     };
     // computer the weighted average of the corners of a voronoi cell
@@ -64,7 +64,7 @@ const lloydRelaxation = (voronois: IVoronoi[]): IObject[] => {
         // compute weights for each point based on squared distance, farther away points will have more weights,
         // assume that by moving towards farther away points, the clusters of random points will spread out
         const pointsWithWeights = voronoi.corners.reduce((acc: Array<{weight: number, corner: IObject}>, corner: IObject) => {
-            const weight = weightedDistance(voronoi.point, corner);
+            const weight = weightedDistance();
             return [
                 ...acc,
                 {
@@ -198,8 +198,12 @@ const generateTerrainTile = (tilePosition: ITerrainTilePosition): IResource[] =>
         const rng: seedrandom.prng = seedrandom.alea(`resource(${x},${y})`);
         const objectType: ENetworkObjectType = rng.quick() > 0.9 ? ENetworkObjectType.ROCK : ENetworkObjectType.TREE;
         const spawns: IResourceSpawn[] = objectType === ENetworkObjectType.TREE ? [{
+            type: ENetworkObjectType.STICK,
+            probability: 95,
+            spawnTime: 60000
+        }, {
             type: ENetworkObjectType.WOOD,
-            probability: 100,
+            probability: 5,
             spawnTime: 60000
         }] : [{
             type: ENetworkObjectType.STONE,
@@ -232,7 +236,8 @@ const generateTerrainTile = (tilePosition: ITerrainTilePosition): IResource[] =>
             },
             depleted: false,
             readyTime: new Date().toISOString(),
-            spawnState: true
+            spawnState: true,
+            amount: 1
         };
         if (objectType === ENetworkObjectType.TREE) {
             const tree: ITree = {
@@ -312,11 +317,28 @@ const harvestResource = async (resourceId: string) => {
         // resource is ready to be harvested
         if (!resource.depleted || resource.readyTime.toMillis() <= +new Date()) {
             // determine the spawn using a seeded random number generator
+            // the spawn is chosen using cumulative probability
             const rng = seedrandom.alea(resource.spawnState === true ? resource.spawnSeed : "", {
                 state: resource.spawnState
             });
-            const spawns = resource.spawns;
-            const spawn = spawns[Math.floor(rng.quick() * spawns.length)];
+            // the total cumulative probability, multiplied against random to get a value between 0 and sum cumulative probability.
+            const sumCumulativeProbability = resource.spawns.reduce((acc: number, s: IResourceSpawn): number => {
+                return acc + s.probability
+            }, 0);
+            // convert spawns array to cumulative probabilities
+            const spawnsCumulativeProbability = resource.spawns.map((s, index, arr) => {
+                const sumWeightsBelow = arr.slice(0, index).reduce((acc: number, s1: IResourceSpawn): number => {
+                    return acc + s1.probability;
+                }, 0);
+                return {
+                    ...s,
+                    probability: sumWeightsBelow
+                };
+            });
+            // compute a random cumulative probability to pick a random item
+            const cumulativeProbability = rng.quick() * sumCumulativeProbability;
+            // pick a random item using cumulative probability
+            const spawn = spawnsCumulativeProbability.find(s => s.probability < cumulativeProbability);
 
             // if spawn exists, create it and update random number generator
             if (spawn) {
@@ -334,7 +356,8 @@ const harvestResource = async (resourceId: string) => {
                     grabbedByPersonId: null,
                     grabbedByNpcId: null,
                     isInInventory: false,
-                    cell: ""
+                    cell: "",
+                    amount: 1
                 };
                 spawnData = {
                     ...spawnData,
