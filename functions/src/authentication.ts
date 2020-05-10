@@ -48,6 +48,8 @@ export const handleLogin = (req: { body: IApiPersonsLoginPost; }, res: any, next
                 shirtColor: "grey",
                 carId: null,
                 grabbedByPersonId: null,
+                grabbedByNpcId: null,
+                isInInventory: false,
                 lastUpdate: admin.firestore.Timestamp.now(),
                 cash: 1000,
                 creditLimit: 1000,
@@ -56,7 +58,12 @@ export const handleLogin = (req: { body: IApiPersonsLoginPost; }, res: any, next
                 cell: getNetworkObjectCellString({
                     x: 50,
                     y: 150
-                })
+                }),
+                inventory: {
+                    rows: 1,
+                    columns: 10,
+                    slots: []
+                }
             };
             await admin.firestore().collection("persons").doc(id).set(data);
 

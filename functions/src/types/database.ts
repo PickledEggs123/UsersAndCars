@@ -69,6 +69,8 @@ export interface INetworkObjectDatabase {
     y: number;
     objectType: ENetworkObjectType;
     grabbedByPersonId: string | null;
+    grabbedByNpcId: string | null;
+    isInInventory: boolean;
     lastUpdate: admin.firestore.Timestamp;
     health: IObjectHealth;
     cell: string;
@@ -88,6 +90,12 @@ export interface INetworkObjectCellPosition {
     y: number;
 }
 
+export interface IPersonsInventoryDatabase {
+    rows: number;
+    columns: number;
+    slots: INetworkObjectDatabase[];
+}
+
 export interface IPersonDatabase extends INetworkObjectDatabase {
     shirtColor: string;
     pantColor: string;
@@ -96,6 +104,7 @@ export interface IPersonDatabase extends INetworkObjectDatabase {
     objectType: ENetworkObjectType.PERSON;
     cash: number;
     creditLimit: number;
+    inventory: IPersonsInventoryDatabase;
 }
 
 export interface INpcDatabase extends IPersonDatabase {

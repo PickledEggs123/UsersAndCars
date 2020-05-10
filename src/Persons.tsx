@@ -5,7 +5,7 @@ import {
     ECarDirection,
     IApiLotsBuyPost,
     IApiLotsSellPost,
-    IApiPersonsGetResponse,
+    IApiPersonsGetResponse, IApiPersonsObjectDropPost, IApiPersonsObjectPickUpPost,
     IApiPersonsPut, IApiPersonsResourceHarvestPost,
     IApiPersonsVendPost,
     IApiPersonsVoiceAnswerMessage,
@@ -22,11 +22,10 @@ import {
     INpc,
     INpcPathPoint,
     IObject,
-    IPerson,
+    IPerson, IPersonsInventory,
     IResource,
     IRoad,
     IRoom,
-    ITerrainTilePosition,
     IVendorInventoryItem
 } from "./types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
@@ -64,9 +63,13 @@ interface IPersonsState extends IPersonsDrawablesState {
      */
     lotPrice: number | null;
     /**
-     * A list of loaded terrain tiles.
+     * The inventory for the current person.
      */
-    terrainTiles: ITerrainTilePosition[];
+    inventory: IPersonsInventory | null;
+    /**
+     * If the inventory screen should be shown.
+     */
+    showInventory: boolean;
 }
 
 /**
@@ -190,7 +193,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         lot: null as ILot | null,
         lotPrice: null as number | null,
         resources: [] as IResource[],
-        terrainTiles: [] as ITerrainTilePosition[]
+        inventory: null as IPersonsInventory | null,
+        showInventory: false
     };
 
     /**
@@ -838,6 +842,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 [];
             const npc = npcs.find(n => this.state.npc && n.id === this.state.npc.id) || null;
             const lot = lots.find(l => this.state.lot && l.id === this.state.lot.id) || null;
+            const inventory = newCurrentPerson ? newCurrentPerson.inventory : null;
 
             this.setState({
                 persons,
@@ -859,7 +864,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 rooms,
                 npc,
                 lot,
-                resources
+                resources,
+                inventory
             });
         }
 
@@ -1144,7 +1150,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     // close npc viewer
                     npc: null,
                     // close lot viewer
-                    lot: null
+                    lot: null,
+                    // close person inventory
+                    showInventory: false
                 });
 
                 // merge optional state updates into one state update object to perform a single setState.
@@ -1647,7 +1655,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     value: 1
                 },
                 id: `object-${rng.int32()}`,
-                grabbedByPersonId: null
+                grabbedByPersonId: null,
+                grabbedByNpcId: null,
+                isInInventory: false
             };
             const respawnTime = Math.ceil(rng.quick() * spawn.spawnTime);
             const objects = [...this.state.objects.filter(o => o.id !== spawnItem.id), spawnItem];
@@ -1661,6 +1671,113 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 resources
             });
         }
+    };
+
+    pickUpObject = async (networkObject: INetworkObject) => {
+        // get current person
+        const currentPerson = this.getCurrentPerson();
+        if (currentPerson) {
+            // check if there is room for one more object
+            const maxSlots = currentPerson.inventory.rows * currentPerson.inventory.columns;
+            if (currentPerson.inventory.slots.length < maxSlots) {
+                // make http request to pick up item
+                const pickUpRequest: IApiPersonsObjectPickUpPost = {
+                    personId: this.state.currentPersonId,
+                    objectId: networkObject.id
+                };
+                // begin picking up
+                await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/object/pickup", pickUpRequest);
+
+                // update the local copy to immediately show the item being picked up before the network update
+                // this will occur before the official object pick up
+                // place the object into the inventory
+                let newObjectData: INetworkObject | null = null;
+                const objects = this.state.objects.map(o => {
+                    if (o.id === networkObject.id) {
+                        newObjectData = {
+                            ...o,
+                            grabbedByPersonId: this.state.currentPersonId,
+                            isInInventory: true
+                        };
+                        return newObjectData;
+                    } else {
+                        return o;
+                    }
+                });
+                const persons = this.state.persons.map(p => {
+                    if (p.id === this.state.currentPersonId && newObjectData) {
+                        return {
+                            ...p,
+                            inventory: {
+                                ...p.inventory,
+                                slots: [
+                                    ...p.inventory.slots,
+                                    newObjectData
+                                ]
+                            }
+                        }
+                    } else {
+                        return p;
+                    }
+                });
+                this.setState({
+                    objects,
+                    persons
+                });
+            }
+        }
+    };
+
+    dropObject = async (networkObject: INetworkObject) => {
+        // get current person
+        const currentPerson = this.getCurrentPerson();
+        if (currentPerson) {
+            // make http request to drop item
+            const pickUpRequest: IApiPersonsObjectDropPost = {
+                personId: this.state.currentPersonId,
+                objectId: networkObject.id
+            };
+            // begin picking up
+            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/object/drop", pickUpRequest);
+
+            // update the local copy to immediately show the item being dropped before the network update
+            // this will occur before the official object drop
+            // place the object onto the ground
+            const objects = this.state.objects.map(o => {
+                if (o.id === networkObject.id) {
+                    return {
+                        ...o,
+                        grabbedByPersonId: null,
+                        isInInventory: false,
+                        x: currentPerson.x,
+                        y: currentPerson.y
+                    };
+                } else {
+                    return o;
+                }
+            });
+            const persons = this.state.persons.map(p => {
+                if (p.id === this.state.currentPersonId) {
+                    return {
+                        ...p,
+                        inventory: {
+                            ...p.inventory,
+                            slots: p.inventory.slots.filter(o => o.id !== networkObject.id)
+                        }
+                    }
+                } else {
+                    return p;
+                }
+            });
+            this.setState({
+                objects,
+                persons
+            });
+        }
+    };
+
+    showInventory = () => {
+        this.setState({showInventory: true});
     };
 
     render() {
@@ -1698,6 +1815,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 <PersonsLogin loginSuccess={this.handleLoginSuccess} ref={this.loginRef}/>
                 <div>
                     <button onClick={this.beginLogin}>Login</button>
+                    <button onClick={this.showInventory}>Inventory</button>
                 </div>
                 <svg className="game" width={this.state.width} height={this.state.height} style={{border: "1px solid black"}}>
                     <defs>
@@ -1816,12 +1934,6 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         currentPerson ? (
                             <g>
                                 <text x="20" y={this.state.height - 40} fill="black" fontSize={18}>Cash: {currentPerson.cash}</text>
-                            </g>
-                        ) : null
-                    }
-                    {
-                        currentPerson ? (
-                            <g>
                                 <text x="20" y={this.state.height - 20} fill="black" fontSize={18}>Credit: {currentPerson?.creditLimit}</text>
                             </g>
                         ) : null
@@ -1878,6 +1990,54 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                             return <text x="20" y={180 + i * 20} fontSize="18" onClick={this.acceptSellOffer(offer)}>{offer.personId} {offer.price} Sell</text>
                                         })
                                     ) : null
+                                }
+                            </g>
+                        ) : null
+                    }
+                    {
+                        this.state.inventory && this.state.showInventory ? (
+                            <g>
+                                <rect x="0" y="0" width={this.state.width} height={this.state.height} fill="white" opacity="0.3"/>
+                                {
+                                    new Array(this.state.inventory.rows).fill(0).map((v, rowIndex) => {
+                                        return new Array(this.state.inventory ? this.state.inventory.columns : 0).fill(0).map((v1, columnIndex) => {
+                                            const slotIndex = this.state.inventory ? rowIndex * this.state.inventory.columns + columnIndex : 0;
+                                            const inventoryObject = this.state.inventory && this.state.inventory.slots[slotIndex] ?
+                                                this.state.inventory.slots[slotIndex] :
+                                                null;
+                                            let inventoryRender: JSX.Element | null = null;
+                                            if (inventoryObject) {
+                                                inventoryRender = this.drawNetworkObject(inventoryObject, undefined, true).draw();
+                                            }
+
+                                            return (
+                                                <g>
+                                                    <rect key={`inventory-slot(${rowIndex},${columnIndex})`} x={50 + 80 * columnIndex} y={50 + 80 * rowIndex} width={60} height={60} fill="tan" opacity={0.3}/>
+                                                    {
+                                                        inventoryRender ? (
+                                                            <g transform={`translate(${50 + 80 * columnIndex},${50 + 80 * (rowIndex + 1)})`} onClick={inventoryObject ? () => this.dropObject(inventoryObject) : undefined}>
+                                                                {inventoryRender}
+                                                            </g>
+                                                        ) : null
+                                                    }
+                                                </g>
+                                            );
+                                        });
+                                    }).reduce((acc: JSX.Element[], row: JSX.Element[], index: number): JSX.Element[] => {
+                                        if (index === 0) {
+                                            return [
+                                                ...acc,
+                                                ...row
+                                            ];
+                                        } else {
+                                            const y = 50 * 80 * index + 10;
+                                            return [
+                                                ...acc,
+                                                <line key={`inventory-row-divider-${index}`} x1={50} x2={this.state.width - 50} y1={y} y2={y} stroke="black"/>,
+                                                ...row
+                                            ];
+                                        }
+                                    }, [])
                                 }
                             </g>
                         ) : null

@@ -223,6 +223,8 @@ const generateTerrainTile = (tilePosition: ITerrainTilePosition): IResource[] =>
             spawns,
             lastUpdate: new Date().toISOString(),
             grabbedByPersonId: null,
+            grabbedByNpcId: null,
+            isInInventory: false,
             health: {
                 rate: 0,
                 max: 10,
@@ -330,6 +332,8 @@ const harvestResource = async (resourceId: string) => {
                     },
                     id: `object-${rng.int32()}`,
                     grabbedByPersonId: null,
+                    grabbedByNpcId: null,
+                    isInInventory: false,
                     cell: ""
                 };
                 spawnData = {

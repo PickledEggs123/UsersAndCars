@@ -41,6 +41,7 @@ import {getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell"
 import {getThirtySecondsAgo, handleLogin} from "./authentication";
 import {generateCityMapWithRooms, getDirectionMap, getLots, streetWalkerPath} from "./pathfinding";
 import {handleGenerateTerrainTile, handleHarvestResource, updateTerrain} from "./terrain";
+import {handleDropObject, handlePickUpObject} from "./inventory";
 
 const matchAll = require("string.prototype.matchall");
 matchAll.shim();
@@ -77,7 +78,9 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
 
         // get current person, render data relative to current person's position
         const currentPerson = await admin.firestore().collection("persons").doc(id).get();
-        const currentPersonData = currentPerson.exists ? currentPerson.data() as IPersonDatabase : {x: 0, y: 0} as IPersonDatabase;
+        const currentPersonData = currentPerson.exists ?
+            currentPerson.data() as IPersonDatabase :
+            {id, x: 0, y: 0} as IPersonDatabase;
 
         // begin terrain update
         await updateTerrain({currentPerson: currentPersonData});
@@ -118,7 +121,16 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
                 // save database record into json array
                 const personToReturnAsJson: IPerson = {
                     ...dataWithoutPassword,
-                    lastUpdate: dataWithoutPassword.lastUpdate ? dataWithoutPassword.lastUpdate.toDate().toISOString() : new Date().toISOString()
+                    lastUpdate: dataWithoutPassword.lastUpdate ?
+                        dataWithoutPassword.lastUpdate.toDate().toISOString() :
+                        new Date().toISOString(),
+                    inventory: {
+                        ...dataWithoutPassword.inventory,
+                        slots: dataWithoutPassword.inventory.slots.map(slot => ({
+                            ...slot,
+                            lastUpdate: slot.lastUpdate.toDate().toISOString()
+                        }))
+                    }
                 };
                 personsToReturnAsJson.push(personToReturnAsJson);
             }
@@ -179,7 +191,16 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
                     // save database record into json array
                     const npcToReturnAsJson: INpc = {
                         ...dataWithoutPassword,
-                        lastUpdate: dataWithoutPassword.lastUpdate ? dataWithoutPassword.lastUpdate.toDate().toISOString() : new Date().toISOString()
+                        lastUpdate: dataWithoutPassword.lastUpdate ?
+                            dataWithoutPassword.lastUpdate.toDate().toISOString() :
+                            new Date().toISOString(),
+                        inventory: {
+                            ...dataWithoutPassword.inventory,
+                            slots: dataWithoutPassword.inventory.slots.map(slot => ({
+                                ...slot,
+                                lastUpdate: slot.lastUpdate.toDate().toISOString()
+                            }))
+                        }
                     };
                     npcsToReturnAsJson.push(npcToReturnAsJson);
                 }
@@ -232,36 +253,52 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
         const getSimpleCollection = async <T extends IObject>(collectionName: string, cellsArray: boolean = false): Promise<Array<T>> => {
             const dataArrayToReturnAsJson: T[] = [];
 
-            let query: admin.firestore.Query;
+            // list of objects near the person
+            let queryNotInInventory: admin.firestore.Query;
+            // list of objects in the person's inventory
+            let queryIsInInventory: admin.firestore.Query;
             if (cellsArray) {
                 // using cells array, perform a search in an array of cells
                 // used for objects that can be in multiple cells like lots. Lots can be larger than cellSize.
-                query = admin.firestore().collection(collectionName)
-                    .where("cells", "array-contains-any", getRelevantNetworkObjectCells(currentPersonData));
+                queryNotInInventory = admin.firestore().collection(collectionName)
+                    .where("cells", "array-contains-any", getRelevantNetworkObjectCells(currentPersonData))
+                    .where("isInInventory", "==", false);
+                queryIsInInventory = admin.firestore().collection(collectionName)
+                    .where("grabbedByPersonId", "==", currentPersonData ? currentPersonData.id : "")
+                    .where("isInInventory", "==", true);
             } else {
                 // using cell field, perform a search for a cell field
                 // used for objects that are in one cell at a time. The objects are smaller than cellSize.
-                query = admin.firestore().collection(collectionName)
-                    .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData));
+                queryNotInInventory = admin.firestore().collection(collectionName)
+                    .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData))
+                    .where("isInInventory", "==", false);
+                queryIsInInventory = admin.firestore().collection(collectionName)
+                    .where("grabbedByPersonId", "==", currentPersonData ? currentPersonData.id : "")
+                    .where("isInInventory", "==", true);
             }
-            const querySnapshot = await query.get();
+            const querySnapshots = await Promise.all([
+                queryNotInInventory.get(),
+                queryIsInInventory.get()
+            ]);
 
-            for (const documentSnapshot of querySnapshot.docs) {
-                const data = documentSnapshot.data() as any;
-                const dataToReturnAsJson: T = {
-                    ...data,
-                    lastUpdate: data.lastUpdate ?
-                        typeof data.lastUpdate === "string" ?
-                            data.lastUpdate :
-                            data.lastUpdate.toDate().toISOString()
-                        : undefined,
-                    readyTime: data.readyTime ?
-                        typeof data.readyTime === "string" ?
-                            data.readyTime :
-                            data.readyTime.toDate().toISOString()
-                        : undefined
-                };
-                dataArrayToReturnAsJson.push(dataToReturnAsJson);
+            for (const querySnapshot of querySnapshots) {
+                for (const documentSnapshot of querySnapshot.docs) {
+                    const data = documentSnapshot.data() as any;
+                    const dataToReturnAsJson: T = {
+                        ...data,
+                        lastUpdate: data.lastUpdate ?
+                            typeof data.lastUpdate === "string" ?
+                                data.lastUpdate :
+                                data.lastUpdate.toDate().toISOString()
+                            : undefined,
+                        readyTime: data.readyTime ?
+                            typeof data.readyTime === "string" ?
+                                data.readyTime :
+                                data.readyTime.toDate().toISOString()
+                            : undefined
+                    };
+                    dataArrayToReturnAsJson.push(dataToReturnAsJson);
+                }
             }
 
             // get sorted list of nearest cars
@@ -317,6 +354,16 @@ personsApp.post("/voice/answer", handleVoiceMessageAnswer);
 personsApp.post("/resource/harvest", handleHarvestResource);
 
 /**
+ * Pick an object up into the inventory.
+ */
+personsApp.post("/object/pickup", handlePickUpObject);
+
+/**
+ * Drop an object from the inventory.
+ */
+personsApp.post("/object/drop", handleDropObject);
+
+/**
  * Update game state.
  */
 personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: any) => any) => {
@@ -336,7 +383,16 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
                 pantColor: "blue",
                 shirtColor: "grey",
                 grabbedByPersonId: null,
+                grabbedByNpcId: null,
                 ...personWithoutSensitiveInformation,
+                inventory: {
+                    ...personWithoutSensitiveInformation.inventory,
+                    slots: personWithoutSensitiveInformation.inventory.slots.map(slot => ({
+                        ...slot,
+                        lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(slot.lastUpdate)),
+                        cell: getNetworkObjectCellString(slot)
+                    }))
+                },
                 // convert ISO string date into firebase firestore Timestamp
                 lastUpdate: person.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(person.lastUpdate)) : admin.firestore.Timestamp.now(),
                 objectType: ENetworkObjectType.PERSON,
@@ -598,6 +654,8 @@ const handleStreetWalkingNpc = async ({id}: {
             pantColor: "brown",
             carId: null,
             grabbedByPersonId: null,
+            grabbedByNpcId: null,
+            isInInventory: false,
             cash: 1000,
             creditLimit: 0,
             objectType: ENetworkObjectType.PERSON,
@@ -608,7 +666,12 @@ const handleStreetWalkingNpc = async ({id}: {
             path: [],
             schedule: await generateNpcSchedule(),
             directionMap: "",
-            cell: ""
+            cell: "",
+            inventory: {
+                rows: 1,
+                columns: 10,
+                slots: []
+            }
         };
         const streetWalkerData = await streetWalkerPath(data, {x: 0, y: 0});
         data = {

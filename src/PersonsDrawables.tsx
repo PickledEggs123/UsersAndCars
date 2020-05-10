@@ -652,16 +652,19 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         );
     };
 
+    abstract pickUpObject: (networkObject: INetworkObject) => void;
+
     /**
      * Draw a piece of wood on the ground.
      * @param drawable The object to draw.
      * @param filter The filter to apply to the object.
      * @param previousNetworkObject The previous position of the object for interpolation.
+     * @param inventory The object is in an inventory.
      */
-    drawWood = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject) => {
+    drawWood = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
-            <g key={`wood-${drawable.id}`} transform={`translate(${x},${y})`} filter={filter}>
+            <g key={`wood-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
                 <path fill="tan" stroke="black" strokeWidth={2} d="M -25 0 c -5 -5 -5 -15 0 -20 l 50 0 c 5 5 5 15 0 20 z"/>
                 <path fill="tan" stroke="black" strokeWidth={2} d="M 25 0 c -5 -5 -5 -15 0 -20 c 5 5 5 15 0 20"/>
                 <path fill="tan" stroke="black" strokeWidth={2} d="M 25 0 c -5 -5 -5 -15 0 -20 l 50 0 c 5 5 5 15 0 20 z"/>
@@ -677,11 +680,12 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param drawable The object to draw.
      * @param filter The filter to apply to the object.
      * @param previousNetworkObject The previous position of the object for interpolation.
+     * @param inventory The object is in an inventory.
      */
-    drawStone = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject) => {
+    drawStone = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
-            <g key={`stone-${drawable.id}`} transform={`translate(${x},${y})`} filter={filter}>
+            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
                 <path fill="grey" stroke="black" strokeWidth={2} d="m -20 0 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
             </g>
         )
@@ -692,11 +696,12 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param drawable The object to draw.
      * @param filter The filter to apply to the object.
      * @param previousNetworkObject The previous position of the object for interpolation.
+     * @param inventory The object is in an inventory.
      */
-    drawCoal = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject) => {
+    drawCoal = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
-            <g key={`stone-${drawable.id}`} transform={`translate(${x},${y})`} filter={filter}>
+            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
                 <path fill="black" stroke="black" strokeWidth={2} d="m -20 0 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
             </g>
         )
@@ -707,11 +712,12 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param drawable The object to draw.
      * @param filter The filter to apply to the object.
      * @param previousNetworkObject The previous position of the object for interpolation.
+     * @param inventory The object is in an inventory.
      */
-    drawIron = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject) => {
+    drawIron = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
-            <g key={`stone-${drawable.id}`} transform={`translate(${x},${y})`} filter={filter}>
+            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
                 <path fill="maroon" stroke="black" strokeWidth={2} d="m -20 0 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
             </g>
         )
@@ -721,8 +727,9 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * Draw a networked object onto the screen.
      * @param networkObject The network object to draw.
      * @param previousNetworkObject The previous network object used for interpolation.
+     * @param inventory The image is in an inventory, not in the world.
      */
-    drawNetworkObject = (networkObject: INetworkObject, previousNetworkObject?: INetworkObject): IDrawable => {
+    drawNetworkObject = (networkObject: INetworkObject, previousNetworkObject?: INetworkObject, inventory?: boolean): IDrawable => {
         const component = this;
 
         // highlight objects near current person with a white outline
@@ -772,7 +779,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     ...networkObject,
                     type: EDrawableType.OBJECT,
                     draw() {
-                        return component.drawWood(networkObject, filter, previousNetworkObject);
+                        return component.drawWood(networkObject, filter, previousNetworkObject, inventory);
                     }
                 }
             }
@@ -781,7 +788,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     ...networkObject,
                     type: EDrawableType.OBJECT,
                     draw() {
-                        return component.drawStone(networkObject, filter, previousNetworkObject);
+                        return component.drawStone(networkObject, filter, previousNetworkObject, inventory);
                     }
                 }
             }
@@ -790,7 +797,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     ...networkObject,
                     type: EDrawableType.OBJECT,
                     draw() {
-                        return component.drawCoal(networkObject, filter, previousNetworkObject);
+                        return component.drawCoal(networkObject, filter, previousNetworkObject, inventory);
                     }
                 }
             }
@@ -799,7 +806,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     ...networkObject,
                     type: EDrawableType.OBJECT,
                     draw() {
-                        return component.drawIron(networkObject, filter, previousNetworkObject);
+                        return component.drawIron(networkObject, filter, previousNetworkObject, inventory);
                     }
                 }
             }
@@ -1675,7 +1682,11 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param offset The world view to test.
      */
     isNearWorldView = (offset: IObject) => (object: IObject): boolean => {
-        return Math.abs(object.x - offset.x) <= this.state.width * 2 && Math.abs(object.y - offset.y) <= this.state.height * 2;
+        if ((object as INetworkObject).isInInventory) {
+            return false;
+        } else {
+            return Math.abs(object.x - offset.x) <= this.state.width * 2 && Math.abs(object.y - offset.y) <= this.state.height * 2;
+        }
     };
 
     /**

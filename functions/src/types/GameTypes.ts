@@ -101,13 +101,30 @@ export interface INetworkObject extends IObject {
      */
     lastUpdate: string;
     /**
-     * This object is being grabbed by this person. The object will follow around the person's relative movement.
+     * This object is being grabbed by this person. The object will follow the person.
      */
     grabbedByPersonId: string | null;
+    /**
+     * This object is being grabbed by an NPC. The object will follow the npc.
+     */
+    grabbedByNpcId: string | null;
+    /**
+     * This object is inside an inventory, it should not be rendered in the world.
+     */
+    isInInventory: boolean;
     /**
      * Contains the health related information of the object.
      */
     health: IObjectHealth;
+}
+
+/**
+ * A person's inventory.
+ */
+export interface IPersonsInventory {
+    rows: number;
+    columns: number;
+    slots: INetworkObject[];
 }
 
 /**
@@ -138,6 +155,10 @@ export interface IPerson extends INetworkObject {
      * The person is a person type.
      */
     objectType: ENetworkObjectType.PERSON;
+    /**
+     * The inventory for the person.
+     */
+    inventory: IPersonsInventory;
 }
 
 /**
@@ -778,6 +799,22 @@ export interface IApiPersonsPut {
      * A list of objects.
      */
     objects: INetworkObject[];
+}
+
+/**
+ * The HTTP /persons/object/pickup post request.
+ */
+export interface IApiPersonsObjectPickUpPost {
+    personId: string;
+    objectId: string;
+}
+
+/**
+ * The HTTP /persons/object/drop post request.
+ */
+export interface IApiPersonsObjectDropPost {
+    personId: string;
+    objectId: string;
 }
 
 /**
