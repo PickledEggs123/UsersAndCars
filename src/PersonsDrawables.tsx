@@ -741,6 +741,22 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
+     * Draw a wattle wall on the ground.
+     * @param drawable The object to draw.
+     * @param filter The filter to apply to the object.
+     * @param previousNetworkObject The previous position of the object for interpolation.
+     * @param inventory The object is in an inventory.
+     */
+    drawWattleWall = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
+        const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        return (
+            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
+                <rect x={0} y={0} width={56} height={56} fill="url(#wattle)"/>
+            </g>
+        )
+    };
+
+    /**
      * Draw a networked object onto the screen.
      * @param networkObject The network object to draw.
      * @param previousNetworkObject The previous network object used for interpolation.
@@ -833,6 +849,15 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawIron(networkObject, filter, previousNetworkObject, inventory);
+                    }
+                }
+            }
+            case ENetworkObjectType.WATTLE_WALL: {
+                return {
+                    ...networkObject,
+                    type: EDrawableType.OBJECT,
+                    draw() {
+                        return component.drawWattleWall(networkObject, filter, previousNetworkObject, inventory);
                     }
                 }
             }

@@ -63,6 +63,10 @@ export enum ENetworkObjectType {
     OIL = "OIL",
     GAS_WELL = "GAS_WELL",
     PROPANE = "PROPANE",
+    /**
+     * Construction objects.
+     */
+    WATTLE_WALL = "WATTLE_WALL",
 }
 
 /**
@@ -542,7 +546,20 @@ export interface ICraftingRecipe {
      * The inputs of the recipe.
      */
     items: ICraftingRecipeItem[];
+    /**
+     * The recipe can be done by hand. No crafting table required.
+     */
+    byHand: boolean;
 }
+
+export const listOfRecipes: ICraftingRecipe[] = [{
+    product: ENetworkObjectType.WATTLE_WALL,
+    items: [{
+        item: ENetworkObjectType.STICK,
+        quantity: 20
+    }],
+    byHand: true
+}];
 
 /**
  * An industrial lot that specializes in producing complex objects.

@@ -14,7 +14,7 @@ import {
     IApiPersonsVoiceCandidatePost,
     IApiPersonsVoiceOfferMessage,
     IApiPersonsVoiceOfferPost,
-    ICar,
+    ICar, ICraftingRecipe, ICraftingRecipeItem,
     IGameTutorials,
     IKeyDownHandler,
     ILot,
@@ -26,7 +26,7 @@ import {
     IResource, IResourceSpawn,
     IRoad,
     IRoom,
-    IVendorInventoryItem
+    IVendorInventoryItem, listOfRecipes
 } from "./types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
 import {IPersonsDrawablesProps, IPersonsDrawablesState, PersonsDrawables} from "./PersonsDrawables";
@@ -1837,6 +1837,107 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         }
     };
 
+    craftRecipe = (recipe: ICraftingRecipe) => {
+        const currentPerson = this.getCurrentPerson();
+        if (currentPerson) {
+            const slots: INetworkObject[] = currentPerson.inventory.slots;
+
+            // find required items
+            const requiredItemsStatus = recipe.items.map(requiredItem => {
+                const {
+                    matchingAmount
+                } = slots.reduce((acc: {matchingAmount: number}, slot) => {
+                    if (slot.objectType === requiredItem.item) {
+                        // found matching slot, accumulate slot and amount
+                        return {
+                            matchingAmount: acc.matchingAmount + slot.amount
+                        };
+                    } else {
+                        return acc;
+                    }
+                }, {
+                    matchingAmount: 0
+                });
+
+                if (matchingAmount >= requiredItem.quantity) {
+                    // enough items, return the slots
+                    return {
+                        enoughItems: true
+                    };
+                } else {
+                    // not enough items, return false
+                    return {
+                        enoughItems: false
+                    };
+                }
+            });
+
+            if (requiredItemsStatus.every(requiredItem => requiredItem.enoughItems)) {
+                // enough items to craft
+                // for each crafting recipe item
+                const slotsWithoutRequiredItems: INetworkObject[] = recipe.items.reduce((acc: INetworkObject[], requiredItem: ICraftingRecipeItem): INetworkObject[] => {
+                    // make a full copy of the array to make mutable changes
+                    const copyOfAcc = acc.map(s => ({...s}));
+                    // the amount of items to subtract as we loop through the inventory slots
+                    let amount = requiredItem.quantity;
+                    // for each inventory slot
+                    for (const s of copyOfAcc) {
+                        // found matching inventory slot item
+                        if (amount > 0 && s.objectType === requiredItem.item) {
+                            // subtract amount from inventory slot
+                            const subtractAmount = Math.min(s.amount, amount);
+                            s.amount -= subtractAmount;
+                            amount -= subtractAmount;
+                        }
+                    }
+
+                    // return only inventory slots with more than 0 items
+                    return copyOfAcc.filter(s => s.amount > 0);
+                }, slots);
+
+                // add new item to inventory
+                const slotsWithItem: INetworkObject[] = [
+                    ...slotsWithoutRequiredItems,
+                    {
+                        id: this.randomPersonId(),
+                        x: currentPerson.x,
+                        y: currentPerson.y,
+                        objectType: recipe.product,
+                        grabbedByPersonId: currentPerson.id,
+                        grabbedByNpcId: null,
+                        isInInventory: true,
+                        lastUpdate: new Date().toISOString(),
+                        health: {
+                            rate: 0,
+                            max: 1,
+                            value: 1
+                        },
+                        amount: 1
+                    }
+                ];
+
+                // update the persons array
+                const persons = this.state.persons.map((person: IPerson): IPerson => {
+                    if (person.id === this.state.currentPersonId) {
+                        // found current person, update inventory
+                        return {
+                            ...person,
+                            inventory: {
+                                ...person.inventory,
+                                slots: slotsWithItem
+                            },
+                            lastUpdate: new Date().toISOString()
+                        };
+                    } else {
+                        // found different person, do nothing
+                        return person;
+                    }
+                });
+                this.setState({persons});
+            }
+        }
+    };
+
     showInventory = () => {
         this.setState({showInventory: true});
     };
@@ -1897,6 +1998,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         </pattern>
                         <pattern id="road-white" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
                             <image href="/road-white.png" width="16" height="16"/>
+                        </pattern>
+                        <pattern id="wattle" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+                            <image href="/wattle.png" width="32" height="32"/>
                         </pattern>
                         <filter id="blur">
                             <feGaussianBlur stdDeviation={5}/>
@@ -2099,6 +2203,40 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                             ];
                                         }
                                     }, [])
+                                }
+                                <text x={50} y={330} fontSize={18}>Crafting Recipes</text>
+                                {
+                                    listOfRecipes.filter(recipe => recipe.byHand).map((recipe, index) => {
+                                        const row = Math.floor(index / 10);
+                                        const column = index % 10;
+                                        const x = 50 + column * 80;
+                                        const y = 350 + row * 80;
+                                        return (
+                                            <g key={recipe.product} transform={`translate(${x},${y})`} onClick={() => this.craftRecipe(recipe)}>
+                                                <rect x={0} y={0} width={60} height={60} fill="tan" opacity={0.3}/>
+                                                <g transform="translate(40,80)">
+                                                    {
+                                                        this.drawNetworkObject({
+                                                            id: `recipe-${recipe.product}`,
+                                                            x: 0,
+                                                            y: 0,
+                                                            objectType: recipe.product,
+                                                            lastUpdate: new Date().toISOString(),
+                                                            grabbedByNpcId: null,
+                                                            grabbedByPersonId: null,
+                                                            isInInventory: true,
+                                                            health: {
+                                                                rate: 0,
+                                                                max: 1,
+                                                                value: 1
+                                                            },
+                                                            amount: 1
+                                                        }).draw()
+                                                    }
+                                                </g>
+                                            </g>
+                                        );
+                                    })
                                 }
                             </g>
                         ) : null
