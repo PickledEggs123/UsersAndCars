@@ -1,4 +1,4 @@
-import {ENetworkObjectType, IApiPersonsLoginPost} from "./types/GameTypes";
+import {ENetworkObjectType, IApiPersonsLoginPost} from "persons-game-common/lib/types/GameTypes";
 import * as admin from "firebase-admin";
 import {IPersonDatabase} from "./types/database";
 import {defaultPersonHealthObject} from "./config";

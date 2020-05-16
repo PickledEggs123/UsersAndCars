@@ -1,12 +1,11 @@
 import {
-    ENetworkObjectType, IApiPersonsResourceHarvestPost,
+    ENetworkObjectType,
+    IApiPersonsResourceHarvestPost,
     IObject,
     IResource,
-    IResourceSpawn,
     ITerrainTilePosition,
-    ITree,
     IVoronoi
-} from "./types/GameTypes";
+} from "persons-game-common/lib/types/GameTypes";
 import * as shajs from "sha.js";
 import * as seedrandom from "seedrandom";
 import {INetworkObjectDatabase, IPersonDatabase, IResourceDatabase} from "./types/database";
@@ -14,6 +13,8 @@ import admin from "firebase-admin";
 import {PubSub} from "@google-cloud/pubsub";
 import {getNetworkObjectCellString} from "./cell";
 import express from "express";
+import {HarvestResourceController} from "persons-game-common/lib/resources";
+import {createResource} from "persons-game-common/lib/terrain";
 
 /**
  * Convert terrain tile to an id.
@@ -194,60 +195,9 @@ const terrainTilesThatShouldBeLoaded = ({tileX, tileY}: ITerrainTilePosition) =>
  */
 const generateTerrainTile = (tilePosition: ITerrainTilePosition): IResource[] => {
     return generateTerrainPoints(tilePosition).map((point): IResource => {
-        const {x, y} = point;
-        const rng: seedrandom.prng = seedrandom.alea(`resource(${x},${y})`);
+        const rng: seedrandom.prng = seedrandom.alea(`resource(${point.x},${point.y})`);
         const objectType: ENetworkObjectType = rng.quick() > 0.9 ? ENetworkObjectType.ROCK : ENetworkObjectType.TREE;
-        const spawns: IResourceSpawn[] = objectType === ENetworkObjectType.TREE ? [{
-            type: ENetworkObjectType.STICK,
-            probability: 95,
-            spawnTime: 60000
-        }, {
-            type: ENetworkObjectType.WOOD,
-            probability: 5,
-            spawnTime: 60000
-        }] : [{
-            type: ENetworkObjectType.STONE,
-            probability: 70,
-            spawnTime: 60000
-        }, {
-            type: ENetworkObjectType.COAL,
-            probability: 20,
-            spawnTime: 120000
-        }, {
-            type: ENetworkObjectType.IRON,
-            probability: 10,
-            spawnTime: 180000
-        }];
-        const resource: IResource = {
-            id: `resource(${x},${y})`,
-            x,
-            y,
-            objectType,
-            spawnSeed: `resource(${x},${y})`,
-            spawns,
-            lastUpdate: new Date().toISOString(),
-            grabbedByPersonId: null,
-            grabbedByNpcId: null,
-            isInInventory: false,
-            health: {
-                rate: 0,
-                max: 10,
-                value: 10
-            },
-            depleted: false,
-            readyTime: new Date().toISOString(),
-            spawnState: true,
-            amount: 1
-        };
-        if (objectType === ENetworkObjectType.TREE) {
-            const tree: ITree = {
-                ...resource as ITree,
-                treeSeed: `tree(${x},${y})`
-            };
-            return {...tree};
-        } else {
-            return resource;
-        }
+        return createResource(point, objectType);
     });
 };
 
@@ -316,56 +266,20 @@ const harvestResource = async (resourceId: string) => {
         const resource = resourceDocument.data() as IResourceDatabase;
         // resource is ready to be harvested
         if (!resource.depleted || resource.readyTime.toMillis() <= +new Date()) {
-            // determine the spawn using a seeded random number generator
-            // the spawn is chosen using cumulative probability
-            const rng = seedrandom.alea(resource.spawnState === true ? resource.spawnSeed : "", {
-                state: resource.spawnState
-            });
-            // the total cumulative probability, multiplied against random to get a value between 0 and sum cumulative probability.
-            const sumCumulativeProbability = resource.spawns.reduce((acc: number, s: IResourceSpawn): number => {
-                return acc + s.probability
-            }, 0);
-            // convert spawns array to cumulative probabilities
-            const spawnsCumulativeProbability = resource.spawns.map((s, index, arr) => {
-                const sumWeightsBelow = arr.slice(0, index).reduce((acc: number, s1: IResourceSpawn): number => {
-                    return acc + s1.probability;
-                }, 0);
-                return {
-                    ...s,
-                    probability: sumWeightsBelow
-                };
-            });
-            // compute a random cumulative probability to pick a random item
-            const cumulativeProbability = rng.quick() * sumCumulativeProbability;
-            // pick a random item using cumulative probability
-            const spawn = spawnsCumulativeProbability.find(s => s.probability < cumulativeProbability);
+            const controller = new HarvestResourceController(resource as any);
+            const {
+                spawn,
+                respawnTime
+            } = controller.spawn();
 
-            // if spawn exists, create it and update random number generator
             if (spawn) {
-                let spawnData: INetworkObjectDatabase = {
-                    x: resource.x + Math.floor(rng.quick() * 200) - 100,
-                    y: resource.y + Math.floor(rng.quick() * 200) - 100,
-                    objectType: spawn.type,
-                    lastUpdate: admin.firestore.Timestamp.now(),
-                    health: {
-                        rate: 0,
-                        max: 1,
-                        value: 1
-                    },
-                    id: `object-${rng.int32()}`,
-                    grabbedByPersonId: null,
-                    grabbedByNpcId: null,
-                    isInInventory: false,
-                    cell: "",
-                    amount: 1
+                const spawnData: INetworkObjectDatabase = {
+                    ...spawn,
+                    lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(spawn.lastUpdate)),
+                    cell: getNetworkObjectCellString(spawn)
                 };
-                spawnData = {
-                    ...spawnData,
-                    cell: getNetworkObjectCellString(spawnData)
-                };
-                const respawnTime = Math.ceil(rng.quick() * spawn.spawnTime);
                 const resourceUpdate: Partial<IResourceDatabase> = {
-                    spawnState: rng.state(),
+                    spawnState: controller.saveState(),
                     lastUpdate: admin.firestore.Timestamp.now(),
                     depleted: true,
                     readyTime: admin.firestore.Timestamp.fromMillis(+new Date() + respawnTime)

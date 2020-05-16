@@ -1,4 +1,4 @@
-import {IObjectHealth} from "./types/GameTypes";
+import {IObjectHealth} from "persons-game-common/lib/types/GameTypes";
 
 /**
  * Configuration settings for the game.

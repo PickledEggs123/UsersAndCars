@@ -16,7 +16,7 @@ import {
     IRoom,
     IVendor,
     IWhichDirectionIsNearby
-} from "./types/GameTypes";
+} from "persons-game-common/lib/types/GameTypes";
 
 /**
  * Handle the creation of a city.

@@ -19,7 +19,7 @@ import {
     ITree,
     IVendor,
     IVendorInventoryItem
-} from "./types/GameTypes";
+} from "persons-game-common/lib/types/GameTypes";
 import React from "react";
 import seedrandom from "seedrandom";
 

@@ -1,6 +1,6 @@
 import * as React from "react";
 import axios from "axios";
-import {IApiPersonsLoginPost} from "./types/GameTypes";
+import {IApiPersonsLoginPost} from "persons-game-common/lib/types/GameTypes";
 
 /**
  * The props for [[PersonsLogin]].

@@ -1,4 +1,4 @@
-import {getCurrentTDayNightTime, ILot, INpcPathPoint, IObject, IRoom, TDayNightTime} from "./types/GameTypes";
+import {getCurrentTDayNightTime, ILot, INpcPathPoint, IObject, IRoom, TDayNightTime} from "persons-game-common/lib/types/GameTypes";
 import {INpcCellTimeDatabase, INpcDatabase} from "./types/database";
 import {cellSize} from "./config";
 import * as admin from "firebase-admin";

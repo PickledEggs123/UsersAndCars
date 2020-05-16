@@ -4,13 +4,12 @@
  */
 import * as functions from 'firebase-functions';
 import * as admin from "firebase-admin";
-import {PubSub} from "@google-cloud/pubsub";
+import {PubSub} from "@google-cloud/pubsub/build/src";
 import * as express from "express";
 import * as cors from "cors";
 import {users as usersHttp} from "./crud/users";
 import {cars as carsHttp} from "./crud/cars";
 import {
-    ECarDirection,
     ELotZone,
     ENetworkObjectType, IApiLotsBuyPost, IApiLotsSellPost,
     IApiPersonsGetResponse,
@@ -20,7 +19,7 @@ import {
     INpc, INpcSchedule,
     IObject,
     IPerson, IResource, IRoad, IRoom, TDayNightTimeHour
-} from "./types/GameTypes";
+} from "persons-game-common/lib/types/GameTypes";
 import {
     getVoiceMessages,
     handleVoiceMessageAnswer,
@@ -41,7 +40,7 @@ import {getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell"
 import {getThirtySecondsAgo, handleLogin} from "./authentication";
 import {generateCityMapWithRooms, getDirectionMap, getLots, streetWalkerPath} from "./pathfinding";
 import {handleGenerateTerrainTile, handleHarvestResource, updateTerrain} from "./terrain";
-import {handleDropObject, handlePickUpObject} from "./inventory";
+import {handleCraftObject, handleDropObject, handlePickUpObject} from "./inventory";
 
 const matchAll = require("string.prototype.matchall");
 matchAll.shim();
@@ -69,7 +68,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
         const npcsToReturnAsJson: INpc[] = [];
         const lotsToReturnAsJson: ILot[] = [];
 
-        const {id} = req.query;
+        const {id} = req.query as {id: string};
 
         if (!id) {
             res.status(404).json({message: "require id parameter"});
@@ -364,6 +363,11 @@ personsApp.post("/object/pickup", handlePickUpObject);
 personsApp.post("/object/drop", handleDropObject);
 
 /**
+ * Craft an object in the inventory
+ */
+personsApp.post("/object/craft", handleCraftObject);
+
+/**
  * Update game state.
  */
 personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: any) => any) => {
@@ -377,13 +381,6 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
             delete personWithoutSensitiveInformation.creditLimit;
 
             return {
-                id: person.id,
-                x: 50,
-                y: 150,
-                pantColor: "blue",
-                shirtColor: "grey",
-                grabbedByPersonId: null,
-                grabbedByNpcId: null,
                 ...personWithoutSensitiveInformation,
                 inventory: {
                     ...personWithoutSensitiveInformation.inventory,
@@ -397,43 +394,27 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
                 lastUpdate: person.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(person.lastUpdate)) : admin.firestore.Timestamp.now(),
                 objectType: ENetworkObjectType.PERSON,
                 cell: getNetworkObjectCellString({
-                    x: 50,
-                    y: 150,
                     ...personWithoutSensitiveInformation
                 })
             };
         });
         const carsToSaveIntoDatabase = req.body.cars.map((car: ICar): Partial<ICarDatabase> => {
             return {
-                id: car.id,
-                direction: ECarDirection.DOWN,
-                x: 50,
-                y: 150,
-                grabbedByPersonId: null,
                 ...car,
                 // convert ISO string date into firebase firestore Timestamp
                 lastUpdate: car.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(car.lastUpdate)) : admin.firestore.Timestamp.now(),
                 objectType: ENetworkObjectType.CAR,
                 cell: getNetworkObjectCellString({
-                    x: 50,
-                    y: 150,
                     ...car
                 })
             };
         });
         const objectsToSaveIntoDatabase = req.body.objects.map((networkObject: INetworkObject): Partial<INetworkObjectDatabase> => {
             return {
-                id: networkObject.id,
-                x: 50,
-                y: 150,
-                objectType: ENetworkObjectType.BOX,
-                grabbedByPersonId: null,
                 ...networkObject,
                 // convert ISO string date into firebase firestore Timestamp
                 lastUpdate: networkObject.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(networkObject.lastUpdate)) : admin.firestore.Timestamp.now(),
                 cell: getNetworkObjectCellString({
-                    x: 50,
-                    y: 150,
                     ...networkObject
                 })
             };

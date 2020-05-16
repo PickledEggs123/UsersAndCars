@@ -6,7 +6,7 @@ import {
     INetworkObject,
     INpcPathPoint, INpcSchedule,
     IObjectHealth, IResourceSpawn
-} from "./GameTypes";
+} from "persons-game-common/lib/types/GameTypes";
 import * as admin from "firebase-admin";
 import * as seedrandom from "seedrandom";
 

@@ -1,4 +1,4 @@
-import {ILot, IObject} from "./types/GameTypes";
+import {ILot, IObject} from "persons-game-common/lib/types/GameTypes";
 import {INetworkObjectCellPosition, INetworkObjectDatabase} from "./types/database";
 import * as admin from "firebase-admin";
 import {cellSize} from "./config";

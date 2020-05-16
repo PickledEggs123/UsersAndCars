@@ -2,11 +2,11 @@ import React from 'react';
 import './App.scss';
 import axios from "axios";
 import {
-    ECarDirection, getMaxStackSize,
+    ECarDirection,
     IApiLotsBuyPost,
     IApiLotsSellPost,
-    IApiPersonsGetResponse, IApiPersonsObjectDropPost, IApiPersonsObjectPickUpPost,
-    IApiPersonsPut, IApiPersonsResourceHarvestPost,
+    IApiPersonsGetResponse,
+    IApiPersonsPut,
     IApiPersonsVendPost,
     IApiPersonsVoiceAnswerMessage,
     IApiPersonsVoiceAnswerPost,
@@ -14,7 +14,7 @@ import {
     IApiPersonsVoiceCandidatePost,
     IApiPersonsVoiceOfferMessage,
     IApiPersonsVoiceOfferPost,
-    ICar, ICraftingRecipe, ICraftingRecipeItem,
+    ICar, ICraftingRecipe,
     IGameTutorials,
     IKeyDownHandler,
     ILot,
@@ -23,15 +23,16 @@ import {
     INpcPathPoint,
     IObject,
     IPerson, IPersonsInventory,
-    IResource, IResourceSpawn,
+    IResource,
     IRoad,
     IRoom,
     IVendorInventoryItem, listOfRecipes
-} from "./types/GameTypes";
+} from "persons-game-common/lib/types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
 import {IPersonsDrawablesProps, IPersonsDrawablesState, PersonsDrawables} from "./PersonsDrawables";
 import {applyAudioFilters, rtcPeerConnectionConfiguration, userMediaConfig} from "./config";
-import seedrandom from "seedrandom";
+import {HarvestResourceController} from "persons-game-common/lib/resources";
+import {InventoryController} from "persons-game-common/lib/inventory";
 
 /**
  * The input to the [[Persons]] component that changes how the game is rendered.
@@ -1633,52 +1634,18 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * Harvest a resource on the map.
      */
     harvestResource = async (resource: IResource) => {
-        const postData: IApiPersonsResourceHarvestPost = {
-            resourceId: resource.id
-        };
+        const controller = new HarvestResourceController(resource);
+        const {
+            spawn,
+            respawnTime
+        } = controller.spawn();
+        const postData = controller.getPostData();
+
         await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/resource/harvest", postData);
 
-        const rng: seedrandom.prng = seedrandom.alea(resource.spawnState === true ? resource.spawnSeed : "", {
-            state: resource.spawnState
-        });
-        // the total cumulative probability, multiplied against random to get a value between 0 and sum cumulative probability.
-        const sumCumulativeProbability = resource.spawns.reduce((acc: number, s: IResourceSpawn): number => {
-            return acc + s.probability
-        }, 0);
-        // convert spawns array to cumulative probabilities
-        const spawnsCumulativeProbability = resource.spawns.map((s, index, arr) => {
-            const sumWeightsBelow = arr.slice(0, index).reduce((acc: number, s1: IResourceSpawn): number => {
-                return acc + s1.probability;
-            }, 0);
-            return {
-                ...s,
-                probability: sumWeightsBelow
-            };
-        });
-        // compute a random cumulative probability to pick a random item
-        const cumulativeProbability = rng.quick() * sumCumulativeProbability;
-        // pick a random item using cumulative probability
-        const spawn = spawnsCumulativeProbability.find(s => s.probability < cumulativeProbability);
         if (spawn) {
-            // add new wood on the ground
-            const spawnItem: INetworkObject = {
-                x: resource.x + Math.floor(rng.quick() * 200) - 100,
-                y: resource.y + Math.floor(rng.quick() * 200) - 100,
-                objectType: spawn.type,
-                lastUpdate: new Date().toISOString(),
-                health: {
-                    rate: 0,
-                    max: 1,
-                    value: 1
-                },
-                id: `object-${rng.int32()}`,
-                grabbedByPersonId: null,
-                grabbedByNpcId: null,
-                isInInventory: false,
-                amount: 1
-            };
-            const respawnTime = Math.ceil(rng.quick() * spawn.spawnTime);
-            const objects = [...this.state.objects.filter(o => o.id !== spawnItem.id), spawnItem];
+            // update objects array
+            const objects = [...this.state.objects.filter(o => o.id !== spawn.id), spawn];
 
             // deplete the tree
             const resources = this.depleteResource(resource.id, respawnTime);
@@ -1695,97 +1662,63 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         // get current person
         const currentPerson = this.getCurrentPerson();
         if (currentPerson) {
-            // check if there is room for one more object
-            const maxSlots = currentPerson.inventory.rows * currentPerson.inventory.columns;
-            // find stackable item in inventory
-            const stackableSlot = currentPerson.inventory.slots.find(slot => {
-                return slot.objectType === networkObject.objectType && slot.amount < getMaxStackSize(slot.objectType);
-            });
-            if (currentPerson.inventory.slots.length < maxSlots || stackableSlot) {
-                // make http request to pick up item
-                const pickUpRequest: IApiPersonsObjectPickUpPost = {
-                    personId: this.state.currentPersonId,
-                    objectId: networkObject.id
-                };
-                // begin picking up
-                await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/object/pickup", pickUpRequest);
+            const controller = new InventoryController(currentPerson);
+            const {
+                updatedItem,
+                stackableSlots
+            } = controller.pickUpItem(networkObject);
+            const inventory = controller.getInventory();
 
-                // update the local copy to immediately show the item being picked up before the network update
-                // this will occur before the official object pick up
-                // place the object into the inventory
-                let newObjectData: INetworkObject | null = null;
-                const objects = this.state.objects.reduce((acc: INetworkObject[], o: INetworkObject): INetworkObject[] => {
-                    if (stackableSlot) {
-                        // found stackable item in inventory
-                        if (o.id === stackableSlot.id) {
-                            // accumulate stack
-                            return [
-                                ...acc,
-                                {
-                                    ...o,
-                                    amount: o.amount + 1
-                                }
-                            ];
-                        } else if (o.id === networkObject.id) {
-                            // delete original item
-                            return acc;
-                        }
+            // make http request to pick up item
+            const pickUpRequest = controller.pickUpItemRequest(currentPerson, networkObject);
+            // begin picking up
+            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/object/pickup", pickUpRequest);
+
+            // update objects array
+            const objects = this.state.objects.reduce((acc: INetworkObject[], obj: INetworkObject): INetworkObject[] => {
+                if (obj.id === networkObject.id) {
+                    // found object
+                    if (updatedItem === null) {
+                        // updated item was deleted, do not include in new array
+                        return acc;
                     } else {
-                        if (o.id === networkObject.id) {
-                            // move original item into stack
-                            newObjectData = {
-                                ...o,
-                                grabbedByPersonId: this.state.currentPersonId,
-                                isInInventory: true
-                            };
-                            return [
-                                ...acc,
-                                newObjectData
-                            ];
-                        }
+                        // updated item was updated, replace old object with new updated item
+                        return [
+                            ...acc,
+                            updatedItem
+                        ];
                     }
-                    // neither, do nothing
+                } else if (stackableSlots.map(s => s.id).includes(obj.id)) {
+                    // the item was placed into a stackable slot, update stackable slot
+                    const stackableSlot = stackableSlots.find(s => s.id === obj.id) as INetworkObject;
                     return [
                         ...acc,
-                        o
+                        stackableSlot
                     ];
-                }, []);
-                const persons = this.state.persons.map(p => {
-                    if (p.id === this.state.currentPersonId && newObjectData) {
-                        const slots: INetworkObject[] = p.inventory.slots.filter(slot => {
-                            // remove duplicate copies of new object
-                            return newObjectData && slot.id !== newObjectData.id;
-                        }).map(slot => {
-                            // increment stackable slots
-                            if (stackableSlot && slot.id === stackableSlot.id) {
-                                return {
-                                    ...slot,
-                                    amount: slot.amount + 1
-                                };
-                            } else {
-                                return slot;
-                            }
-                        });
-                        // add new copy of slot data
-                        if (newObjectData) {
-                            slots.push(newObjectData);
-                        }
-                        return {
-                            ...p,
-                            inventory: {
-                                ...p.inventory,
-                                slots
-                            }
-                        }
-                    } else {
-                        return p;
-                    }
-                });
-                this.setState({
-                    objects,
-                    persons
-                });
-            }
+                } else {
+                    // not object, keep same item
+                    return [
+                        ...acc,
+                        obj
+                    ];
+                }
+            }, []);
+            const persons = this.state.persons.map(person => {
+                if (person.id === currentPerson.id) {
+                    // found person, update inventory
+                    return {
+                        ...person,
+                        inventory
+                    };
+                } else {
+                    // not person, do nothing
+                    return person;
+                }
+            });
+            this.setState({
+                objects,
+                persons
+            });
         }
     };
 
@@ -1793,40 +1726,38 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         // get current person
         const currentPerson = this.getCurrentPerson();
         if (currentPerson) {
+            const controller = new InventoryController(currentPerson);
+            const {
+                updatedItem
+            } = controller.dropItem(networkObject);
+            const inventory = controller.getInventory();
+
             // make http request to drop item
-            const pickUpRequest: IApiPersonsObjectDropPost = {
-                personId: this.state.currentPersonId,
-                objectId: networkObject.id
-            };
+            const dropRequest = controller.dropItemRequest(currentPerson, networkObject);
             // begin picking up
-            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/object/drop", pickUpRequest);
+            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/object/drop", dropRequest);
 
             // update the local copy to immediately show the item being dropped before the network update
             // this will occur before the official object drop
             // place the object onto the ground
             const objects = this.state.objects.map(o => {
-                if (o.id === networkObject.id) {
-                    return {
-                        ...o,
-                        grabbedByPersonId: null,
-                        isInInventory: false,
-                        x: currentPerson.x,
-                        y: currentPerson.y
-                    };
+                if (updatedItem && o.id === networkObject.id) {
+                    // found object, update it
+                    return updatedItem;
                 } else {
+                    // did not find object, do nothing
                     return o;
                 }
             });
             const persons = this.state.persons.map(p => {
                 if (p.id === this.state.currentPersonId) {
+                    // found person, update inventory
                     return {
                         ...p,
-                        inventory: {
-                            ...p.inventory,
-                            slots: p.inventory.slots.filter(o => o.id !== networkObject.id)
-                        }
+                        inventory
                     }
                 } else {
+                    // did not find person, do nothing
                     return p;
                 }
             });
@@ -1837,104 +1768,67 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         }
     };
 
-    craftRecipe = (recipe: ICraftingRecipe) => {
+    craftRecipe = async (recipe: ICraftingRecipe) => {
         const currentPerson = this.getCurrentPerson();
         if (currentPerson) {
-            const slots: INetworkObject[] = currentPerson.inventory.slots;
+            const controller = new InventoryController(currentPerson);
+            const {
+                updatedItem,
+                stackableSlots,
+                deletedSlots,
+                modifiedSlots
+            } = controller.craftItem(recipe);
+            const inventory = controller.getInventory();
 
-            // find required items
-            const requiredItemsStatus = recipe.items.map(requiredItem => {
-                const {
-                    matchingAmount
-                } = slots.reduce((acc: {matchingAmount: number}, slot) => {
-                    if (slot.objectType === requiredItem.item) {
-                        // found matching slot, accumulate slot and amount
-                        return {
-                            matchingAmount: acc.matchingAmount + slot.amount
-                        };
-                    } else {
-                        return acc;
-                    }
-                }, {
-                    matchingAmount: 0
-                });
+            const postData = controller.craftItemRequest(currentPerson, recipe);
+            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/object/craft", postData);
 
-                if (matchingAmount >= requiredItem.quantity) {
-                    // enough items, return the slots
+            const objects =this.state.objects.reduce((acc: INetworkObject[], obj: INetworkObject): INetworkObject[] => {
+                if (updatedItem && obj.id === updatedItem.id) {
+                    // found duplicate item, do not add
+                    return acc;
+                } else if (deletedSlots.includes(obj.id)) {
+                    // found item that was used in the recipe, do not add
+                    return acc;
+                } else if (modifiedSlots.map(m => m.id).includes(obj.id)) {
+                    const modifiedSlot = modifiedSlots.find(m => m.id === obj.id) as INetworkObject;
+                    return [
+                        ...acc,
+                        modifiedSlot
+                    ];
+                } else if (stackableSlots.map(s => s.id).includes(obj.id)) {
+                    const stackableSlot = stackableSlots.find(s => s.id === obj.id) as INetworkObject;
+                    return [
+                        ...acc,
+                        stackableSlot
+                    ];
+                } else {
+                    // other item, keep the item
+                    return [
+                        ...acc,
+                        obj
+                    ];
+                }
+            }, []);
+            if (updatedItem) {
+                objects.push(updatedItem);
+            }
+            const persons = this.state.persons.map(person => {
+                if (person.id === currentPerson.id) {
+                    // found person, update inventory
                     return {
-                        enoughItems: true
+                        ...person,
+                        inventory
                     };
                 } else {
-                    // not enough items, return false
-                    return {
-                        enoughItems: false
-                    };
+                    // did not find person, do nothing
+                    return person;
                 }
             });
-
-            if (requiredItemsStatus.every(requiredItem => requiredItem.enoughItems)) {
-                // enough items to craft
-                // for each crafting recipe item
-                const slotsWithoutRequiredItems: INetworkObject[] = recipe.items.reduce((acc: INetworkObject[], requiredItem: ICraftingRecipeItem): INetworkObject[] => {
-                    // make a full copy of the array to make mutable changes
-                    const copyOfAcc = acc.map(s => ({...s}));
-                    // the amount of items to subtract as we loop through the inventory slots
-                    let amount = requiredItem.quantity;
-                    // for each inventory slot
-                    for (const s of copyOfAcc) {
-                        // found matching inventory slot item
-                        if (amount > 0 && s.objectType === requiredItem.item) {
-                            // subtract amount from inventory slot
-                            const subtractAmount = Math.min(s.amount, amount);
-                            s.amount -= subtractAmount;
-                            amount -= subtractAmount;
-                        }
-                    }
-
-                    // return only inventory slots with more than 0 items
-                    return copyOfAcc.filter(s => s.amount > 0);
-                }, slots);
-
-                // add new item to inventory
-                const slotsWithItem: INetworkObject[] = [
-                    ...slotsWithoutRequiredItems,
-                    {
-                        id: this.randomPersonId(),
-                        x: currentPerson.x,
-                        y: currentPerson.y,
-                        objectType: recipe.product,
-                        grabbedByPersonId: currentPerson.id,
-                        grabbedByNpcId: null,
-                        isInInventory: true,
-                        lastUpdate: new Date().toISOString(),
-                        health: {
-                            rate: 0,
-                            max: 1,
-                            value: 1
-                        },
-                        amount: 1
-                    }
-                ];
-
-                // update the persons array
-                const persons = this.state.persons.map((person: IPerson): IPerson => {
-                    if (person.id === this.state.currentPersonId) {
-                        // found current person, update inventory
-                        return {
-                            ...person,
-                            inventory: {
-                                ...person.inventory,
-                                slots: slotsWithItem
-                            },
-                            lastUpdate: new Date().toISOString()
-                        };
-                    } else {
-                        // found different person, do nothing
-                        return person;
-                    }
-                });
-                this.setState({persons});
-            }
+            this.setState({
+                objects,
+                persons
+            });
         }
     };
 

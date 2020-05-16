@@ -3,7 +3,7 @@ import {
     IApiPersonsVoiceAnswerMessage,
     IApiPersonsVoiceCandidateMessage,
     IApiPersonsVoiceOfferMessage
-} from "./types/GameTypes";
+} from "persons-game-common/lib/types/GameTypes";
 import * as express from "express";
 
 /**

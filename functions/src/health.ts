@@ -1,4 +1,4 @@
-import {IObjectHealth} from "./types/GameTypes";
+import {IObjectHealth} from "persons-game-common/lib/types/GameTypes";
 import * as admin from "firebase-admin";
 import {INetworkObjectDatabase} from "./types/database";
 

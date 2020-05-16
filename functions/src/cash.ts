@@ -1,5 +1,5 @@
 import * as admin from "firebase-admin";
-import {ECarDirection, ENetworkObjectType, IApiPersonsVendPost, IPerson} from "./types/GameTypes";
+import {ECarDirection, ENetworkObjectType, IApiPersonsVendPost, IPerson} from "persons-game-common/lib/types/GameTypes";
 import {ICarDatabase, INetworkObjectDatabase, IPersonDatabase} from "./types/database";
 import {defaultCarHealthObject, defaultObjectHealthObject} from "./config";
 import {getNetworkObjectCellString} from "./cell";
