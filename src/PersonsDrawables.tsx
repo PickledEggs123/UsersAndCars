@@ -741,6 +741,55 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
+     * Draw a piece of mud on the ground.
+     * @param drawable The object to draw.
+     * @param filter The filter to apply to the object.
+     * @param previousNetworkObject The previous position of the object for interpolation.
+     * @param inventory The object is in an inventory.
+     */
+    drawMud = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
+        const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        return (
+            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
+                <path fill="brown" stroke="black" strokeWidth={2} d="m -40 -40 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+            </g>
+        )
+    };
+
+    /**
+     * Draw a piece of clay on the ground.
+     * @param drawable The object to draw.
+     * @param filter The filter to apply to the object.
+     * @param previousNetworkObject The previous position of the object for interpolation.
+     * @param inventory The object is in an inventory.
+     */
+    drawClay = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
+        const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        return (
+            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
+                <path fill="grey" stroke="black" strokeWidth={2} d="m -40 -40 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+            </g>
+        )
+    };
+
+    /**
+     * Draw a reed on the ground.
+     * @param drawable The object to draw.
+     * @param filter The filter to apply to the object.
+     * @param previousNetworkObject The previous position of the object for interpolation.
+     * @param inventory The object is in an inventory.
+     */
+    drawReed = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
+        const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        return (
+            <g key={`stick-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
+                <path fill="green" stroke="black" strokeWidth={2} d="M -25 0 l 50 0 l 0 -5 l -50 0 z "/>
+                <text x={-25} y={-30} fontSize={14}>{drawable.amount}</text>
+            </g>
+        )
+    };
+
+    /**
      * Draw a wattle wall on the ground.
      * @param drawable The object to draw.
      * @param filter The filter to apply to the object.
@@ -751,7 +800,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
             <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
-                <rect x={0} y={0} width={56} height={56} fill="url(#wattle)"/>
+                <rect x={-28} y={-56} width={56} height={56} fill="url(#wattle)"/>
             </g>
         )
     };
@@ -849,6 +898,33 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawIron(networkObject, filter, previousNetworkObject, inventory);
+                    }
+                }
+            }
+            case ENetworkObjectType.MUD: {
+                return {
+                    ...networkObject,
+                    type: EDrawableType.OBJECT,
+                    draw() {
+                        return component.drawMud(networkObject, filter, previousNetworkObject, inventory);
+                    }
+                }
+            }
+            case ENetworkObjectType.CLAY: {
+                return {
+                    ...networkObject,
+                    type: EDrawableType.OBJECT,
+                    draw() {
+                        return component.drawClay(networkObject, filter, previousNetworkObject, inventory);
+                    }
+                }
+            }
+            case ENetworkObjectType.REED: {
+                return {
+                    ...networkObject,
+                    type: EDrawableType.OBJECT,
+                    draw() {
+                        return component.drawReed(networkObject, filter, previousNetworkObject, inventory);
                     }
                 }
             }
@@ -981,6 +1057,44 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
+     * Draw a pond.
+     * @param pond The pond data to draw.
+     */
+    drawPond = (pond: IResource): IDrawable[] => {
+        const {x, y} = pond;
+
+        const component = this;
+
+        if (pond.depleted) {
+            return [{
+                x,
+                y,
+                type: EDrawableType.OBJECT,
+                draw() {
+                    return (
+                        <g key={pond.id} transform={`translate(${x},${y})`}>
+                            <path stroke="blue" strokeWidth={2} fill="darkgrey" d="m -25 0 c 0 20 30 10 50 0 c 15 -8 10 -25 0 -20 c -12 5 -29 1 -30 0 c -18 -10 -20 0 -20 20"/>
+                        </g>
+                    );
+                }
+            }]
+        } else {
+            return [{
+                x,
+                y,
+                type: EDrawableType.OBJECT,
+                draw() {
+                    return (
+                        <g key={pond.id} transform={`translate(${x},${y})`} onClick={() => component.harvestResource(pond)}>
+                            <path stroke="cyan" strokeWidth={2} fill="grey" d="m -25 0 c 0 20 30 10 50 0 c 15 -8 10 -25 0 -20 c -12 5 -29 1 -30 0 c -18 -10 -20 0 -20 20"/>
+                        </g>
+                    );
+                }
+            }];
+        }
+    };
+
+    /**
      * Draw resource objects which can generate resources.
      * @param resource The resource to draw.
      */
@@ -991,6 +1105,9 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             }
             case ENetworkObjectType.ROCK: {
                 return this.drawRock(resource);
+            }
+            case ENetworkObjectType.POND: {
+                return this.drawPond(resource);
             }
             default: {
                 return [];

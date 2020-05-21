@@ -653,7 +653,9 @@ const handleStreetWalkingNpc = async ({id}: {
                 columns: 10,
                 slots: []
             },
-            amount: 1
+            amount: 1,
+            craftingSeed: new Array(20).fill(0).map(() => Math.floor(Math.random() * 36).toString(36)).join(""),
+            craftingState: true
         };
         const streetWalkerData = await streetWalkerPath(data, {x: 0, y: 0});
         data = {

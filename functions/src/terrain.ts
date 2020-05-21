@@ -8,6 +8,7 @@ import {
 } from "persons-game-common/lib/types/GameTypes";
 import * as shajs from "sha.js";
 import * as seedrandom from "seedrandom";
+import * as delaunay from "d3-delaunay";
 import {INetworkObjectDatabase, IPersonDatabase, IResourceDatabase} from "./types/database";
 import admin from "firebase-admin";
 import {PubSub} from "@google-cloud/pubsub";
@@ -26,24 +27,21 @@ const terrainTileToId = (terrainTile: ITerrainTilePosition): string => `terrainT
  * Compute the voronoi diagram for a set of points.
  * @param points The input points.
  */
-const computeVoronoi = (points: IObject[]): IVoronoi[] => {
-    // distance between two points
-    const distance = (a: IObject, b: IObject): number => {
-        return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
-    };
-    // for each point
-    return points.map((point): IVoronoi => {
-        // compute corners
-        const corners = points.filter(otherPoint => {
-            return otherPoint !== point;
-        }).filter(otherPoint => {
-            // corners are otherPoints that are closer to point than otherOtherPoints.
-            const distanceFromPointToOtherPoint = distance(point, otherPoint);
-            return distanceFromPointToOtherPoint > 0 && points.filter(otherOtherPoint => {
-                return otherOtherPoint !== point && otherOtherPoint !== otherPoint && distance(otherPoint, otherOtherPoint) > 0;
-            }).every(otherOtherPoint => {
-                return distanceFromPointToOtherPoint <= distance(otherPoint, otherOtherPoint);
-            });
+const computeVoronoi = (points: IObject[], bounds: delaunay.Delaunay.Bounds): IVoronoi[] => {
+    const diagram = delaunay.Delaunay.from(points.map((p: IObject): delaunay.Delaunay.Point => {
+        return [p.x, p.y];
+    })).voronoi(bounds);
+
+    return [...diagram.cellPolygons()].map((cell, index): IVoronoi => {
+        const point = {
+            x: diagram.circumcenters[index * 2],
+            y: diagram.circumcenters[index * 2 + 1]
+        };
+        const corners = cell.map((c): IObject => {
+            return {
+                x: c[0],
+                y: c[1]
+            };
         });
         return {
             point,
@@ -138,13 +136,13 @@ const generateTerrainPoints = ({tileX, tileY}: ITerrainTilePosition) => {
     let points: IObject[] = [];
     for (let i = -1; i <= 1; i++) {
         for (let j = -1; j <= 1; j++) {
-            points.push(...generateTilePoints(tileX + i, tileY + i, 10, 25));
+            points.push(...generateTilePoints(tileX + i, tileY + i, 10, 50));
         }
     }
 
     // for five steps, use lloyd's relaxation to smooth out the random points
     for (let step = 0; step < 5; step++) {
-        const voronois = computeVoronoi(points);
+        const voronois = computeVoronoi(points, [(tileX - 1) * tileSize, (tileY - 1) * tileSize, tileSize * 3, tileSize * 3]);
         points = lloydRelaxation(voronois);
     }
 
@@ -189,6 +187,32 @@ const terrainTilesThatShouldBeLoaded = ({tileX, tileY}: ITerrainTilePosition) =>
     return tiles;
 };
 
+interface ITerrainResourceData {
+    objectType: ENetworkObjectType;
+    probability: number;
+}
+const terrainResourceData: ITerrainResourceData[] = [{
+    objectType: ENetworkObjectType.TREE,
+    probability: 80
+}, {
+    objectType: ENetworkObjectType.ROCK,
+    probability: 10
+}, {
+    objectType: ENetworkObjectType.POND,
+    probability: 10
+}];
+const sumCumulativeTerrainResourceData: number = terrainResourceData.reduce((acc: number, data: ITerrainResourceData): number => {
+    return acc + data.probability;
+}, 0);
+const cumulativeTerrainResourceData: ITerrainResourceData[] = terrainResourceData.map((data, index, arr) => {
+    return {
+        ...data,
+        probability: arr.slice(0, index).reduce((acc: number, data2: ITerrainResourceData): number => {
+            return acc + data2.probability;
+        }, 0)
+    }
+}).reverse();
+
 /**
  * Generate a terrain tile.
  * @param tilePosition The tile position to generate.
@@ -196,8 +220,9 @@ const terrainTilesThatShouldBeLoaded = ({tileX, tileY}: ITerrainTilePosition) =>
 const generateTerrainTile = (tilePosition: ITerrainTilePosition): IResource[] => {
     return generateTerrainPoints(tilePosition).map((point): IResource => {
         const rng: seedrandom.prng = seedrandom.alea(`resource(${point.x},${point.y})`);
-        const objectType: ENetworkObjectType = rng.quick() > 0.9 ? ENetworkObjectType.ROCK : ENetworkObjectType.TREE;
-        return createResource(point, objectType);
+        const spawnChance = rng.quick() * sumCumulativeTerrainResourceData;
+        const spawn = cumulativeTerrainResourceData.find(data => data.probability < spawnChance) as ITerrainResourceData;
+        return createResource(point, spawn.objectType);
     });
 };
 

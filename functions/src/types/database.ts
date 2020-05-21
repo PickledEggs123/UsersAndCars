@@ -106,6 +106,8 @@ export interface IPersonDatabase extends INetworkObjectDatabase {
     cash: number;
     creditLimit: number;
     inventory: IPersonsInventoryDatabase;
+    craftingSeed: string;
+    craftingState: seedrandom.State | true;
 }
 
 export interface INpcDatabase extends IPersonDatabase {
