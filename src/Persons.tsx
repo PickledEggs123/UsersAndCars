@@ -3,6 +3,7 @@ import './App.scss';
 import axios from "axios";
 import {
     ECarDirection,
+    ENetworkObjectType,
     IApiLotsBuyPost,
     IApiLotsSellPost,
     IApiPersonsGetResponse,
@@ -14,7 +15,8 @@ import {
     IApiPersonsVoiceCandidatePost,
     IApiPersonsVoiceOfferMessage,
     IApiPersonsVoiceOfferPost,
-    ICar, ICraftingRecipe,
+    ICar,
+    ICraftingRecipe,
     IGameTutorials,
     IKeyDownHandler,
     ILot,
@@ -22,14 +24,24 @@ import {
     INpc,
     INpcPathPoint,
     IObject,
-    IPerson, IPersonsInventory,
+    IPerson,
+    IPersonsInventory,
     IResource,
     IRoad,
-    IRoom,
-    IVendorInventoryItem, listOfRecipes
+    IVendorInventoryItem,
+    listOfRecipes
 } from "persons-game-common/lib/types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
-import {IPersonsDrawablesProps, IPersonsDrawablesState, PersonsDrawables} from "./PersonsDrawables";
+import {
+    EFloorPattern,
+    EWallDirection,
+    EWallPattern,
+    IFloor,
+    IPersonsDrawablesProps,
+    IPersonsDrawablesState,
+    IWall,
+    PersonsDrawables
+} from "./PersonsDrawables";
 import {applyAudioFilters, rtcPeerConnectionConfiguration, userMediaConfig} from "./config";
 import {HarvestResourceController} from "persons-game-common/lib/resources";
 import {InventoryController} from "persons-game-common/lib/inventory";
@@ -71,6 +83,10 @@ interface IPersonsState extends IPersonsDrawablesState {
      * If the inventory screen should be shown.
      */
     showInventory: boolean;
+    /**
+     * If the construction screen should be shown.
+     */
+    showConstruction: boolean;
 }
 
 /**
@@ -172,7 +188,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         },
         persons: [] as IPerson[],
         npcs: [] as INpc[],
-        rooms: [] as IRoom[],
+        walls: [] as IWall[],
+        floors: [] as IFloor[],
         cars: [] as ICar[],
         objects: [] as INetworkObject[],
         roads: [] as IRoad[],
@@ -195,7 +212,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         lotPrice: null as number | null,
         resources: [] as IResource[],
         inventory: null as IPersonsInventory | null,
-        showInventory: false
+        showInventory: false,
+        showConstruction: false
     };
 
     /**
@@ -564,7 +582,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      */
     beginLogin = () => {
         if (this.loginRef.current) {
-            this.loginRef.current.open();
+            this.loginRef.current.toggleOpen();
         }
     };
 
@@ -811,8 +829,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     answers
                 },
                 roads,
-                lots,
-                rooms
+                lots
             } = response.data;
 
             // handle voice metadata messages
@@ -862,7 +879,6 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 nearestPersons,
                 roads,
                 lots,
-                rooms,
                 npc,
                 lot,
                 resources,
@@ -1153,7 +1169,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     // close lot viewer
                     lot: null,
                     // close person inventory
-                    showInventory: false
+                    showInventory: false,
+                    // close construction screen
+                    showConstruction: false,
                 });
 
                 // merge optional state updates into one state update object to perform a single setState.
@@ -1495,26 +1513,27 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     };
 
     /**
-     * Generate a list of grass tiles to draw. The tiles should always be around the world view. Should reduce the
-     * amount of grass drawn in the world.
+     * Generate a list of world space tiles to draw. The tiles should always be around the world view. Should reduce the
+     * amount of tiles drown in the world. The tiles can represent different things like terrain or cell positions.
      * @param worldOffset The offset of the camera.
+     * @param tileWidth The width of a tile.
+     * @param tileHeight The height of a tile.
      */
-    generateGrassTile = (worldOffset: IObject): IObject[] => {
-        const tileWidth = 500;
-        const tileHeight = 300;
-
+    generateWorldTiles = (worldOffset: IObject, {tileWidth, tileHeight}: {tileWidth: number, tileHeight: number}): IObject[] => {
         // calculate current tile position
         const tilePosition: IObject = {
-            x: Math.round(worldOffset.x / tileWidth),
-            y: Math.round(worldOffset.y / tileHeight)
+            x: Math.floor(worldOffset.x / tileWidth),
+            y: Math.floor(worldOffset.y / tileHeight)
         };
 
         // calculate a list of tiles around the world view, it should cover the world view
         const tilePositions = [] as IObject[];
         // for the x axis, go from most left to most right tile
-        for (let i = -Math.floor(this.state.width / tileWidth); i <= Math.ceil(this.state.width / tileWidth); i++) {
+        const widthRange = Math.ceil(this.state.width / tileWidth / 2);
+        const heightRange = Math.ceil(this.state.height / tileHeight / 2);
+        for (let i = -widthRange; i <= widthRange + 1; i++) {
             // for the y axis, go from most top to most bottom tile
-            for (let j = -Math.floor(this.state.height / tileHeight); j <= Math.ceil(this.state.height / tileHeight); j++) {
+            for (let j = -heightRange; j <= heightRange + 1; j++) {
                 // add tile
                 tilePositions.push({
                     x: (tilePosition.x + i) * tileWidth,
@@ -1833,7 +1852,108 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     };
 
     showInventory = () => {
-        this.setState({showInventory: true});
+        this.setState({showInventory: !this.state.showInventory});
+    };
+
+    showConstruction = () => {
+        this.setState({showConstruction: !this.state.showConstruction});
+    };
+
+    /**
+     * Construct a building at a location.
+     */
+    constructAtLocation = (location: IObject) => {
+        let floors = this.state.floors;
+        let walls = this.state.walls;
+        if (floors.some(floor => floor.x === location.x && floor.y === location.y)) {
+            // already built, cancel
+            alert("Already built here");
+        } else {
+            // find neighboring walls, must remove neighboring walls.
+            const neighborWalls = walls.filter(wall => {
+                const isWestWall = wall.direction === EWallDirection.VERTICAL && wall.x === location.x && wall.y === location.y;
+                const isEastWall = wall.direction === EWallDirection.VERTICAL && wall.x === location.x + 200 && wall.y === location.y;
+                const isNorthWall = wall.direction === EWallDirection.HORIZONTAL && wall.x === location.x && wall.y === location.y;
+                const isSouthWall = wall.direction === EWallDirection.HORIZONTAL && wall.x === location.x && wall.y === location.y + 200;
+                return isWestWall || isEastWall || isNorthWall || isSouthWall;
+            });
+            walls = walls.filter(wall => !neighborWalls.some(w => w.id === wall.id));
+
+            // determine walls to add
+            const wallsToAdd: IWall[] = [];
+            const createNewWall = (l: IObject, direction: EWallDirection): IWall => ({
+                id: `wall-${direction}(${l.x},${l.y})`,
+                x: l.x,
+                y: l.y,
+                wallPattern: EWallPattern.WATTLE,
+                direction,
+                objectType: ENetworkObjectType.POND,
+                lastUpdate: new Date().toISOString(),
+                grabbedByPersonId: null,
+                grabbedByNpcId: null,
+                isInInventory: false,
+                health: {
+                    max: 1,
+                    rate: 0,
+                    value: 1
+                },
+                amount: 1
+            });
+            if (!floors.some(floor => floor.x === location.x - 200 && floor.y === location.y)) {
+                // add west wall
+                wallsToAdd.push(createNewWall({
+                    x: location.x,
+                    y: location.y
+                }, EWallDirection.VERTICAL));
+            }
+            if (!floors.some(floor => floor.x === location.x + 200 && floor.y === location.y)) {
+                // add east wall
+                wallsToAdd.push(createNewWall({
+                    x: location.x + 200,
+                    y: location.y
+                }, EWallDirection.VERTICAL));
+            }
+            if (!floors.some(floor => floor.x === location.x && floor.y === location.y - 200)) {
+                // add north wall
+                wallsToAdd.push(createNewWall({
+                    x: location.x,
+                    y: location.y
+                }, EWallDirection.HORIZONTAL));
+            }
+            if (!floors.some(floor => floor.x === location.x && floor.y === location.y + 200)) {
+                // add south wall
+                wallsToAdd.push(createNewWall({
+                    x: location.x,
+                    y: location.y + 200
+                }, EWallDirection.HORIZONTAL));
+            }
+
+            const newFloor: IFloor = {
+                id: `floor(${location.x},${location.y})`,
+                x: location.x,
+                y: location.y,
+                floorPattern: EFloorPattern.DIRT,
+                objectType: ENetworkObjectType.POND,
+                lastUpdate: new Date().toISOString(),
+                grabbedByPersonId: null,
+                grabbedByNpcId: null,
+                isInInventory: false,
+                health: {
+                    max: 1,
+                    rate: 0,
+                    value: 1
+                },
+                amount: 1
+            };
+
+            floors = [...floors, newFloor];
+            walls = [...walls, ...wallsToAdd];
+
+            this.setState({
+                floors,
+                walls
+            });
+        }
     };
 
     render() {
@@ -1872,12 +1992,10 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 <div>
                     <button onClick={this.beginLogin}>Login</button>
                     <button onClick={this.showInventory}>Inventory</button>
+                    <button onClick={this.showConstruction}>Construction</button>
                 </div>
                 <svg className="game" width={this.state.width} height={this.state.height} style={{border: "1px solid black"}}>
                     <defs>
-                        {
-                            this.generateRoomMasks()
-                        }
                         {
                             this.generateCarMasks()
                         }
@@ -1895,6 +2013,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         </pattern>
                         <pattern id="wattle" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
                             <image href="/wattle.png" width="32" height="32"/>
+                        </pattern>
+                        <pattern id="dirt" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+                            <image href="/dirt.png" width="32" height="32"/>
                         </pattern>
                         <filter id="blur">
                             <feGaussianBlur stdDeviation={5}/>
@@ -1933,9 +2054,31 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     <g transform={`translate(${-worldOffset.x},${-worldOffset.y})`} filter={worldFilter}>
                         {
                             // draw the grass on the bottom of the world
-                            this.generateGrassTile(worldOffset).map(({x, y}: IObject) => {
-                                return <rect key={`grass-tile-${x}-${y}`} x={x} y={y} width="500" height="300" fill="url(#grass)"/>;
+                            this.generateWorldTiles(worldOffset, {tileWidth: 500, tileHeight: 500}).map(({x, y}: IObject) => {
+                                return <rect key={`grass-tile-${x}-${y}`} x={x} y={y} width="500" height="500" fill="url(#grass)"/>;
                             })
+                        }
+                        {
+                            // draw transparent cells to highlight zones in the world, each zone will group npcs together, the player should know zone boundaries
+                            this.state.showConstruction ? this.generateWorldTiles(worldOffset, {tileWidth: 2000, tileHeight: 2000}).map(({x, y}: IObject) => {
+                                return (
+                                    <g key={`cellZone(${x},${y})`} transform={`translate(${x},${y})`}>
+                                        <rect x="0" y="0" width="2000" height="2000" stroke="green" fill="green" fillOpacity={0.3}/>
+                                        <circle fill="green" cx="1000" cy="1000" r="10"/>
+                                        <text x="1000" y="980" fontSize={14}>Cell ({x / 2000},{y / 2000})</text>
+                                    </g>
+                                );
+                            }) : null
+                        }
+                        {
+                            this.state.showConstruction ? this.generateWorldTiles(worldOffset, {tileWidth: 200, tileHeight: 200}).map(({x, y}: IObject) => {
+                                return (
+                                    <g key={`constructionTile(${x},${y})`} transform={`translate(${x},${y})`} onClick={() => this.constructAtLocation({x, y})}>
+                                        <rect x="20" y="20" width={160} height={160} fill="lightgrey" fillOpacity={0.3}/>
+                                        <text x="50" y="100" fontSize={14}>Click to build</text>
+                                    </g>
+                                )
+                            }) : null
                         }
                         {
                             // draw roads
@@ -2174,7 +2317,6 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 }
                 <div style={{display: 'grid', gridTemplateColumns: "repeat(3, 1fr)"}}>
                     <span>Roads: {this.state.roads.length}</span>
-                    <span>Rooms: {this.state.rooms.length}</span>
                     <span>Objects: {this.state.objects.length}</span>
                     <span>NPCs: {this.state.npcs.length}</span>
                     <span>Persons: {this.state.persons.length}</span>

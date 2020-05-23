@@ -132,8 +132,8 @@ export class PersonsLogin extends React.Component<IPersonsLoginProps, IPersonsLo
     /**
      * Open the modal.
      */
-    open = () => {
-        this.setState({visible: true});
+    toggleOpen = () => {
+        this.setState({visible: !this.state.visible});
     };
 
     /**

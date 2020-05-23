@@ -3,8 +3,6 @@ import {
     EDrawableType,
     ENetworkObjectType,
     ERoadDirection,
-    ERoomType,
-    ERoomWallType,
     ICar,
     IDrawable,
     ILot,
@@ -15,7 +13,6 @@ import {
     IPerson,
     IResource,
     IRoad,
-    IRoom,
     ITree,
     IVendor,
     IVendorInventoryItem
@@ -28,6 +25,27 @@ import seedrandom from "seedrandom";
  */
 interface ITreeLeaf extends IObject {
     id: string;
+}
+
+export enum EWallDirection {
+    HORIZONTAL = "HORIZONTAL",
+    VERTICAL = "VERTICAL"
+}
+
+export enum EWallPattern {
+    WATTLE = "WATTLE"
+}
+export interface IWall extends INetworkObject {
+    direction: EWallDirection;
+    wallPattern: EWallPattern;
+}
+
+export enum EFloorPattern {
+    DIRT = "DIRT"
+}
+
+export interface IFloor extends INetworkObject {
+    floorPattern: EFloorPattern;
 }
 
 /**
@@ -65,9 +83,13 @@ export interface IPersonsDrawablesState {
      */
     nearbyObjects: INetworkObject[];
     /**
-     * A list of rooms in the current building.
+     * A list of walls.
      */
-    rooms: IRoom[];
+    walls: IWall[];
+    /**
+     * A list of floors.
+     */
+    floors: IFloor[];
     /**
      * A list of cars in the current location.
      */
@@ -137,16 +159,6 @@ export interface IPersonsDrawablesState {
  * The drawables class of the [[Persons]] game.
  */
 export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S extends IPersonsDrawablesState> extends React.Component<P, S> {
-
-    /**
-     * Determine if an object is inside the room.
-     * @param position The object to test.
-     */
-    isInRoom = (position: IObject) => (room: IRoom): boolean => {
-        return position.x >= room.x && position.x <= room.x + 500 &&
-            position.y >= room.y && position.y <= room.y + 300;
-    };
-
     /**
      * Determine if an object is inside the car.
      * @param position The object to test.
@@ -231,6 +243,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * Draw a person as some SVG elements.
      * @param person The person to draw.
      * @param previousPerson The previous position used for interpolation.
+     * @param isNpc The person is an NPC, NPCs are rendered differently
      */
     drawPerson = (person: IPerson, previousPerson?: IPerson, isNpc?: boolean) => {
         const {x, y} = this.interpolateObjectPosition(person, previousPerson);
@@ -238,13 +251,6 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         // the mask property which will mask the person's body so the bottom half of the person does not appear below a wall
         let roomMask: string = "";
         let carMask: string = "";
-
-        // find which room the person is in
-        const roomIndex = this.state.rooms.findIndex(this.isInRoom(person));
-        if (roomIndex >= 0) {
-            // person is in a room, apply the room mask
-            roomMask = `url(#room-${roomIndex})`;
-        }
 
         // find which car the person is in
         const car = this.state.cars.find(this.isInCar(person));
@@ -278,7 +284,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     <g key={person.id}
                        transform={`translate(${x - 50},${y - 200})`}
                        filter={personFilter}
-                       onClick={this.selectNpc(person as INpc)}
+                       onClick={isNpc ? this.selectNpc(person as INpc) : undefined}
                     >
                         {
                             this.drawHealthBar(person)
@@ -306,10 +312,9 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     /**
      * Draw the smoke trail behind the car.
      * @param car The car with a smoke trail
-     * @param mask The mask of the car.
      * @param filter The filter of the car.
      */
-    drawCarSmokeTrail = (car: ICar, mask: string, filter: string): IDrawable[] => {
+    drawCarSmokeTrail = (car: ICar, filter: string): IDrawable[] => {
         const drawables: IDrawable[] = [];
         if (car.path) {
             const millisecondsSincePathPointStarted = (pathPoint: INpcPathPoint): number => {
@@ -326,7 +331,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                         const width = [ECarDirection.UP, ECarDirection.DOWN].includes(car.direction) ? "100" : "200";
                         const height = [ECarDirection.UP, ECarDirection.DOWN].includes(car.direction) ? "200" : "100";
                         return (
-                            <g key={`car-smoke-trail-${car.id}-${index}`} x="0" y="0" width={width} height={height} mask={mask} filter={filter}>
+                            <g key={`car-smoke-trail-${car.id}-${index}`} x="0" y="0" width={width} height={height} filter={filter}>
                                 <g key={car.id} transform={`translate(${x},${y})`}>
                                     <circle cx={0} cy={0} r={radius} fill="grey" opacity="0.3"/>
                                 </g>
@@ -346,15 +351,6 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      */
     drawCar = (car: ICar, previousCar?: ICar): IDrawable[] => {
         const {x, y} = this.interpolateObjectPosition(car, previousCar);
-
-        // the mask property which will mask the car so the bottom half of the car does not appear below a wall
-        let mask: string = "";
-        // find which room the car is in
-        const roomIndex = this.state.rooms.findIndex(this.isInRoom(car));
-        if (roomIndex >= 0) {
-            // car is in a room, apply the room mask
-            mask = `url(#room-${roomIndex})`;
-        }
 
         // highlight car white when the current person is nearby
         let filter = "";
@@ -379,7 +375,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`car-top-${car.id}`} x="0" y="0" width="100" height="200" mask={mask} filter={filter}>
+                            <g key={`car-top-${car.id}`} x="0" y="0" width="100" height="200" filter={filter}>
                                 <g key={car.id} transform={`translate(${x},${y})`}>
                                     <polygon fill="lightblue" points="-50,-100 50,-100 50,50, -50,50"/>
                                     <polygon fill="grey" stroke="black" strokeWidth={2}
@@ -398,7 +394,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`car-bottom-${car.id}`} x="0" y="0" width="100" height="200" mask={mask} filter={filter}>
+                            <g key={`car-bottom-${car.id}`} x="0" y="0" width="100" height="200" filter={filter}>
                                 <g key={car.id} transform={`translate(${x},${y})`}>
                                     <polygon fill="lightblue" opacity={0.5} points="-40,0 40,0 50,50 -50,50"/>
                                     <polygon fill="lightblue" points="-50,50 50,50 50,100 -50,100"/>
@@ -418,7 +414,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`car-health-bar-${car.id}`} x="0" y="0" width="100" height="200" mask={mask} filter={filter}>
+                            <g key={`car-health-bar-${car.id}`} x="0" y="0" width="100" height="200" filter={filter}>
                                 <g key={car.id} transform={`translate(${x},${y})`}>
                                     {
                                         component.drawHealthBar(car, {
@@ -430,7 +426,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                             </g>
                         );
                     }
-                }, ...this.drawCarSmokeTrail(car, mask, filter)];
+                }, ...this.drawCarSmokeTrail(car, filter)];
             case ECarDirection.UP:
                 return [{
                     // draw the back of the car
@@ -439,7 +435,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`car-top-${car.id}`} x="0" y="0" width="100" height="200" mask={mask} filter={filter}>
+                            <g key={`car-top-${car.id}`} x="0" y="0" width="100" height="200" filter={filter}>
                                 <g key={car.id} transform={`translate(${x},${y})`}>
                                     <polygon fill="lightblue" opacity={0.5} points="-40,-100 40,-100 50,-80 -50,-80"/>
                                     <polygon fill="lightblue" points="-50,-80 50,-80 50,50 -50,50"/>
@@ -459,7 +455,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`car-bottom-${car.id}`} x="0" y="0" width="100" height="200" mask={mask} filter={filter}>
+                            <g key={`car-bottom-${car.id}`} x="0" y="0" width="100" height="200" filter={filter}>
                                 <g key={car.id} transform={`translate(${x},${y})`}>
                                     <polygon fill="lightblue" points="-50,50 50,50 50,100 -50,100"/>
                                     <polygon fill="red" stroke="black" strokeWidth={2}
@@ -479,7 +475,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`car-health-bar-${car.id}`} x="0" y="0" width="100" height="200" mask={mask} filter={filter}>
+                            <g key={`car-health-bar-${car.id}`} x="0" y="0" width="100" height="200" filter={filter}>
                                 <g key={car.id} transform={`translate(${x},${y})`}>
                                     {
                                         component.drawHealthBar(car, {
@@ -491,7 +487,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                             </g>
                         );
                     }
-                }, ...this.drawCarSmokeTrail(car, mask, filter)];
+                }, ...this.drawCarSmokeTrail(car, filter)];
             case ECarDirection.RIGHT:
             case ECarDirection.LEFT:
                 return [{
@@ -501,7 +497,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`car-top-${car.id}`} x="0" y="0" width="200" height="100" mask={mask} filter={filter}>
+                            <g key={`car-top-${car.id}`} x="0" y="0" width="200" height="100" filter={filter}>
                                 <g key={car.id}
                                    transform={`translate(${x},${y})${car.direction === ECarDirection.RIGHT ? " scale(-1,1)" : ""}`}>
                                     <polygon fill="lightblue" opacity={0.5} points="-40,-50 -40,-20 -50,-20"/>
@@ -520,7 +516,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`car-bottom-${car.id}`} x="0" y="0" width="200" height="100" mask={mask} filter={filter}>
+                            <g key={`car-bottom-${car.id}`} x="0" y="0" width="200" height="100" filter={filter}>
                                 <g key={car.id}
                                    transform={`translate(${x},${y})${car.direction === ECarDirection.RIGHT ? " scale(-1,1)" : ""}`}>
                                     <polygon fill="lightblue" points="-100,25 100,25 100,50 -100,50"/>
@@ -539,7 +535,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`car-health-bar-${car.id}`} x="0" y="0" width="100" height="200" mask={mask} filter={filter}>
+                            <g key={`car-health-bar-${car.id}`} x="0" y="0" width="100" height="200" filter={filter}>
                                 <g key={car.id} transform={`translate(${x},${y})`}>
                                     {
                                         component.drawHealthBar(car, {
@@ -551,7 +547,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                             </g>
                         );
                     }
-                }, ...this.drawCarSmokeTrail(car, mask, filter)];
+                }, ...this.drawCarSmokeTrail(car, filter)];
         }
     };
 
@@ -1073,7 +1069,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 draw() {
                     return (
                         <g key={pond.id} transform={`translate(${x},${y})`}>
-                            <path stroke="blue" strokeWidth={2} fill="darkgrey" d="m -25 0 c 0 20 30 10 50 0 c 15 -8 10 -25 0 -20 c -12 5 -29 1 -30 0 c -18 -10 -20 0 -20 20"/>
+                            <path stroke="black" strokeWidth={2} fill="blue" d="m -50 0 c 0 40 60 20 100 0 c 30 -16 20 -50 0 -40 c -24 10 -58 2 -60 0 c -36 -20 -40 0 -40 40"/>
                         </g>
                     );
                 }
@@ -1086,7 +1082,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 draw() {
                     return (
                         <g key={pond.id} transform={`translate(${x},${y})`} onClick={() => component.harvestResource(pond)}>
-                            <path stroke="cyan" strokeWidth={2} fill="grey" d="m -25 0 c 0 20 30 10 50 0 c 15 -8 10 -25 0 -20 c -12 5 -29 1 -30 0 c -18 -10 -20 0 -20 20"/>
+                            <path stroke="black" strokeWidth={2} fill="cyan" d="m -50 0 c 0 40 60 20 100 0 c 30 -16 20 -50 0 -40 c -24 10 -58 2 -60 0 c -36 -20 -40 0 -40 40"/>
                         </g>
                     );
                 }
@@ -1116,375 +1112,83 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
-     * Handle opening the mailbox menu.
-     * @param room
+     * Map from floor type to pattern.
      */
-    handleMailbox = (room: IRoom) => () => {
-        const lot = this.state.lots.find(l => l.id === room.lotId);
-        if (lot) {
-            this.setState({
-                lot
-            });
-        }
+    floorPatterns: {[key: string]: string} = {
+        [EFloorPattern.DIRT]: "url(#dirt)"
     };
-
+    defaultFloorPattern: string = "url(#grass)";
     /**
-     * Draw walls around the room.
-     * @param drawable The room to draw walls for.
-     * @param index The index of the room.
+     * Draw a floor tile.
+     * @param floor The floor to draw.
      */
-    drawRoomWalls = (drawable: IObject, index: number) => {
-        const {x, y} = drawable;
+    drawFloor = (floor: IFloor) => {
+        const {x, y} = floor;
         const drawables = [] as IDrawable[];
 
-        // top wall
-        switch ((drawable as IRoom).doors.top) {
-            case ERoomWallType.DOOR: {
-                // there is a top door, draw a wall with a top door
+        const fill = this.floorPatterns[floor.floorPattern] || this.defaultFloorPattern;
+        drawables.push({
+            x,
+            y,
+            type: EDrawableType.OBJECT,
+            draw(this: IDrawable) {
+                return (
+                    <g key={`floor-${floor.id}`} transform={`translate(${x},${y})`}>
+                        <rect x={0} y={0} width={200} height={200} fill={fill}/>
+                    </g>
+                );
+            }
+        });
+
+        return drawables;
+    };
+
+    wallPatterns: {[key: string]: string} = {
+        [EWallPattern.WATTLE]: "url(#wattle)"
+    };
+    defaultWallPattern: string = "url(#wattle)";
+    /**
+     * Draw a wall tile.
+     * @param wall The wall to draw.
+     */
+    drawWall = (wall: IWall) => {
+        const {x, y} = wall;
+        const drawables = [] as IDrawable[];
+
+        const fill = this.wallPatterns[wall.wallPattern] || this.defaultWallPattern;
+        switch (wall.direction) {
+            case EWallDirection.HORIZONTAL: {
                 drawables.push({
                     x,
                     y,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`room-${index}-wall-top-left`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,0 200,0 200,5 0,5"/>
-                            </g>
-                        );
-                    }
-                }, {
-                    x,
-                    y,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-top-right`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="300,0 500,0 500,5 300,5"/>
-                            </g>
-                        );
-                    }
-                }, {
-                    x,
-                    y,
-                    type: EDrawableType.WALL,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-top-wall`} transform={`translate(${x},${y})`}>
-                                <polygon fill="tan" points="0,-200 200,-200 200,0 0,0"/>
-                                <polygon fill="tan" points="300,-200 500,-200 500,0 300,0"/>
+                            <g key={`wall-${wall.id}`} transform={`translate(${x},${y})`}>
+                                <rect x="0" y={-200} width={200} height={200} fill={fill}/>
                             </g>
                         );
                     }
                 });
                 break;
             }
-            case ERoomWallType.ENTRANCE: {
-                // draw an entrance at the top of the building
+            case EWallDirection.VERTICAL: {
                 drawables.push({
                     x,
                     y,
                     type: EDrawableType.OBJECT,
                     draw(this: IDrawable) {
                         return (
-                            <g key={`room-${index}-wall-top-left`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,0 200,0 200,5 0,5"/>
-                            </g>
-                        );
-                    }
-                }, {
-                    x,
-                    y,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-top-right`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="300,0 500,0 500,5 300,5"/>
-                            </g>
-                        );
-                    }
-                }, {
-                    x,
-                    y,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-top-door`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown"
-                                         points="195,0 195,-205 305,-205 305,0 300,0 300,-200 200,-200 200,0"/>
+                            <g key={`floor-${wall.id}`} transform={`translate(${x},${y})`}>
+                                <rect x="0" y="-8" width={16} height={200} fill={fill}/>
                             </g>
                         );
                     }
                 });
                 break;
-            }
-            default:
-            case ERoomWallType.WALL: {
-                // there is no top door, draw a plain wall
-                drawables.push({
-                    x,
-                    y,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-top`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,0 500,0 500,5 0,5"/>
-                            </g>
-                        );
-                    }
-                }, {
-                    x,
-                    y,
-                    type: EDrawableType.WALL,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-top-wall`} transform={`translate(${x},${y})`}>
-                                <polygon fill="tan" points="0,-200 500,-200 500,0 0,0"/>
-                            </g>
-                        );
-                    }
-                });
-                break;
-            }
-            case ERoomWallType.OPEN: {
-                // do nothing
             }
         }
 
-        // draw bottom wall
-        switch ((drawable as IRoom).doors.bottom) {
-            case ERoomWallType.DOOR: {
-                // there is a bottom door, draw a wall with a bottom door
-                drawables.push({
-                    x,
-                    y: y + 300,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-bottom-left`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,295 200,295 200,300 0,300"/>
-                            </g>
-                        );
-                    }
-                }, {
-                    x,
-                    y: y + 300,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-bottom-right`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="300,295 500,295 500,300 300,300"/>
-                            </g>
-                        );
-                    }
-                }, {
-                    x,
-                    y: y + 300,
-                    type: EDrawableType.WALL,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-bottom-wall`} transform={`translate(${x},${y})`}>
-                                <polygon fill="tan" points="0,100 200,100 200,300 0,300"/>
-                                <polygon fill="tan" points="300,100 500,100 500,300 300,300"/>
-                            </g>
-                        );
-                    }
-                });
-                break;
-            }
-            case ERoomWallType.ENTRANCE: {
-                // there is an entrance at the bottom of the room
-                drawables.push({
-                    x,
-                    y: y + 300,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-bottom-left`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,295 200,295 200,300 0,300"/>
-                            </g>
-                        );
-                    }
-                }, {
-                    x,
-                    y: y + 300,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-bottom-right`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="300,295 500,295 500,300 300,300"/>
-                            </g>
-                        );
-                    }
-                }, {
-                    x,
-                    y: y + 300,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-bottom-door`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown"
-                                         points="195,300 195,95 305,95 305,300 300,300 300,100 200,100 200,300"/>
-                            </g>
-                        );
-                    }
-                });
-                break;
-            }
-            default:
-            case ERoomWallType.WALL: {
-                // there is an entrance at the bottom of the room
-                drawables.push({
-                    x,
-                    y: y + 300,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-bottom`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,295 500,295 500,300 0,300"/>
-                            </g>
-                        );
-                    }
-                }, {
-                    x,
-                    y: y + 300,
-                    type: EDrawableType.WALL,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-bottom-wall`} transform={`translate(${x},${y})`}>
-                                <polygon fill="tan" points="0,100 500,100 500,300 0,300"/>
-                            </g>
-                        );
-                    }
-                });
-                break;
-            }
-            case ERoomWallType.OPEN: {
-                // do nothing
-            }
-        }
-
-        // draw left wall
-        switch ((drawable as IRoom).doors.left) {
-            case ERoomWallType.ENTRANCE:
-            case ERoomWallType.DOOR: {
-                // there is a left door, draw a wall with a left door
-                drawables.push({
-                    x,
-                    y,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-left-top`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,0 5,0 5,100 0,100"/>
-                            </g>
-                        );
-                    }
-                }, {
-                    x,
-                    y: y + 300,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-left-bottom`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,200 5,200 5,300 0,300"/>
-                            </g>
-                        );
-                    }
-                });
-                break;
-            }
-            default:
-            case ERoomWallType.WALL: {
-                // there is no left door, draw a plain wall
-                drawables.push({
-                    x,
-                    y: y + 300,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-left`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="0,0 5,0 5,300 0,300"/>
-                            </g>
-                        );
-                    }
-                });
-                break;
-            }
-            case ERoomWallType.OPEN: {
-                // do nothing
-            }
-        }
-
-        // draw right wall
-        switch ((drawable as IRoom).doors.right) {
-            case ERoomWallType.ENTRANCE:
-            case ERoomWallType.DOOR: {
-                // there is a right wall, draw a door with a right wall
-                drawables.push({
-                    x,
-                    y,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-right-top`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="495,0 500,0 500,100 495,100"/>
-                            </g>
-                        );
-                    }
-                }, {
-                    x,
-                    y: y + 300,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-right-bottom`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="495,200 500,200 500,300 495,300"/>
-                            </g>
-                        );
-                    }
-                });
-                break;
-            }
-            default:
-            case ERoomWallType.WALL: {
-                // there is no right wall, draw a plain wall
-                drawables.push({
-                    x,
-                    y: y + 300,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`room-${index}-wall-right`} transform={`translate(${x},${y})`}>
-                                <polygon fill="brown" points="495,0 500,0 500,300 495,300"/>
-                            </g>
-                        );
-                    }
-                });
-                break;
-            }
-            case ERoomWallType.OPEN: {
-                // do nothing
-            }
-        }
-
-        // draw mailbox in entrances
-        if ((drawable as IRoom).type === ERoomType.ENTRANCE) {
-            const component = this;
-            drawables.push({
-                x: x + 200,
-                y: y + 150,
-                type: EDrawableType.OBJECT,
-                draw(this: IDrawable) {
-                    return (
-                        <g key={`room-${index}-mailbox`} transform={`translate(${x + 200},${y + 150})`} onClick={component.handleMailbox(drawable as IRoom)}>
-                            <polygon fill="brown" points="-5,100 -5,30 5,30 5,100"/>
-                            <polygon fill="blue" points="-20,30 -20,0 20,0 20,30"/>
-                            <polygon fill="blue" stroke="black" strokeWidth={2} points="-15,30 -15,10 15,10 15,30"/>
-                        </g>
-                    );
-                }
-            });
-        }
         return drawables;
     };
 
@@ -1785,13 +1489,23 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 ];
             }, []),
 
-            // for each room
-            ...this.state.rooms.filter(this.isNearWorldView(worldOffset)).reduce((arr: IDrawable[], room: IRoom, index: number): IDrawable[] => {
+            // for each floor
+            ...this.state.floors.filter(this.isNearWorldView(worldOffset)).reduce((arr: IDrawable[], floor: IFloor): IDrawable[] => {
                 return [
                     ...arr,
 
-                    // add all walls
-                    ...component.drawRoomWalls(room, index)
+                    // add all floors
+                    ...component.drawFloor(floor)
+                ];
+            }, []),
+
+            // for each wall
+            ...this.state.walls.filter(this.isNearWorldView(worldOffset)).reduce((arr: IDrawable[], wall: IWall): IDrawable[] => {
+                return [
+                    ...arr,
+
+                    // add all floors
+                    ...component.drawWall(wall)
                 ];
             }, []),
 
@@ -1863,53 +1577,6 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     randomPersonId() {
         return new Array(10).fill(0).map(() => Number(Math.floor(Math.random() * 36)).toString(36)).join("");
     }
-
-    /**
-     * Generate the SVG DEFs for room masks.
-     */
-    generateRoomMasks = () => {
-        return this.state.rooms.map((room: IRoom, index: number) => {
-            const {x, y} = room;
-            return (
-                <mask key={`room-${index}`} id={`room-${index}`} x="0" y="0" width="500" height="300">
-                    <rect fill="white" x={x + 5} y={y - 200} width={490} height={495}/>
-                    {
-                        [ERoomWallType.DOOR, ERoomWallType.ENTRANCE].includes(room.doors.left) ?
-                            <>
-                                <rect fill="white" x={x - 5} y={y - 200} width={10} height={400}/>
-                                <rect fill="white" x={x - 105} y={y - 200} width={100} height={595}/>
-                            </> :
-                            null
-                    }
-                    {
-                        [ERoomWallType.DOOR, ERoomWallType.ENTRANCE].includes(room.doors.right) ?
-                            <>
-                                <rect fill="white" x={x + 495} y={y - 200} width={10} height={400}/>
-                                <rect fill="white" x={x + 505} y={y - 200} width={100} height={595}/>
-                            </> :
-                            null
-                    }
-                    {
-                        [ERoomWallType.DOOR, ERoomWallType.ENTRANCE].includes(room.doors.bottom) ?
-                            <rect fill="white" x={x + 200} y={y + 295} width={100} height={205}/> :
-                            room.doors.bottom === ERoomWallType.OPEN ?
-                                <rect fill="white" x={x} y={y + 295} width={500} height={205}/> :
-                                null
-                    }
-                    {
-                        room.doors.left === ERoomWallType.OPEN ? (
-                            <rect fill="white" x={x - 200} y={y - 200} width={205} height={700}/>
-                        ) : null
-                    }
-                    {
-                        room.doors.right === ERoomWallType.OPEN ? (
-                            <rect fill="white" x={x + 495} y={y - 200} width={205} height={700}/>
-                        ) : null
-                    }
-                </mask>
-            );
-        })
-    };
 
     /**
      * Generate the SVG DEFs for car masks.
