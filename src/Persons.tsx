@@ -37,6 +37,7 @@ import {
     EWallDirection,
     EWallPattern,
     IFloor,
+    IHouse,
     IPersonsDrawablesProps,
     IPersonsDrawablesState,
     IWall,
@@ -83,10 +84,6 @@ interface IPersonsState extends IPersonsDrawablesState {
      * If the inventory screen should be shown.
      */
     showInventory: boolean;
-    /**
-     * If the construction screen should be shown.
-     */
-    showConstruction: boolean;
 }
 
 /**
@@ -188,6 +185,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         },
         persons: [] as IPerson[],
         npcs: [] as INpc[],
+        houses: [] as IHouse[],
         walls: [] as IWall[],
         floors: [] as IFloor[],
         cars: [] as ICar[],
@@ -1529,11 +1527,11 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         // calculate a list of tiles around the world view, it should cover the world view
         const tilePositions = [] as IObject[];
         // for the x axis, go from most left to most right tile
-        const widthRange = Math.ceil(this.state.width / tileWidth / 2);
-        const heightRange = Math.ceil(this.state.height / tileHeight / 2);
-        for (let i = -widthRange; i <= widthRange + 1; i++) {
+        const widthRange = Math.ceil(this.state.width / tileWidth);
+        const heightRange = Math.ceil(this.state.height / tileHeight);
+        for (let i = -1; i <= widthRange; i++) {
             // for the y axis, go from most top to most bottom tile
-            for (let j = -heightRange; j <= heightRange + 1; j++) {
+            for (let j = -1; j <= heightRange; j++) {
                 // add tile
                 tilePositions.push({
                     x: (tilePosition.x + i) * tileWidth,
@@ -1859,77 +1857,171 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         this.setState({showConstruction: !this.state.showConstruction});
     };
 
-    /**
-     * Construct a building at a location.
-     */
-    constructAtLocation = (location: IObject) => {
-        let floors = this.state.floors;
-        let walls = this.state.walls;
-        if (floors.some(floor => floor.x === location.x && floor.y === location.y)) {
-            // already built, cancel
-            alert("Already built here");
-        } else {
-            // find neighboring walls, must remove neighboring walls.
-            const neighborWalls = walls.filter(wall => {
-                const isWestWall = wall.direction === EWallDirection.VERTICAL && wall.x === location.x && wall.y === location.y;
-                const isEastWall = wall.direction === EWallDirection.VERTICAL && wall.x === location.x + 200 && wall.y === location.y;
-                const isNorthWall = wall.direction === EWallDirection.HORIZONTAL && wall.x === location.x && wall.y === location.y;
-                const isSouthWall = wall.direction === EWallDirection.HORIZONTAL && wall.x === location.x && wall.y === location.y + 200;
-                return isWestWall || isEastWall || isNorthWall || isSouthWall;
-            });
-            walls = walls.filter(wall => !neighborWalls.some(w => w.id === wall.id));
+    createNewWall = (l: IObject, direction: EWallDirection): IWall => ({
+        id: `wall-${direction}(${l.x},${l.y})`,
+        x: l.x,
+        y: l.y,
+        wallPattern: EWallPattern.WATTLE,
+        direction,
+        objectType: ENetworkObjectType.POND,
+        lastUpdate: new Date().toISOString(),
+        grabbedByPersonId: null,
+        grabbedByNpcId: null,
+        isInInventory: false,
+        health: {
+            max: 1,
+            rate: 0,
+            value: 1
+        },
+        amount: 1
+    });
+
+    checkNeighboringFloorTiles = (floors: IFloor[], location: IObject, removeTile: boolean): {
+        wallsToAdd: IWall[],
+        neighborHouseIds: string[]
+    } => {
+        // determine neighboring tiles
+        const westNeighbors = floors.filter(floor => floor.x === location.x - 200 && floor.y === location.y);
+        const eastNeighbors = floors.filter(floor => floor.x === location.x + 200 && floor.y === location.y);
+        const northNeighbors = floors.filter(floor => floor.x === location.x && floor.y === location.y - 200);
+        const southNeighbors = floors.filter(floor => floor.x === location.x && floor.y === location.y + 200);
+
+        // determine which tile is nearby, changing which walls are added
+        const thereIsWestNeighbor = westNeighbors.length > 0;
+        const thereIsEastNeighbor = eastNeighbors.length > 0;
+        const thereIsNorthNeighbor = northNeighbors.length > 0;
+        const thereIsSouthNeighbor = southNeighbors.length > 0;
+
+        // get neighboring house ids, which will change how construction behaves
+        const neighborHouseIds = Array.from(
+            new Set([
+                ...westNeighbors,
+                ...eastNeighbors,
+                ...northNeighbors,
+                ...southNeighbors
+            ].map(floor => floor.houseId))
+        );
+
+        // determine walls to add
+        const wallsToAdd: IWall[] = [];
+        if (thereIsWestNeighbor === removeTile) {
+            // add west wall
+            wallsToAdd.push(this.createNewWall({
+                x: location.x,
+                y: location.y
+            }, EWallDirection.VERTICAL));
+        }
+        if (thereIsEastNeighbor === removeTile) {
+            // add east wall
+            wallsToAdd.push(this.createNewWall({
+                x: location.x + 200,
+                y: location.y
+            }, EWallDirection.VERTICAL));
+        }
+        if (thereIsNorthNeighbor === removeTile) {
+            // add north wall
+            wallsToAdd.push(this.createNewWall({
+                x: location.x,
+                y: location.y
+            }, EWallDirection.HORIZONTAL));
+        }
+        if (thereIsSouthNeighbor === removeTile) {
+            // add south wall
+            wallsToAdd.push(this.createNewWall({
+                x: location.x,
+                y: location.y + 200
+            }, EWallDirection.HORIZONTAL));
+        }
+        return {
+            wallsToAdd,
+            neighborHouseIds
+        };
+    };
+
+    constructBuilding = ({
+        location,
+        houses,
+        floors,
+        walls
+    }: {
+        location: IObject,
+        houses: IHouse[],
+        floors: IFloor[],
+        walls: IWall[]
+    }) => {
+        // determine things to remove
+        let housesToRemove: IHouse[];
+        let floorsToRemove: IFloor[];
+
+        // find neighboring walls, must remove neighboring walls.
+        const wallsToRemove: IWall[] = walls.filter(wall => {
+            const isWestWall = wall.direction === EWallDirection.VERTICAL && wall.x === location.x && wall.y === location.y;
+            const isEastWall = wall.direction === EWallDirection.VERTICAL && wall.x === location.x + 200 && wall.y === location.y;
+            const isNorthWall = wall.direction === EWallDirection.HORIZONTAL && wall.x === location.x && wall.y === location.y;
+            const isSouthWall = wall.direction === EWallDirection.HORIZONTAL && wall.x === location.x && wall.y === location.y + 200;
+            return isWestWall || isEastWall || isNorthWall || isSouthWall;
+        });
+
+        // determine things to add
+        let floorsToAdd: IFloor[];
+        let housesToAdd: IHouse[];
+        let wallsToAdd: IWall[];
+
+        // if location exists, remove floor, else add floor
+        const matchingFloorAtLocation = floors.find(floor => floor.x === location.x && floor.y === location.y);
+        if (matchingFloorAtLocation) {
+            // remove tile
+            // house id
+            const houseId = matchingFloorAtLocation.houseId;
+            const houseFloors = floors.filter(floor => floor.houseId === houseId);
 
             // determine walls to add
-            const wallsToAdd: IWall[] = [];
-            const createNewWall = (l: IObject, direction: EWallDirection): IWall => ({
-                id: `wall-${direction}(${l.x},${l.y})`,
-                x: l.x,
-                y: l.y,
-                wallPattern: EWallPattern.WATTLE,
-                direction,
-                objectType: ENetworkObjectType.POND,
-                lastUpdate: new Date().toISOString(),
-                grabbedByPersonId: null,
-                grabbedByNpcId: null,
-                isInInventory: false,
-                health: {
-                    max: 1,
-                    rate: 0,
-                    value: 1
-                },
-                amount: 1
-            });
-            if (!floors.some(floor => floor.x === location.x - 200 && floor.y === location.y)) {
-                // add west wall
-                wallsToAdd.push(createNewWall({
+            const result = this.checkNeighboringFloorTiles(floors, location, true);
+
+            housesToAdd = [];
+            wallsToAdd = result.wallsToAdd;
+            floorsToAdd = [];
+            housesToRemove = houseFloors.length <= 1 ? houses.filter(house => house.id === houseId) : [];
+            floorsToRemove = floors.filter(floor => floor.x === location.x && floor.y === location.y);
+        } else {
+            // add tile
+            // determine walls to add
+            const result = this.checkNeighboringFloorTiles(floors, location, false);
+            wallsToAdd = result.wallsToAdd;
+            const nearbyHouseIds = result.neighborHouseIds;
+
+            let houseId: string;
+            housesToRemove = [];
+            if (nearbyHouseIds.length === 0) {
+                houseId = new Array(10).fill(0).map(() => Math.floor(Math.random() * 36).toString(36)).join("");
+                const newHouse: IHouse = {
+                    id: houseId,
                     x: location.x,
-                    y: location.y
-                }, EWallDirection.VERTICAL));
-            }
-            if (!floors.some(floor => floor.x === location.x + 200 && floor.y === location.y)) {
-                // add east wall
-                wallsToAdd.push(createNewWall({
-                    x: location.x + 200,
-                    y: location.y
-                }, EWallDirection.VERTICAL));
-            }
-            if (!floors.some(floor => floor.x === location.x && floor.y === location.y - 200)) {
-                // add north wall
-                wallsToAdd.push(createNewWall({
-                    x: location.x,
-                    y: location.y
-                }, EWallDirection.HORIZONTAL));
-            }
-            if (!floors.some(floor => floor.x === location.x && floor.y === location.y + 200)) {
-                // add south wall
-                wallsToAdd.push(createNewWall({
-                    x: location.x,
-                    y: location.y + 200
-                }, EWallDirection.HORIZONTAL));
+                    y: location.y,
+                    objectType: ENetworkObjectType.POND,
+                    grabbedByNpcId: null,
+                    grabbedByPersonId: null,
+                    isInInventory: false,
+                    health: {
+                        rate: 0,
+                        max: 1,
+                        value: 1
+                    },
+                    lastUpdate: new Date().toISOString(),
+                    amount: 1,
+                    npcId: new Array(10).fill(0).map(() => Math.floor(Math.random() * 36).toString(36)).join("")
+                };
+                housesToAdd = [newHouse];
+            } else if (nearbyHouseIds.length === 1) {
+                houseId = nearbyHouseIds[0];
+                housesToAdd = [];
+            } else {
+                throw new Error("Cannot connect two separate buildings");
             }
 
             const newFloor: IFloor = {
                 id: `floor(${location.x},${location.y})`,
+                houseId,
                 x: location.x,
                 y: location.y,
                 floorPattern: EFloorPattern.DIRT,
@@ -1945,15 +2037,139 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 },
                 amount: 1
             };
+            floorsToAdd = [newFloor];
+            floorsToRemove = [];
 
-            floors = [...floors, newFloor];
-            walls = [...walls, ...wallsToAdd];
-
-            this.setState({
-                floors,
-                walls
-            });
+            // check building constraints, largest building is 3 by 3
+            const afterConstructionFloors = [...floors, ...floorsToAdd];
+            const houseFloors = afterConstructionFloors.filter(floor => floor.houseId === houseId);
+            const minX = houseFloors.reduce((acc: number, floor: IFloor): number => Math.min(acc, floor.x), Infinity);
+            const maxX = houseFloors.reduce((acc: number, floor: IFloor): number => Math.max(acc, floor.x), -Infinity);
+            const minY = houseFloors.reduce((acc: number, floor: IFloor): number => Math.min(acc, floor.y), Infinity);
+            const maxY = houseFloors.reduce((acc: number, floor: IFloor): number => Math.max(acc, floor.y), -Infinity);
+            if (maxX - minX >= 3 * 200) {
+                throw new Error("House is too long east to west");
+            }
+            if (maxY - minY >= 3 * 200) {
+                throw new Error("House is too long north to south");
+            }
         }
+
+        return {
+            housesToAdd,
+            floorsToAdd,
+            wallsToAdd,
+            housesToRemove,
+            floorsToRemove,
+            wallsToRemove
+        };
+    };
+
+    getBuildWallMaterials = (wall: IWall): ENetworkObjectType[] => {
+        if (wall.wallPattern === EWallPattern.WATTLE) {
+            return [
+                ENetworkObjectType.WATTLE_WALL
+            ];
+        } else {
+            return [];
+        }
+    };
+
+    getDestroyWallMaterials = (wall: IWall): ENetworkObjectType[] => {
+        if (wall.wallPattern === EWallPattern.WATTLE) {
+            return [
+                ENetworkObjectType.WATTLE_WALL
+            ];
+        } else {
+            return [];
+        }
+    };
+
+    /**
+     * Determine the total materials required for a construction change.
+     * @param wallsToAdd Adding walls will require materials.
+     * @param wallsToRemove Removing walls will return some materials.
+     * @param floorsToAdd Adding floors will require materials.
+     * @param floorsToRemove Removing floors will return some materials.
+     */
+    determineConstructionMaterialsDifference = ({
+        wallsToAdd,
+        wallsToRemove,
+        floorsToAdd,
+        floorsToRemove
+    }: {
+        wallsToAdd: IWall[],
+        wallsToRemove: IWall[],
+        floorsToAdd: IFloor[],
+        floorsToRemove: IFloor[]
+    }): {
+        itemsToAdd: INetworkObject[],
+        itemsToRemove: INetworkObject[]
+    } => {
+        const itemTypesToAdd: ENetworkObjectType[] = [];
+        const itemTypesToRemove: ENetworkObjectType[] = [];
+
+        for (const wall of wallsToAdd) {
+            const requiredItems = this.getBuildWallMaterials(wall);
+            itemTypesToAdd.push(...requiredItems);
+        }
+        for (const wall of wallsToRemove) {
+            const returnedItems = this.getDestroyWallMaterials(wall);
+            itemTypesToRemove.push(...returnedItems);
+        }
+
+        const itemsToAdd: INetworkObject[] = [];
+        const itemsToRemove: INetworkObject[] = [];
+        return {
+            itemsToAdd,
+            itemsToRemove
+        };
+    };
+
+    /**
+     * Construct a building at a location.
+     */
+    constructAtLocation = (location: IObject) => {
+        const {
+            wallsToAdd,
+            wallsToRemove,
+            floorsToAdd,
+            floorsToRemove,
+            housesToAdd,
+            housesToRemove
+        } = this.constructBuilding({
+            location,
+            houses: this.state.houses,
+            floors: this.state.floors,
+            walls: this.state.walls
+        });
+
+        // determine construction material difference
+        this.determineConstructionMaterialsDifference({
+            wallsToAdd,
+            wallsToRemove,
+            floorsToAdd,
+            floorsToRemove
+        });
+
+        // update local state with the changes
+        const houses = [
+            ...this.state.houses.filter(house => !housesToRemove.some(h => h.id === house.id)),
+            ...housesToAdd
+        ];
+        const walls = [
+            ...this.state.walls.filter(wall => !wallsToRemove.some(w => w.id === wall.id)),
+            ...wallsToAdd
+        ];
+        const floors = [
+            ...this.state.floors.filter(floor => !floorsToRemove.some(f => f.id === floor.id)),
+            ...floorsToAdd
+        ];
+        this.setState({
+            houses,
+            walls,
+            floors
+        });
     };
 
     render() {

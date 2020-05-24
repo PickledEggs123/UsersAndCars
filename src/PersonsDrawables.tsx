@@ -27,25 +27,58 @@ interface ITreeLeaf extends IObject {
     id: string;
 }
 
+/**
+ * Houses provide a location for NPCs to store things, work from, and sleep.
+ */
+export interface IHouse extends INetworkObject {
+    /**
+     * The npc id of the NPC that lives in the house.
+     */
+    npcId: string;
+}
+
+/**
+ * The direction of the wall.
+ */
 export enum EWallDirection {
     HORIZONTAL = "HORIZONTAL",
     VERTICAL = "VERTICAL"
 }
 
+/**
+ * The pattern of the wall.
+ */
 export enum EWallPattern {
     WATTLE = "WATTLE"
 }
+
+/**
+ * A wall instance which represent a wall tile of a house.
+ */
 export interface IWall extends INetworkObject {
     direction: EWallDirection;
     wallPattern: EWallPattern;
 }
 
+/**
+ * Patterns for the floor.
+ */
 export enum EFloorPattern {
     DIRT = "DIRT"
 }
 
+/**
+ * A floor tile for a house.
+ */
 export interface IFloor extends INetworkObject {
+    /**
+     * The pattern of the floor.
+     */
     floorPattern: EFloorPattern;
+    /**
+     * The house id that the floor is related to.
+     */
+    houseId: string;
 }
 
 /**
@@ -82,6 +115,10 @@ export interface IPersonsDrawablesState {
      * A cached list of nearby objects in the area.
      */
     nearbyObjects: INetworkObject[];
+    /**
+     * A list of houses.
+     */
+    houses: IHouse[];
     /**
      * A list of walls.
      */
@@ -153,6 +190,10 @@ export interface IPersonsDrawablesState {
      * A lot that is being viewed.
      */
     lot: ILot | null;
+    /**
+     * If the construction screen should be shown.
+     */
+    showConstruction: boolean;
 }
 
 /**
@@ -1112,6 +1153,10 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
+     * Function to handle constructing, (building or destroying building parts).
+     */
+    abstract constructAtLocation(location: IObject): void;
+    /**
      * Map from floor type to pattern.
      */
     floorPatterns: {[key: string]: string} = {
@@ -1127,6 +1172,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         const drawables = [] as IDrawable[];
 
         const fill = this.floorPatterns[floor.floorPattern] || this.defaultFloorPattern;
+        const component = this;
         drawables.push({
             x,
             y,
@@ -1135,6 +1181,11 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 return (
                     <g key={`floor-${floor.id}`} transform={`translate(${x},${y})`}>
                         <rect x={0} y={0} width={200} height={200} fill={fill}/>
+                        {
+                            component.state.showConstruction ?
+                                <rect x="20" y="20" width={160} height={160} fill="grey" fillOpacity={0.3} onClick={() => component.constructAtLocation(floor)}/> :
+                                null
+                        }
                     </g>
                 );
             }
@@ -1155,37 +1206,43 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         const {x, y} = wall;
         const drawables = [] as IDrawable[];
 
-        const fill = this.wallPatterns[wall.wallPattern] || this.defaultWallPattern;
-        switch (wall.direction) {
-            case EWallDirection.HORIZONTAL: {
-                drawables.push({
-                    x,
-                    y,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`wall-${wall.id}`} transform={`translate(${x},${y})`}>
-                                <rect x="0" y={-200} width={200} height={200} fill={fill}/>
-                            </g>
-                        );
-                    }
-                });
-                break;
-            }
-            case EWallDirection.VERTICAL: {
-                drawables.push({
-                    x,
-                    y,
-                    type: EDrawableType.OBJECT,
-                    draw(this: IDrawable) {
-                        return (
-                            <g key={`floor-${wall.id}`} transform={`translate(${x},${y})`}>
-                                <rect x="0" y="-8" width={16} height={200} fill={fill}/>
-                            </g>
-                        );
-                    }
-                });
-                break;
+        // do not draw wall if current person is nearby
+        const currentPerson = this.getCurrentPerson();
+        const personIsNearby = currentPerson && currentPerson.x >= wall.x && currentPerson.x <= wall.x + 200 &&
+            currentPerson.y <= wall.y && currentPerson.y >= wall.y - 200;
+        if (!personIsNearby && !this.state.showConstruction) {
+            const fill = this.wallPatterns[wall.wallPattern] || this.defaultWallPattern;
+            switch (wall.direction) {
+                case EWallDirection.HORIZONTAL: {
+                    drawables.push({
+                        x,
+                        y,
+                        type: EDrawableType.OBJECT,
+                        draw(this: IDrawable) {
+                            return (
+                                <g key={`wall-${wall.id}`} transform={`translate(${x},${y})`}>
+                                    <rect x="0" y={-200} width={200} height={200} fill={fill}/>
+                                </g>
+                            );
+                        }
+                    });
+                    break;
+                }
+                case EWallDirection.VERTICAL: {
+                    drawables.push({
+                        x,
+                        y,
+                        type: EDrawableType.OBJECT,
+                        draw(this: IDrawable) {
+                            return (
+                                <g key={`floor-${wall.id}`} transform={`translate(${x},${y})`}>
+                                    <rect x="0" y="-8" width={16} height={200} fill={fill}/>
+                                </g>
+                            );
+                        }
+                    });
+                    break;
+                }
             }
         }
 
