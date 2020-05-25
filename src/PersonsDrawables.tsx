@@ -2,7 +2,7 @@ import {
     ECarDirection,
     EDrawableType, EFloorPattern,
     ENetworkObjectType,
-    ERoadDirection, EWallDirection, EWallPattern,
+    ERoadDirection, EWallDirection, EWallPattern, getMaxStackSize,
     ICar,
     IDrawable, IFloor, IHouse,
     ILot,
@@ -659,6 +659,23 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
+     * Draw the amount tag on the item to show how many items are in the stack.
+     * @param drawable The drawable item with amount information.
+     */
+    drawAmountTag = (drawable: INetworkObject): JSX.Element | null => {
+        if (getMaxStackSize(drawable.objectType) > 1) {
+            return (
+                <g opacity={0.6}>
+                    <circle cx={30} cy={-5} r={10} fill="white"/>
+                    <text x={25} y={0} fontSize={14}>{drawable.amount}</text>
+                </g>
+            );
+        } else {
+            return null;
+        }
+    };
+
+    /**
      * Draw a stick on the ground.
      * @param drawable The object to draw.
      * @param filter The filter to apply to the object.
@@ -670,7 +687,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         return (
             <g key={`stick-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
                 <path fill="tan" stroke="black" strokeWidth={2} d="M -25 0 l 50 0 l 0 -5 l -50 0 z "/>
-                <text x={-25} y={-30} fontSize={14}>{drawable.amount}</text>
+                {this.drawAmountTag(drawable)}
             </g>
         )
     };
@@ -784,6 +801,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         return (
             <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
                 <rect x={-28} y={-56} width={56} height={56} fill="url(#wattle)"/>
+                {this.drawAmountTag(drawable)}
             </g>
         )
     };

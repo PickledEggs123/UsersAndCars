@@ -2,7 +2,7 @@ import React from 'react';
 import './App.scss';
 import axios from "axios";
 import {
-    ECarDirection,
+    ECarDirection, getCurrentTDayNightTime,
     IApiLotsBuyPost,
     IApiLotsSellPost,
     IApiPersonsGetResponse,
@@ -28,7 +28,7 @@ import {
     IResource,
     IRoad,
     IVendorInventoryItem, IWall,
-    listOfRecipes
+    listOfRecipes, TDayNightTimeHour
 } from "persons-game-common/lib/types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
 import {
@@ -2016,6 +2016,15 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             worldFilter = "url(#blur)";
         }
 
+        const timeOfDay = getCurrentTDayNightTime();
+        const timeOfDayScalar = timeOfDay / TDayNightTimeHour / 24;
+        const timeOfDayHour = Math.floor(timeOfDayScalar * 24 % 12);
+        const timeOfDayMinute = Math.floor(timeOfDayScalar * 24 * 60 % 60);
+        const timeOfDaySecond = Math.floor(timeOfDayScalar * 24 * 60 * 60 % 60);
+        const timeOfDayAmPm = timeOfDayScalar < 0.5 ? "am" : "pm";
+        const day: boolean = timeOfDayScalar >= 0.25 && timeOfDayScalar < 0.75;
+        const sunMoonScale = (timeOfDayScalar + 0.25) % 0.5;
+
         return (
             <div className="persons">
                 <h1>Multiplayer Room</h1>
@@ -2126,7 +2135,23 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                             })
                         }
                     </g>
-                    <text x="20" y="20">Position: {worldOffset.x} {worldOffset.y}</text>
+                    <g key="dayNight" style={{pointerEvents: "none"}}>
+                        {
+                            day ? (
+                                <>
+                                    <rect x={0} y={0} width={this.state.width} height={this.state.height} fill="blue" opacity={0.3 * Math.abs(sunMoonScale - 0.5)}/>
+                                    <rect x={0} y={0} width={this.state.width} height={this.state.height} fill="goldenrod" opacity={0.3 * (1 - Math.abs(sunMoonScale - 0.5))}/>
+                                </>
+                            ) : (
+                                <>
+                                    <rect x={0} y={0} width={this.state.width} height={this.state.height} fill="goldenrod" opacity={0.3 * Math.abs(sunMoonScale - 0.5)}/>
+                                    <rect x={0} y={0} width={this.state.width} height={this.state.height} fill="blue" opacity={0.3 * (1 - Math.abs(sunMoonScale - 0.5))}/>
+                                </>
+                            )
+                        }
+                    </g>
+                    <text x="20" y="20">Position: {worldOffset.x + (this.state.width / 2)} {worldOffset.y + (this.state.height / 2)}</text>
+                    <text x="20" y="40">Time: {timeOfDayHour}:{timeOfDayMinute}:{timeOfDaySecond} {timeOfDayAmPm}</text>
                     {
                         this.showWalkingTutorial() ? (
                             <g>
@@ -2252,7 +2277,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                                     <rect x={50 + 80 * columnIndex} y={50 + 80 * rowIndex} width={60} height={60} fill="tan" opacity={0.3}/>
                                                     {
                                                         inventoryRender ? (
-                                                            <g transform={`translate(${50 + 80 * columnIndex + 40},${50 + 80 * rowIndex + 80})`} onClick={inventoryObject ? () => this.dropObject(inventoryObject) : undefined}>
+                                                            <g transform={`translate(${50 + 80 * columnIndex + 30},${50 + 80 * rowIndex + 60})`} onClick={inventoryObject ? () => this.dropObject(inventoryObject) : undefined}>
                                                                 {inventoryRender}
                                                             </g>
                                                         ) : null
@@ -2286,7 +2311,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                         return (
                                             <g key={recipe.product} transform={`translate(${x},${y})`} onClick={() => this.craftRecipe(recipe)}>
                                                 <rect x={0} y={0} width={60} height={60} fill="tan" opacity={0.3}/>
-                                                <g transform="translate(40,80)">
+                                                <g transform="translate(30,60)">
                                                     {
                                                         this.drawNetworkObject({
                                                             id: `recipe-${recipe.product}`,
