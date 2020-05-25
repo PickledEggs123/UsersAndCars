@@ -1,10 +1,10 @@
 import {
     ECarDirection,
-    EDrawableType,
+    EDrawableType, EFloorPattern,
     ENetworkObjectType,
-    ERoadDirection,
+    ERoadDirection, EWallDirection, EWallPattern,
     ICar,
-    IDrawable,
+    IDrawable, IFloor, IHouse,
     ILot,
     INetworkObject,
     INpc,
@@ -15,7 +15,7 @@ import {
     IRoad,
     ITree,
     IVendor,
-    IVendorInventoryItem
+    IVendorInventoryItem, IWall
 } from "persons-game-common/lib/types/GameTypes";
 import React from "react";
 import seedrandom from "seedrandom";
@@ -25,60 +25,6 @@ import seedrandom from "seedrandom";
  */
 interface ITreeLeaf extends IObject {
     id: string;
-}
-
-/**
- * Houses provide a location for NPCs to store things, work from, and sleep.
- */
-export interface IHouse extends INetworkObject {
-    /**
-     * The npc id of the NPC that lives in the house.
-     */
-    npcId: string;
-}
-
-/**
- * The direction of the wall.
- */
-export enum EWallDirection {
-    HORIZONTAL = "HORIZONTAL",
-    VERTICAL = "VERTICAL"
-}
-
-/**
- * The pattern of the wall.
- */
-export enum EWallPattern {
-    WATTLE = "WATTLE"
-}
-
-/**
- * A wall instance which represent a wall tile of a house.
- */
-export interface IWall extends INetworkObject {
-    direction: EWallDirection;
-    wallPattern: EWallPattern;
-}
-
-/**
- * Patterns for the floor.
- */
-export enum EFloorPattern {
-    DIRT = "DIRT"
-}
-
-/**
- * A floor tile for a house.
- */
-export interface IFloor extends INetworkObject {
-    /**
-     * The pattern of the floor.
-     */
-    floorPattern: EFloorPattern;
-    /**
-     * The house id that the floor is related to.
-     */
-    houseId: string;
 }
 
 /**

@@ -26,6 +26,7 @@ const terrainTileToId = (terrainTile: ITerrainTilePosition): string => `terrainT
 /**
  * Compute the voronoi diagram for a set of points.
  * @param points The input points.
+ * @param bounds The bounds of the voronoi map.
  */
 const computeVoronoi = (points: IObject[], bounds: delaunay.Delaunay.Bounds): IVoronoi[] => {
     const diagram = delaunay.Delaunay.from(points.map((p: IObject): delaunay.Delaunay.Point => {

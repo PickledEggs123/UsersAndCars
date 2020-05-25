@@ -5,39 +5,19 @@ import {
     ENetworkObjectType,
     IApiPersonsObjectCraftPost,
     IApiPersonsObjectDropPost,
-    IApiPersonsObjectPickUpPost, ICraftingRecipe,
-    INetworkObject, IPerson, listOfRecipes
+    IApiPersonsObjectPickUpPost,
+    ICraftingRecipe,
+    INetworkObject,
+    IPerson,
+    listOfRecipes
 } from "persons-game-common/lib/types/GameTypes";
 import {InventoryController} from "persons-game-common/lib/inventory";
-import {getNetworkObjectCellString} from "./cell";
-
-const networkObjectDatabaseToClient = (networkObjectDatabase: INetworkObjectDatabase): INetworkObject => ({
-    ...networkObjectDatabase,
-    lastUpdate: networkObjectDatabase.lastUpdate.toDate().toISOString()
-});
-const networkObjectClientToDatabase = (networkObjectClient: INetworkObject): INetworkObjectDatabase => ({
-    ...networkObjectClient,
-    lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(networkObjectClient.lastUpdate)),
-    cell: getNetworkObjectCellString(networkObjectClient)
-});
-const personDatabaseToClient = (personDatabase: IPersonDatabase): IPerson => ({
-    ...personDatabase,
-    lastUpdate: personDatabase.lastUpdate.toDate().toISOString(),
-    inventory: {
-        ...personDatabase.inventory,
-        slots: personDatabase.inventory.slots.map(networkObjectDatabaseToClient)
-    }
-});
-const personClientToDatabase = (personClient: IPerson): IPersonDatabase => ({
-    ...personClient,
-    lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(personClient.lastUpdate)),
-    inventory: {
-        ...personClient.inventory,
-        slots: personClient.inventory.slots.map(networkObjectClientToDatabase)
-    },
-    password: "",
-    cell: getNetworkObjectCellString(personClient)
-});
+import {
+    networkObjectClientToDatabase,
+    networkObjectDatabaseToClient,
+    personClientToDatabase,
+    personDatabaseToClient
+} from "./common";
 
 /**
  * Pick an object up.
@@ -66,7 +46,7 @@ const pickUpObject = async ({objectId, personId}: {objectId: string, personId: s
 
         // convert controller result from client into database
         const updatedItem: INetworkObjectDatabase | null = updatedItemClient ? networkObjectClientToDatabase(updatedItemClient) : null;
-        const newPersonData: IPersonDatabase = personClientToDatabase({
+        const newPersonData: Partial<IPersonDatabase> = personClientToDatabase({
             ...personDataClient,
             inventory: controller.getInventory()
         });
@@ -114,7 +94,7 @@ const dropObject = async ({objectId, personId}: {objectId: string, personId: str
 
         // convert controller's client data into database
         const updatedItem: INetworkObjectDatabase = networkObjectClientToDatabase(updatedItemClient as INetworkObject);
-        const newPersonData: IPersonDatabase = personClientToDatabase({
+        const newPersonData: Partial<IPersonDatabase> = personClientToDatabase({
             ...personDataClient,
             inventory: controller.getInventory()
         });
@@ -157,7 +137,7 @@ const craftObject = async ({personId, recipeProduct}: {personId: string, recipeP
         // convert controller result from client into database
         const inventory = controller.getInventory();
         const updatedItem: INetworkObjectDatabase | null = updatedItemClient ? networkObjectClientToDatabase(updatedItemClient) : null;
-        const newPersonData: IPersonDatabase = personClientToDatabase({
+        const newPersonData: Partial<IPersonDatabase> = personClientToDatabase({
             ...personDataClient,
             inventory
         });

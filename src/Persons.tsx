@@ -3,7 +3,6 @@ import './App.scss';
 import axios from "axios";
 import {
     ECarDirection,
-    ENetworkObjectType,
     IApiLotsBuyPost,
     IApiLotsSellPost,
     IApiPersonsGetResponse,
@@ -16,8 +15,8 @@ import {
     IApiPersonsVoiceOfferMessage,
     IApiPersonsVoiceOfferPost,
     ICar,
-    ICraftingRecipe,
-    IGameTutorials,
+    ICraftingRecipe, IFloor,
+    IGameTutorials, IHouse,
     IKeyDownHandler,
     ILot,
     INetworkObject,
@@ -28,24 +27,19 @@ import {
     IPersonsInventory,
     IResource,
     IRoad,
-    IVendorInventoryItem,
+    IVendorInventoryItem, IWall,
     listOfRecipes
 } from "persons-game-common/lib/types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
 import {
-    EFloorPattern,
-    EWallDirection,
-    EWallPattern,
-    IFloor,
-    IHouse,
     IPersonsDrawablesProps,
     IPersonsDrawablesState,
-    IWall,
     PersonsDrawables
 } from "./PersonsDrawables";
 import {applyAudioFilters, rtcPeerConnectionConfiguration, userMediaConfig} from "./config";
 import {HarvestResourceController} from "persons-game-common/lib/resources";
 import {InventoryController} from "persons-game-common/lib/inventory";
+import {ConstructionController} from "persons-game-common/lib/construction";
 
 /**
  * The input to the [[Persons]] component that changes how the game is rendered.
@@ -84,6 +78,14 @@ interface IPersonsState extends IPersonsDrawablesState {
      * If the inventory screen should be shown.
      */
     showInventory: boolean;
+    /**
+     * The error message of the last global error.
+     */
+    errorMessage: string;
+    /**
+     * The time of the error message of the last global error.
+     */
+    errorTime: Date;
 }
 
 /**
@@ -211,7 +213,30 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         resources: [] as IResource[],
         inventory: null as IPersonsInventory | null,
         showInventory: false,
-        showConstruction: false
+        showConstruction: false,
+        errorMessage: "",
+        errorTime: new Date()
+    };
+
+    /**
+     * A function which catches all errors in the window.
+     * @param event The error event.
+     */
+    globalErrorHandler = (event: ErrorEvent) => {
+        let errorMessage = "An error occurred";
+        if (event.message) {
+            errorMessage = event.message;
+        }
+        const errorTime = new Date();
+        this.setState({
+            errorMessage,
+            errorTime
+        });
+        setTimeout(() => {
+            this.setState({
+                errorMessage: ""
+            });
+        }, 10000);
     };
 
     /**
@@ -219,6 +244,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      */
     componentDidMount(): void {
         this.beginGameLoop();
+        window.addEventListener("error", this.globalErrorHandler);
     }
 
     componentDidUpdate(prevProps: Readonly<IPersonsProps>, prevState: Readonly<IPersonsState>, snapshot?: any): void {
@@ -263,6 +289,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      */
     componentWillUnmount(): void {
         this.endGameLoop();
+        window.removeEventListener("error", this.globalErrorHandler);
     }
 
     /**
@@ -821,6 +848,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 cars: serverCars,
                 objects: serverObjects,
                 resources: serverResources,
+                houses: serverHouses,
+                floors: serverFloors,
+                walls: serverWalls,
                 voiceMessages: {
                     candidates,
                     offers,
@@ -851,6 +881,15 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             const resources = serverResources.reduce((arr: IResource[], networkObject: IResource): IResource[] => {
                 return this.updateMergeLocalAndNetworkData(this.state.resources, arr, networkObject);
             }, []);
+            const houses = serverHouses.reduce((arr: IHouse[], networkObject: IHouse): IHouse[] => {
+                return this.updateMergeLocalAndNetworkData(this.state.houses, arr, networkObject);
+            }, []);
+            const floors = serverFloors.reduce((arr: IFloor[], networkObject: IFloor): IFloor[] => {
+                return this.updateMergeLocalAndNetworkData(this.state.floors, arr, networkObject);
+            }, []);
+            const walls = serverWalls.reduce((arr: IWall[], networkObject: IWall): IWall[] => {
+                return this.updateMergeLocalAndNetworkData(this.state.walls, arr, networkObject);
+            }, []);
             const newCurrentPerson = persons.find(person => person.id === this.state.currentPersonId);
             const nearbyObjects = this.getNearbyObjects(newCurrentPerson, objects);
             const nearestPersons = this.getCurrentPerson() ?
@@ -865,6 +904,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 npcs,
                 cars,
                 objects,
+                houses,
+                floors,
+                walls,
                 nearbyObjects,
                 lastUpdate: new Date().toISOString(),
                 fetchTime,
@@ -1785,6 +1827,48 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         }
     };
 
+    private mergeInventoryTransactionIntoObjects = ({
+        updatedItems,
+        stackableSlots,
+        deletedSlots,
+        modifiedSlots
+    }: {
+        updatedItems: INetworkObject[],
+        stackableSlots: INetworkObject[],
+        deletedSlots: string[],
+        modifiedSlots: INetworkObject[]
+    }): INetworkObject[] => {
+        const objects = this.state.objects.reduce((acc: INetworkObject[], obj: INetworkObject): INetworkObject[] => {
+            if (updatedItems.map(u => u.id).includes(obj.id)) {
+                // found duplicate item, do not add
+                return acc;
+            } else if (deletedSlots.includes(obj.id)) {
+                // found item that was used in the recipe, do not add
+                return acc;
+            } else if (modifiedSlots.map(m => m.id).includes(obj.id)) {
+                const modifiedSlot = modifiedSlots.find(m => m.id === obj.id) as INetworkObject;
+                return [
+                    ...acc,
+                    modifiedSlot
+                ];
+            } else if (stackableSlots.map(s => s.id).includes(obj.id)) {
+                const stackableSlot = stackableSlots.find(s => s.id === obj.id) as INetworkObject;
+                return [
+                    ...acc,
+                    stackableSlot
+                ];
+            } else {
+                // other item, keep the item
+                return [
+                    ...acc,
+                    obj
+                ];
+            }
+        }, []);
+        objects.push(...updatedItems);
+        return objects;
+    };
+
     craftRecipe = async (recipe: ICraftingRecipe) => {
         const currentPerson = this.getCurrentPerson();
         if (currentPerson) {
@@ -1800,36 +1884,12 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             const postData = controller.craftItemRequest(currentPerson, recipe);
             await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/object/craft", postData);
 
-            const objects =this.state.objects.reduce((acc: INetworkObject[], obj: INetworkObject): INetworkObject[] => {
-                if (updatedItem && obj.id === updatedItem.id) {
-                    // found duplicate item, do not add
-                    return acc;
-                } else if (deletedSlots.includes(obj.id)) {
-                    // found item that was used in the recipe, do not add
-                    return acc;
-                } else if (modifiedSlots.map(m => m.id).includes(obj.id)) {
-                    const modifiedSlot = modifiedSlots.find(m => m.id === obj.id) as INetworkObject;
-                    return [
-                        ...acc,
-                        modifiedSlot
-                    ];
-                } else if (stackableSlots.map(s => s.id).includes(obj.id)) {
-                    const stackableSlot = stackableSlots.find(s => s.id === obj.id) as INetworkObject;
-                    return [
-                        ...acc,
-                        stackableSlot
-                    ];
-                } else {
-                    // other item, keep the item
-                    return [
-                        ...acc,
-                        obj
-                    ];
-                }
-            }, []);
-            if (updatedItem) {
-                objects.push(updatedItem);
-            }
+            const objects = this.mergeInventoryTransactionIntoObjects({
+                updatedItems: updatedItem ? [updatedItem] : [],
+                stackableSlots,
+                deletedSlots,
+                modifiedSlots
+            });
             const persons = this.state.persons.map(person => {
                 if (person.id === currentPerson.id) {
                     // found person, update inventory
@@ -1857,319 +1917,75 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         this.setState({showConstruction: !this.state.showConstruction});
     };
 
-    createNewWall = (l: IObject, direction: EWallDirection): IWall => ({
-        id: `wall-${direction}(${l.x},${l.y})`,
-        x: l.x,
-        y: l.y,
-        wallPattern: EWallPattern.WATTLE,
-        direction,
-        objectType: ENetworkObjectType.POND,
-        lastUpdate: new Date().toISOString(),
-        grabbedByPersonId: null,
-        grabbedByNpcId: null,
-        isInInventory: false,
-        health: {
-            max: 1,
-            rate: 0,
-            value: 1
-        },
-        amount: 1
-    });
-
-    checkNeighboringFloorTiles = (floors: IFloor[], location: IObject, removeTile: boolean): {
-        wallsToAdd: IWall[],
-        neighborHouseIds: string[]
-    } => {
-        // determine neighboring tiles
-        const westNeighbors = floors.filter(floor => floor.x === location.x - 200 && floor.y === location.y);
-        const eastNeighbors = floors.filter(floor => floor.x === location.x + 200 && floor.y === location.y);
-        const northNeighbors = floors.filter(floor => floor.x === location.x && floor.y === location.y - 200);
-        const southNeighbors = floors.filter(floor => floor.x === location.x && floor.y === location.y + 200);
-
-        // determine which tile is nearby, changing which walls are added
-        const thereIsWestNeighbor = westNeighbors.length > 0;
-        const thereIsEastNeighbor = eastNeighbors.length > 0;
-        const thereIsNorthNeighbor = northNeighbors.length > 0;
-        const thereIsSouthNeighbor = southNeighbors.length > 0;
-
-        // get neighboring house ids, which will change how construction behaves
-        const neighborHouseIds = Array.from(
-            new Set([
-                ...westNeighbors,
-                ...eastNeighbors,
-                ...northNeighbors,
-                ...southNeighbors
-            ].map(floor => floor.houseId))
-        );
-
-        // determine walls to add
-        const wallsToAdd: IWall[] = [];
-        if (thereIsWestNeighbor === removeTile) {
-            // add west wall
-            wallsToAdd.push(this.createNewWall({
-                x: location.x,
-                y: location.y
-            }, EWallDirection.VERTICAL));
-        }
-        if (thereIsEastNeighbor === removeTile) {
-            // add east wall
-            wallsToAdd.push(this.createNewWall({
-                x: location.x + 200,
-                y: location.y
-            }, EWallDirection.VERTICAL));
-        }
-        if (thereIsNorthNeighbor === removeTile) {
-            // add north wall
-            wallsToAdd.push(this.createNewWall({
-                x: location.x,
-                y: location.y
-            }, EWallDirection.HORIZONTAL));
-        }
-        if (thereIsSouthNeighbor === removeTile) {
-            // add south wall
-            wallsToAdd.push(this.createNewWall({
-                x: location.x,
-                y: location.y + 200
-            }, EWallDirection.HORIZONTAL));
-        }
-        return {
-            wallsToAdd,
-            neighborHouseIds
-        };
-    };
-
-    constructBuilding = ({
-        location,
-        houses,
-        floors,
-        walls
-    }: {
-        location: IObject,
-        houses: IHouse[],
-        floors: IFloor[],
-        walls: IWall[]
-    }) => {
-        // determine things to remove
-        let housesToRemove: IHouse[];
-        let floorsToRemove: IFloor[];
-
-        // find neighboring walls, must remove neighboring walls.
-        const wallsToRemove: IWall[] = walls.filter(wall => {
-            const isWestWall = wall.direction === EWallDirection.VERTICAL && wall.x === location.x && wall.y === location.y;
-            const isEastWall = wall.direction === EWallDirection.VERTICAL && wall.x === location.x + 200 && wall.y === location.y;
-            const isNorthWall = wall.direction === EWallDirection.HORIZONTAL && wall.x === location.x && wall.y === location.y;
-            const isSouthWall = wall.direction === EWallDirection.HORIZONTAL && wall.x === location.x && wall.y === location.y + 200;
-            return isWestWall || isEastWall || isNorthWall || isSouthWall;
-        });
-
-        // determine things to add
-        let floorsToAdd: IFloor[];
-        let housesToAdd: IHouse[];
-        let wallsToAdd: IWall[];
-
-        // if location exists, remove floor, else add floor
-        const matchingFloorAtLocation = floors.find(floor => floor.x === location.x && floor.y === location.y);
-        if (matchingFloorAtLocation) {
-            // remove tile
-            // house id
-            const houseId = matchingFloorAtLocation.houseId;
-            const houseFloors = floors.filter(floor => floor.houseId === houseId);
-
-            // determine walls to add
-            const result = this.checkNeighboringFloorTiles(floors, location, true);
-
-            housesToAdd = [];
-            wallsToAdd = result.wallsToAdd;
-            floorsToAdd = [];
-            housesToRemove = houseFloors.length <= 1 ? houses.filter(house => house.id === houseId) : [];
-            floorsToRemove = floors.filter(floor => floor.x === location.x && floor.y === location.y);
-        } else {
-            // add tile
-            // determine walls to add
-            const result = this.checkNeighboringFloorTiles(floors, location, false);
-            wallsToAdd = result.wallsToAdd;
-            const nearbyHouseIds = result.neighborHouseIds;
-
-            let houseId: string;
-            housesToRemove = [];
-            if (nearbyHouseIds.length === 0) {
-                houseId = new Array(10).fill(0).map(() => Math.floor(Math.random() * 36).toString(36)).join("");
-                const newHouse: IHouse = {
-                    id: houseId,
-                    x: location.x,
-                    y: location.y,
-                    objectType: ENetworkObjectType.POND,
-                    grabbedByNpcId: null,
-                    grabbedByPersonId: null,
-                    isInInventory: false,
-                    health: {
-                        rate: 0,
-                        max: 1,
-                        value: 1
-                    },
-                    lastUpdate: new Date().toISOString(),
-                    amount: 1,
-                    npcId: new Array(10).fill(0).map(() => Math.floor(Math.random() * 36).toString(36)).join("")
-                };
-                housesToAdd = [newHouse];
-            } else if (nearbyHouseIds.length === 1) {
-                houseId = nearbyHouseIds[0];
-                housesToAdd = [];
-            } else {
-                throw new Error("Cannot connect two separate buildings");
-            }
-
-            const newFloor: IFloor = {
-                id: `floor(${location.x},${location.y})`,
-                houseId,
-                x: location.x,
-                y: location.y,
-                floorPattern: EFloorPattern.DIRT,
-                objectType: ENetworkObjectType.POND,
-                lastUpdate: new Date().toISOString(),
-                grabbedByPersonId: null,
-                grabbedByNpcId: null,
-                isInInventory: false,
-                health: {
-                    max: 1,
-                    rate: 0,
-                    value: 1
-                },
-                amount: 1
-            };
-            floorsToAdd = [newFloor];
-            floorsToRemove = [];
-
-            // check building constraints, largest building is 3 by 3
-            const afterConstructionFloors = [...floors, ...floorsToAdd];
-            const houseFloors = afterConstructionFloors.filter(floor => floor.houseId === houseId);
-            const minX = houseFloors.reduce((acc: number, floor: IFloor): number => Math.min(acc, floor.x), Infinity);
-            const maxX = houseFloors.reduce((acc: number, floor: IFloor): number => Math.max(acc, floor.x), -Infinity);
-            const minY = houseFloors.reduce((acc: number, floor: IFloor): number => Math.min(acc, floor.y), Infinity);
-            const maxY = houseFloors.reduce((acc: number, floor: IFloor): number => Math.max(acc, floor.y), -Infinity);
-            if (maxX - minX >= 3 * 200) {
-                throw new Error("House is too long east to west");
-            }
-            if (maxY - minY >= 3 * 200) {
-                throw new Error("House is too long north to south");
-            }
-        }
-
-        return {
-            housesToAdd,
-            floorsToAdd,
-            wallsToAdd,
-            housesToRemove,
-            floorsToRemove,
-            wallsToRemove
-        };
-    };
-
-    getBuildWallMaterials = (wall: IWall): ENetworkObjectType[] => {
-        if (wall.wallPattern === EWallPattern.WATTLE) {
-            return [
-                ENetworkObjectType.WATTLE_WALL
-            ];
-        } else {
-            return [];
-        }
-    };
-
-    getDestroyWallMaterials = (wall: IWall): ENetworkObjectType[] => {
-        if (wall.wallPattern === EWallPattern.WATTLE) {
-            return [
-                ENetworkObjectType.WATTLE_WALL
-            ];
-        } else {
-            return [];
-        }
-    };
-
-    /**
-     * Determine the total materials required for a construction change.
-     * @param wallsToAdd Adding walls will require materials.
-     * @param wallsToRemove Removing walls will return some materials.
-     * @param floorsToAdd Adding floors will require materials.
-     * @param floorsToRemove Removing floors will return some materials.
-     */
-    determineConstructionMaterialsDifference = ({
-        wallsToAdd,
-        wallsToRemove,
-        floorsToAdd,
-        floorsToRemove
-    }: {
-        wallsToAdd: IWall[],
-        wallsToRemove: IWall[],
-        floorsToAdd: IFloor[],
-        floorsToRemove: IFloor[]
-    }): {
-        itemsToAdd: INetworkObject[],
-        itemsToRemove: INetworkObject[]
-    } => {
-        const itemTypesToAdd: ENetworkObjectType[] = [];
-        const itemTypesToRemove: ENetworkObjectType[] = [];
-
-        for (const wall of wallsToAdd) {
-            const requiredItems = this.getBuildWallMaterials(wall);
-            itemTypesToAdd.push(...requiredItems);
-        }
-        for (const wall of wallsToRemove) {
-            const returnedItems = this.getDestroyWallMaterials(wall);
-            itemTypesToRemove.push(...returnedItems);
-        }
-
-        const itemsToAdd: INetworkObject[] = [];
-        const itemsToRemove: INetworkObject[] = [];
-        return {
-            itemsToAdd,
-            itemsToRemove
-        };
-    };
-
     /**
      * Construct a building at a location.
      */
-    constructAtLocation = (location: IObject) => {
-        const {
-            wallsToAdd,
-            wallsToRemove,
-            floorsToAdd,
-            floorsToRemove,
-            housesToAdd,
-            housesToRemove
-        } = this.constructBuilding({
-            location,
-            houses: this.state.houses,
-            floors: this.state.floors,
-            walls: this.state.walls
-        });
+    constructAtLocation = async (location: IObject) => {
+        const currentPerson = this.getCurrentPerson();
+        if (currentPerson) {
+            const controller = new ConstructionController({
+                inventoryHolder: currentPerson,
+                houses: this.state.houses,
+                floors: this.state.floors,
+                walls: this.state.walls
+            });
+            const {
+                wallsToAdd,
+                wallsToRemove,
+                floorsToAdd,
+                floorsToRemove,
+                housesToAdd,
+                housesToRemove,
+                deletedSlots,
+                modifiedSlots,
+                updatedItems,
+                stackableSlots
+            } = controller.constructBuilding({location});
+            const inventory = controller.getState().inventoryHolder.inventory;
 
-        // determine construction material difference
-        this.determineConstructionMaterialsDifference({
-            wallsToAdd,
-            wallsToRemove,
-            floorsToAdd,
-            floorsToRemove
-        });
+            const postData = controller.getConstructionRequest(location);
+            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/construction", postData);
 
-        // update local state with the changes
-        const houses = [
-            ...this.state.houses.filter(house => !housesToRemove.some(h => h.id === house.id)),
-            ...housesToAdd
-        ];
-        const walls = [
-            ...this.state.walls.filter(wall => !wallsToRemove.some(w => w.id === wall.id)),
-            ...wallsToAdd
-        ];
-        const floors = [
-            ...this.state.floors.filter(floor => !floorsToRemove.some(f => f.id === floor.id)),
-            ...floorsToAdd
-        ];
-        this.setState({
-            houses,
-            walls,
-            floors
-        });
+            // update local state with the changes
+            const houses = [
+                ...this.state.houses.filter(house => !housesToRemove.some(h => h.id === house.id)),
+                ...housesToAdd
+            ];
+            const walls = [
+                ...this.state.walls.filter(wall => !wallsToRemove.some(w => w.id === wall.id)),
+                ...wallsToAdd
+            ];
+            const floors = [
+                ...this.state.floors.filter(floor => !floorsToRemove.some(f => f.id === floor.id)),
+                ...floorsToAdd
+            ];
+
+            const objects = this.mergeInventoryTransactionIntoObjects({
+                updatedItems,
+                stackableSlots,
+                deletedSlots,
+                modifiedSlots
+            });
+            const persons = this.state.persons.map(person => {
+                if (person.id === currentPerson.id) {
+                    // found person, update inventory
+                    return {
+                        ...person,
+                        inventory
+                    };
+                } else {
+                    // did not find person, do nothing
+                    return person;
+                }
+            });
+            this.setState({
+                houses,
+                walls,
+                floors,
+                objects,
+                persons
+            });
+        }
     };
 
     render() {
@@ -2209,6 +2025,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     <button onClick={this.beginLogin}>Login</button>
                     <button onClick={this.showInventory}>Inventory</button>
                     <button onClick={this.showConstruction}>Construction</button>
+                </div>
+                <div style={{backgroundColor: "red", color: "white"}}>
+                    {this.state.errorMessage}
                 </div>
                 <svg className="game" width={this.state.width} height={this.state.height} style={{border: "1px solid black"}}>
                     <defs>

@@ -1,9 +1,9 @@
-import {getCurrentTDayNightTime, ILot, INpcPathPoint, IObject, IRoom, TDayNightTime} from "persons-game-common/lib/types/GameTypes";
+import {getCurrentTDayNightTime, ILot, INpcPathPoint, IObject, TDayNightTime} from "persons-game-common/lib/types/GameTypes";
 import {INpcCellTimeDatabase, INpcDatabase} from "./types/database";
 import {cellSize} from "./config";
 import * as admin from "firebase-admin";
 import {getLotCellsString, getNetworkObjectCellString} from "./cell";
-import {generateCity, generateHouse} from "./city";
+import {generateCity} from "./city";
 
 /**
  * Handle pathfinding AI for each NPC.
@@ -495,27 +495,6 @@ export const generateCityMapWithRooms = async (): Promise<{cityMapWithRooms: str
         }
     });
 
-    // generate houses
-    const rooms = lots.reduce((arr: IRoom[], lot: ILot, index: number): IRoom[] => {
-        const {id, x, y, format: houseFormat} = lot;
-        if (houseFormat) {
-            return [
-                ...arr,
-                ...generateHouse({
-                    lotId: id,
-                    prefix: `house-${index}`,
-                    format: houseFormat,
-                    offset: {
-                        x,
-                        y
-                    }
-                })
-            ];
-        } else {
-            return arr;
-        }
-    }, []);
-
     const cityMapWithRooms = createCityMapWithRooms({format, offset, lots});
 
     // save city map and lots
@@ -538,14 +517,6 @@ export const generateCityMapWithRooms = async (): Promise<{cityMapWithRooms: str
                 .set({
                     ...road,
                     cell: getNetworkObjectCellString(road)
-                });
-        }),
-        ...rooms.map(room => {
-            return admin.firestore().collection("rooms")
-                .doc(room.id)
-                .set({
-                    ...room,
-                    cell: getNetworkObjectCellString(room)
                 });
         }),
         ...objects.map(networkObject => {

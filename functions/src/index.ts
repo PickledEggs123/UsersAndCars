@@ -10,15 +10,21 @@ import * as cors from "cors";
 import {users as usersHttp} from "./crud/users";
 import {cars as carsHttp} from "./crud/cars";
 import {
-    ELotZone,
-    ENetworkObjectType, IApiLotsBuyPost, IApiLotsSellPost,
+    ENetworkObjectType,
+    IApiLotsBuyPost,
+    IApiLotsSellPost,
     IApiPersonsGetResponse,
     IApiPersonsPut,
-    ICar, ILot,
+    ICar,
+    IFloor,
+    IHouse,
+    ILot,
     INetworkObject,
-    INpc, INpcSchedule,
-    IObject,
-    IPerson, IResource, IRoad, IRoom, TDayNightTimeHour
+    INpc,
+    IPerson,
+    IResource,
+    IRoad,
+    IWall
 } from "persons-game-common/lib/types/GameTypes";
 import {
     getVoiceMessages,
@@ -38,9 +44,11 @@ import {giveEveryoneCash, handleVend} from "./cash";
 import {performHealthTickOnCollectionOfNetworkObjects} from "./health";
 import {getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell";
 import {getThirtySecondsAgo, handleLogin} from "./authentication";
-import {generateCityMapWithRooms, getDirectionMap, getLots, streetWalkerPath} from "./pathfinding";
+import {generateCityMapWithRooms, getDirectionMap} from "./pathfinding";
 import {handleGenerateTerrainTile, handleHarvestResource, updateTerrain} from "./terrain";
 import {handleCraftObject, handleDropObject, handlePickUpObject} from "./inventory";
+import {getSimpleCollection, sortNetworkObjectsByDistance} from "./common";
+import {handleConstructionRequest} from "./construction";
 
 const matchAll = require("string.prototype.matchall");
 matchAll.shim();
@@ -84,23 +92,6 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
         // begin terrain update
         await updateTerrain({currentPerson: currentPersonData});
 
-        /**
-         * The distance from the object to the current person.
-         * @param networkObject The object to compute distance for.
-         */
-        const distanceFromCurrentPerson = (networkObject: IObject): number => {
-            return Math.sqrt((networkObject.x - currentPersonData.x) ** 2 + (networkObject.y - currentPersonData.y) ** 2);
-        };
-
-        /**
-         * Sort network objects by distance from player from nearest to farthest.
-         * @param a Object to sort.
-         * @param b Object to sort.
-         */
-        const sortNetworkObjectsByDistance = (a: IObject, b: IObject): number => {
-            return distanceFromCurrentPerson(a) - distanceFromCurrentPerson(b);
-        };
-
         // get persons
         {
             // get a list of all people who have updated within the last thirty seconds
@@ -135,7 +126,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
             }
 
             // get sorted list of nearest persons
-            personsToReturnAsJson.sort(sortNetworkObjectsByDistance);
+            personsToReturnAsJson.sort(sortNetworkObjectsByDistance(currentPersonData));
         }
 
         // get npcs
@@ -206,7 +197,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
             }
 
             // get sorted list of nearest persons
-            npcsToReturnAsJson.sort(sortNetworkObjectsByDistance);
+            npcsToReturnAsJson.sort(sortNetworkObjectsByDistance(currentPersonData));
         }
 
         // get lots
@@ -241,81 +232,21 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
             }
 
             // get sorted list of nearest cars
-            lotsToReturnAsJson.sort(sortNetworkObjectsByDistance);
+            lotsToReturnAsJson.sort(sortNetworkObjectsByDistance(currentPersonData));
         }
-
-        /**
-         * Get all objects near person from a collection
-         * @param collectionName The name of the collection.
-         * @param cellsArray If the collection uses cells string array instead of cell string.
-         */
-        const getSimpleCollection = async <T extends IObject>(collectionName: string, cellsArray: boolean = false): Promise<Array<T>> => {
-            const dataArrayToReturnAsJson: T[] = [];
-
-            // list of objects near the person
-            let queryNotInInventory: admin.firestore.Query;
-            // list of objects in the person's inventory
-            let queryIsInInventory: admin.firestore.Query;
-            if (cellsArray) {
-                // using cells array, perform a search in an array of cells
-                // used for objects that can be in multiple cells like lots. Lots can be larger than cellSize.
-                queryNotInInventory = admin.firestore().collection(collectionName)
-                    .where("cells", "array-contains-any", getRelevantNetworkObjectCells(currentPersonData))
-                    .where("isInInventory", "==", false);
-                queryIsInInventory = admin.firestore().collection(collectionName)
-                    .where("grabbedByPersonId", "==", currentPersonData ? currentPersonData.id : "")
-                    .where("isInInventory", "==", true);
-            } else {
-                // using cell field, perform a search for a cell field
-                // used for objects that are in one cell at a time. The objects are smaller than cellSize.
-                queryNotInInventory = admin.firestore().collection(collectionName)
-                    .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData))
-                    .where("isInInventory", "==", false);
-                queryIsInInventory = admin.firestore().collection(collectionName)
-                    .where("grabbedByPersonId", "==", currentPersonData ? currentPersonData.id : "")
-                    .where("isInInventory", "==", true);
-            }
-            const querySnapshots = await Promise.all([
-                queryNotInInventory.get(),
-                queryIsInInventory.get()
-            ]);
-
-            for (const querySnapshot of querySnapshots) {
-                for (const documentSnapshot of querySnapshot.docs) {
-                    const data = documentSnapshot.data() as any;
-                    const dataToReturnAsJson: T = {
-                        ...data,
-                        lastUpdate: data.lastUpdate ?
-                            typeof data.lastUpdate === "string" ?
-                                data.lastUpdate :
-                                data.lastUpdate.toDate().toISOString()
-                            : undefined,
-                        readyTime: data.readyTime ?
-                            typeof data.readyTime === "string" ?
-                                data.readyTime :
-                                data.readyTime.toDate().toISOString()
-                            : undefined
-                    };
-                    dataArrayToReturnAsJson.push(dataToReturnAsJson);
-                }
-            }
-
-            // get sorted list of nearest cars
-            dataArrayToReturnAsJson.sort(sortNetworkObjectsByDistance);
-
-            return dataArrayToReturnAsJson;
-        };
 
         // return both persons and cars since both can move and both are network objects
         const jsonData: IApiPersonsGetResponse = {
             persons: personsToReturnAsJson,
             npcs: npcsToReturnAsJson,
             lots: lotsToReturnAsJson,
-            cars: await getSimpleCollection<ICar>("personalCars"),
-            objects: await getSimpleCollection<INetworkObject>("objects"),
-            roads: await getSimpleCollection<IRoad>("roads"),
-            rooms: await getSimpleCollection<IRoom>("rooms"),
-            resources: await getSimpleCollection<IResource>("resources"),
+            cars: await getSimpleCollection<ICar>(currentPersonData, "personalCars"),
+            objects: await getSimpleCollection<INetworkObject>(currentPersonData, "objects"),
+            roads: await getSimpleCollection<IRoad>(currentPersonData, "roads"),
+            houses: await getSimpleCollection<IHouse>(currentPersonData, "houses"),
+            floors: await getSimpleCollection<IFloor>(currentPersonData, "floors"),
+            walls: await getSimpleCollection<IWall>(currentPersonData, "walls"),
+            resources: await getSimpleCollection<IResource>(currentPersonData, "resources"),
             voiceMessages: await getVoiceMessages(id)
         };
         res.json(jsonData);
@@ -356,6 +287,11 @@ personsApp.post("/resource/harvest", handleHarvestResource);
  * Pick an object up into the inventory.
  */
 personsApp.post("/object/pickup", handlePickUpObject);
+
+/**
+ * Construct a building using inventory items.
+ */
+personsApp.post("/construction", handleConstructionRequest);
 
 /**
  * Drop an object from the inventory.
@@ -440,11 +376,11 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
 
 // export the express app as a firebase function
 export const persons = functions.https.onRequest(personsApp);
-
-/**
+/*
+/!**
  * Return if the npc is done walking it's path.
  * @param npcData The data of the npc, contains the path data.
- */
+ *!/
 const npcDoneWalking = (npcData: INpcDatabase): boolean => {
     // find last path point
     const lastPathPoint = npcData.path[npcData.path.length - 1];
@@ -458,10 +394,10 @@ const npcDoneWalking = (npcData: INpcDatabase): boolean => {
     }
 };
 
-/**
+/!**
  * Interpolate path data onto the npc position.
  * @param npc The npc with path data.
- */
+ *!/
 const applyPathToNpc = (npc: INpcDatabase): INpcDatabase => {
     // get the current time, used to interpolate the npc
     const now = new Date();
@@ -522,9 +458,9 @@ const applyPathToNpc = (npc: INpcDatabase): INpcDatabase => {
     }
 };
 
-/**
+/!**
  * Generate a schedule for the NPC to follow.
- */
+ *!/
 const generateNpcSchedule = async (): Promise<INpcSchedule[]> => {
     const schedule: INpcSchedule[] = [];
 
@@ -583,7 +519,7 @@ const generateNpcSchedule = async (): Promise<INpcSchedule[]> => {
         });
     }
     return schedule;
-};
+};*/
 
 /**
  * Handle the path generation for a single street walking npc.
@@ -592,7 +528,7 @@ const generateNpcSchedule = async (): Promise<INpcSchedule[]> => {
 const handleStreetWalkingNpc = async ({id}: {
     id: string,
 }) => {
-    const npc = await admin.firestore().collection("npcs").doc(id).get();
+    /*const npc = await admin.firestore().collection("npcs").doc(id).get();
     if (npc.exists) {
         // npc exist, check to see if the npc will need a new path
         const npcData = npc.data() as INpcDatabase;
@@ -681,7 +617,7 @@ const handleStreetWalkingNpc = async ({id}: {
                 return admin.firestore().collection("npcTimes").add(cellTime);
             })
         ]);
-    }
+    }*/
 };
 
 /**
@@ -760,9 +696,15 @@ generateApp.post("/npcs", (req, res, next) => {
         await deleteAllFromCollection("npcs");
         await deleteAllFromCollection("npcTimes");
 
-        // generate 200 npcs
+        // get npcIds from houses
+        const houseDocuments = await admin.firestore().collection("houses").get();
+        const npcIds = houseDocuments.docs.map(houseDocument => {
+            const houseData = houseDocument.data() as IHouse;
+            return houseData.npcId;
+        });
+
+        // generate a NPC for each house
         const pubSubClient = new PubSub();
-        const npcIds = new Array(50).fill(0).map((v, i) => `npc-${i}`);
         await Promise.all(npcIds.map(id => {
             const data = Buffer.from(JSON.stringify({id}));
             return pubSubClient.topic("npc").publish(data);

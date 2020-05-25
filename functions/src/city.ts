@@ -5,15 +5,12 @@ import {
     ENetworkObjectType,
     ERoadDirection,
     ERoadType,
-    ERoomType,
-    ERoomWallType,
     ICity,
     ILot,
     ILotExpandTypeAndAffectedLocations,
     INetworkObject,
     IObject,
     IRoad,
-    IRoom,
     IVendor,
     IWhichDirectionIsNearby
 } from "persons-game-common/lib/types/GameTypes";
@@ -353,107 +350,6 @@ export const generateLots = ({format, offset: {x, y}}: { format: string, offset:
 };
 
 /**
- * Generate an office.
- * @param id The id of the office.
- * @param x The x position of the office.
- * @param y The y position of the office.
- */
-const generateOffice = ({
-    id,
-    x,
-    y,
-    lotId
-}: {id: string, x: number, y: number, lotId: string}): IRoom => {
-    return {
-        id,
-        x,
-        y,
-        doors: {
-            left: ERoomWallType.WALL,
-            right: ERoomWallType.WALL,
-            top: ERoomWallType.WALL,
-            bottom: ERoomWallType.WALL
-        },
-        type: ERoomType.OFFICE,
-        lotId
-    };
-};
-
-/**
- * Generate a hallway.
- * @param id The id of the hallway
- * @param x The x position of the hallway.
- * @param y The y position of the hallway.
- */
-const generateHallway = ({
-    id,
-    x,
-    y,
-    lotId
-}: {id: string, x: number, y: number, lotId: string}): IRoom => {
-    return {
-        id,
-        x,
-        y,
-        doors: {
-            left: ERoomWallType.WALL,
-            right: ERoomWallType.WALL,
-            top: ERoomWallType.WALL,
-            bottom: ERoomWallType.WALL
-        },
-        type: ERoomType.HALLWAY,
-        lotId
-    };
-};
-
-/**
- * Generate an entrance.
- * @param id The id of the entrance
- * @param x The x position of the hallway.
- * @param y THe y position of the hallway.
- */
-const generateEntrance = ({
-    id,
-    x,
-    y,
-    lotId
-}: {id: string, x: number, y: number, lotId: string}): IRoom => {
-    return {
-        id,
-        x,
-        y,
-        doors: {
-            left: ERoomWallType.OPEN,
-            right: ERoomWallType.OPEN,
-            top: ERoomWallType.OPEN,
-            bottom: ERoomWallType.OPEN
-        },
-        type: ERoomType.ENTRANCE,
-        lotId
-    };
-};
-
-/**
- * Map a roomString to a generated room.
- * @param prefix The house prefix.
- * @param x The x position within the house.
- * @param y The y position within the house.
- */
-const roomStringToRoom = ({
-    lotId,
-    prefix,
-    offset: {x, y}
-}: {lotId: string, prefix: string, offset: IObject}) => (roomString: string): IRoom | null => {
-    switch (roomString) {
-        case "O": return generateOffice({lotId, id: `${prefix}-office-${x}-${y}`, x, y});
-        case "H": return generateHallway({lotId, id: `${prefix}-hallway-${x}-${y}`, x, y});
-        case "E": return generateEntrance({lotId, id: `${prefix}-entrance-${x}-${y}`, x, y});
-        default:
-            return null;
-    }
-};
-
-/**
  * Determine if room is nearby another room.
  * @param a The room to test being nearby room b.
  */
@@ -490,27 +386,6 @@ const whichDirectionIsNearby = (tile: IObject, nearbyTiles: IObject[]): IWhichDi
 
 /**
  * Apply doors onto the room mutably.
- * @param room The room which should be modified with new doors.
- * @param whichDoorsShouldBeOpen The doors to open.
- * @param value The type of wall to be drawn.
- */
-const applyWhichDoorsShouldBeOpen = (room: IRoom, whichDoorsShouldBeOpen: IWhichDirectionIsNearby, value: ERoomWallType): void => {
-    if (whichDoorsShouldBeOpen.up) {
-        room.doors.top = value;
-    }
-    if (whichDoorsShouldBeOpen.down) {
-        room.doors.bottom = value;
-    }
-    if (whichDoorsShouldBeOpen.left) {
-        room.doors.left = value;
-    }
-    if (whichDoorsShouldBeOpen.right) {
-        room.doors.right = value;
-    }
-};
-
-/**
- * Apply doors onto the room mutably.
  * @param road The room which should be modified with new doors.
  * @param whichDoorsShouldBeOpen The doors to open.
  */
@@ -519,80 +394,6 @@ const applyRoadConnections = (road: IRoad, whichDoorsShouldBeOpen: IWhichDirecti
         ...road.connected,
         ...whichDoorsShouldBeOpen
     };
-};
-
-/**
- * Generate a house from a format string.
- * @param prefix The house prefix.
- * @param format A string containing the layout of the house.
- * @param offset The offset of the house.
- */
-export const generateHouse = ({
-    lotId,
-    prefix,
-    format,
-    offset
-}: {lotId: string, prefix: string, format: string, offset: IObject}): IRoom[] => {
-    const rooms = [] as IRoom[];
-
-    // for each line
-    const rows = format.split(/\r|\n|\r\n/);
-    rows.forEach((row: string, rowIndex: number) => {
-        // for each letter
-        const roomStrings = row.split("");
-        // map letter to room
-        roomStrings.forEach((roomString: string, columnIndex: number) => {
-            const room = roomStringToRoom({
-                lotId,
-                prefix,
-                offset: {
-                    x: columnIndex * 500 + offset.x,
-                    y: rowIndex * 300 + offset.y
-                }
-            })(roomString);
-            if (room) {
-                rooms.push(room);
-            }
-        });
-    });
-
-    // build doors from hallways to any room
-    const hallways = rooms.filter(room => room.id.includes("hallway"));
-    const notHallways = rooms.filter(room => !room.id.includes("hallway"));
-    hallways.forEach(hallway => {
-        {
-            // find nearby hallways, make open
-            const nearbyRooms = hallways.filter(tileIsNearbyTile(hallway));
-            const whichDoorsShouldBeOpen = whichDirectionIsNearby(hallway, nearbyRooms);
-            applyWhichDoorsShouldBeOpen(hallway, whichDoorsShouldBeOpen, ERoomWallType.OPEN);
-        }
-        {
-            // find nearby rooms that are not hallways, make door
-            const nearbyRooms = notHallways.filter(tileIsNearbyTile(hallway));
-            const whichDoorsShouldBeOpen = whichDirectionIsNearby(hallway, nearbyRooms);
-            applyWhichDoorsShouldBeOpen(hallway, whichDoorsShouldBeOpen, ERoomWallType.DOOR);
-        }
-    });
-
-    // build doors from offices to hallways
-    const offices = rooms.filter(room => room.id.includes("office"));
-    offices.forEach(office => {
-        // find nearby hallways, add door
-        const nearbyRooms = hallways.filter(tileIsNearbyTile(office));
-        const whichDoorsShouldBeOpen = whichDirectionIsNearby(office, nearbyRooms);
-        applyWhichDoorsShouldBeOpen(office, whichDoorsShouldBeOpen, ERoomWallType.DOOR);
-    });
-
-    // build doors from entrances to hallways
-    const entrances = rooms.filter(room => room.id.includes("entrance"));
-    entrances.forEach(entrance => {
-        // find nearby hallways, add door
-        const nearbyRooms = hallways.filter(tileIsNearbyTile(entrance));
-        const whichDoorsShouldBeOpen = whichDirectionIsNearby(entrance, nearbyRooms);
-        applyWhichDoorsShouldBeOpen(entrance, whichDoorsShouldBeOpen, ERoomWallType.ENTRANCE);
-    });
-
-    return rooms;
 };
 
 /**
