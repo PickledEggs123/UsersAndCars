@@ -169,7 +169,6 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
     const houses = houseQuery.docs.map(doc => doc.data() as IHouse);
     const objects = objectQuery.docs.map(doc => networkObjectDatabaseToClient(doc.data() as INetworkObjectDatabase));
     const resources = resourceQuery.docs.map(doc => {
-        console.log(doc.id, doc.data());
         return resourceDatabaseToClient(doc.data() as IResourceDatabase);
     });
 
@@ -182,8 +181,8 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
         } else {
             const newNpc: INpc = {
                 id: npcId,
-                x: 0,
-                y: 0,
+                x: house.x,
+                y: house.y,
                 path: [],
                 directionMap: "",
                 carId: null,

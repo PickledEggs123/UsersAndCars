@@ -465,8 +465,7 @@ generateApp.post("/npcs/:cellString", (req, res, next) => {
         await deleteAllFromCollection("npcs");
         await deleteAllFromCollection("npcTimes");
 
-        // generate a NPC for each house
-        await simulateCell(cellString, 10 * 60 * 1000);
+        await simulateCell(cellString, 60 * 1000);
 
         res.sendStatus(200);
     })().catch((err) => next(err));
@@ -587,7 +586,7 @@ export const personsTick = functions.pubsub.schedule("every 1 minutes").onRun(()
         await performHealthTickOnCollectionOfNetworkObjects("objects", defaultObjectHealthObject);
 
         // handle each npc
-        //await performNpcTick();
+        await performNpcTick();
     })().catch((err) => {
         throw err;
     });
