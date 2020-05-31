@@ -33,7 +33,7 @@ import {
     handleVoiceMessageOffer
 } from "./voiceMessages";
 import {
-    ICarDatabase,
+    ICarDatabase, IHouseDatabase,
     INetworkObjectDatabase,
     INpcCellTimeDatabase,
     INpcDatabase,
@@ -44,11 +44,11 @@ import {giveEveryoneCash, handleVend} from "./cash";
 import {performHealthTickOnCollectionOfNetworkObjects} from "./health";
 import {getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell";
 import {getThirtySecondsAgo, handleLogin} from "./authentication";
-import {generateCityMapWithRooms, getDirectionMap} from "./pathfinding";
 import {handleGenerateTerrainTile, handleHarvestResource, updateTerrain} from "./terrain";
 import {handleCraftObject, handleDropObject, handlePickUpObject} from "./inventory";
 import {getSimpleCollection, sortNetworkObjectsByDistance} from "./common";
 import {handleConstructionRequest} from "./construction";
+import {simulateCell} from "./pathfinding";
 
 const matchAll = require("string.prototype.matchall");
 matchAll.shim();
@@ -175,7 +175,6 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
                     // delete password so it does not reach the frontend
                     const dataWithoutPassword = {...data};
                     delete dataWithoutPassword.password;
-                    delete dataWithoutPassword.doneWalking;
                     delete dataWithoutPassword.schedule;
 
                     // save database record into json array
@@ -183,6 +182,9 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
                         ...dataWithoutPassword,
                         lastUpdate: dataWithoutPassword.lastUpdate ?
                             dataWithoutPassword.lastUpdate.toDate().toISOString() :
+                            new Date().toISOString(),
+                        readyTime: dataWithoutPassword.readyTime ?
+                            dataWithoutPassword.readyTime.toDate().toISOString() :
                             new Date().toISOString(),
                         inventory: {
                             ...dataWithoutPassword.inventory,
@@ -376,265 +378,22 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
 
 // export the express app as a firebase function
 export const persons = functions.https.onRequest(personsApp);
-/*
-/!**
- * Return if the npc is done walking it's path.
- * @param npcData The data of the npc, contains the path data.
- *!/
-const npcDoneWalking = (npcData: INpcDatabase): boolean => {
-    // find last path point
-    const lastPathPoint = npcData.path[npcData.path.length - 1];
-    if (lastPathPoint) {
-        // return if the current time is greater than the last path point, end of path reached.
-        const now = new Date();
-        return +now > Date.parse(lastPathPoint.time);
-    } else {
-        // no path data, no walking needed to be done, return no more walking.
-        return true;
-    }
-};
-
-/!**
- * Interpolate path data onto the npc position.
- * @param npc The npc with path data.
- *!/
-const applyPathToNpc = (npc: INpcDatabase): INpcDatabase => {
-    // get the current time, used to interpolate the npc
-    const now = new Date();
-
-    // determine if there is path data
-    const firstPoint = npc.path[0];
-    if (firstPoint && +now > Date.parse(firstPoint.time)) {
-        // there is path information and the path started
-
-        // a path is made of an array of points. We want to interpolate two points forming a line segment.
-        // find point b in array of points, it's the second point
-        const indexOfPointB = npc.path.findIndex(p => Date.parse(p.time) > +now);
-        if (indexOfPointB >= 0) {
-            // not past last path yet, interpolate point a to point b
-            const a = npc.path[indexOfPointB - 1];
-            const b = npc.path[indexOfPointB];
-            if (a && b) {
-                const pointA = a.location;
-                const pointB = b.location;
-                const timeA = Date.parse(a.time);
-                const timeB = Date.parse(b.time);
-
-                const dx = pointB.x - pointA.x;
-                const dy = pointB.y - pointA.y;
-                const dt = timeB - timeA;
-                const t = (+now - timeA) / dt;
-                const x = pointA.x + dx * t;
-                const y = pointA.y + dy * t;
-
-                return {
-                    ...npc,
-                    x,
-                    y
-                };
-            } else {
-                // missing points a and b
-                return npc;
-            }
-        } else {
-            // past last point, path data is over
-            const lastPoint = npc.path[npc.path.length - 1];
-            if (lastPoint) {
-                // draw npc at last location
-                const {x, y} = lastPoint.location;
-                return {
-                    ...npc,
-                    x,
-                    y
-                };
-            } else {
-                // cannot find last location, return original npc
-                return npc;
-            }
-        }
-    } else {
-        // no path information, return original npc
-        return npc;
-    }
-};
-
-/!**
- * Generate a schedule for the NPC to follow.
- *!/
-const generateNpcSchedule = async (): Promise<INpcSchedule[]> => {
-    const schedule: INpcSchedule[] = [];
-
-    // get a list of residential and commercial lots
-    const lotData = await getLots();
-    const residentialLots = lotData.filter(lot => lot.zone === ELotZone.RESIDENTIAL);
-    const commercialLots = lotData.filter(lot => lot.zone === ELotZone.COMMERCIAL);
-
-    // get the home of the NPC
-    const home = residentialLots[Math.floor(Math.random() * residentialLots.length)];
-    // get three stores for the NPC to visit
-    const stores = new Array(3).fill(0).map(() => {
-        return commercialLots[Math.floor(Math.random() * commercialLots.length)];
-    });
-
-    // if home and each store exist, make a schedule
-    if (home && stores.every(store => store)) {
-        // npcs start at home
-        schedule.push({
-            startTime: 0,
-            endTime: TDayNightTimeHour * 7,
-            to: {
-                x: home.x,
-                y: home.y
-            }
-        });
-
-        // they travel to a store for 1 hour (10 minutes) then return for 2 hours
-        stores.forEach((store, i) => {
-            schedule.push({
-                startTime: TDayNightTimeHour * (7 + i * 3),
-                endTime: TDayNightTimeHour * (8 + i * 3),
-                to: {
-                    x: store.x,
-                    y: store.y
-                }
-            });
-            schedule.push({
-                startTime: TDayNightTimeHour * (8 + i * 3),
-                endTime: TDayNightTimeHour * (10 + i * 3),
-                to: {
-                    x: home.x,
-                    y: home.y
-                }
-            });
-        });
-
-        // go home and sleep
-        schedule.push({
-            startTime: TDayNightTimeHour * 16,
-            endTime: TDayNightTimeHour * 24,
-            to: {
-                x: home.x,
-                y: home.y
-            }
-        });
-    }
-    return schedule;
-};*/
-
-/**
- * Handle the path generation for a single street walking npc.
- * @param id The id of the npc.
- */
-const handleStreetWalkingNpc = async ({id}: {
-    id: string,
-}) => {
-    /*const npc = await admin.firestore().collection("npcs").doc(id).get();
-    if (npc.exists) {
-        // npc exist, check to see if the npc will need a new path
-        const npcData = npc.data() as INpcDatabase;
-        if (npcDoneWalking(npcData)) {
-            let data: INpcDatabase = {
-                ...applyPathToNpc(npcData)
-            };
-            const streetWalkerData = await streetWalkerPath(applyPathToNpc(npcData), {x: 0, y: 0});
-            data = {
-                ...data,
-                doneWalking: streetWalkerData.doneWalking,
-                path: streetWalkerData.path,
-                directionMap: streetWalkerData.directionMap
-            };
-
-            // collect old cell times, must remove them
-            const oldCellTimes = await admin.firestore().collection("npcTimes")
-                .where("npcId", "==", npc.id)
-                .get();
-            await Promise.all([
-                // update npc with path
-                npc.ref.set(data, {merge: true}),
-                // remove old cell times
-                ...oldCellTimes.docs.map((queryDocumentSnapshot): Promise<any> => {
-                    return queryDocumentSnapshot.ref.delete();
-                }),
-                // add new cell times
-                ...streetWalkerData.cellTimes.map((cellTime): Promise<any> => {
-                    return admin.firestore().collection("npcTimes").add(cellTime);
-                })
-            ]);
-        }
-    } else {
-        // npc does not exist, create one from scratch
-        let data: INpcDatabase = {
-            id,
-            x: 250,
-            y: 150,
-            shirtColor: "green",
-            pantColor: "brown",
-            carId: null,
-            grabbedByPersonId: null,
-            grabbedByNpcId: null,
-            isInInventory: false,
-            cash: 1000,
-            creditLimit: 0,
-            objectType: ENetworkObjectType.PERSON,
-            lastUpdate: admin.firestore.Timestamp.now(),
-            doneWalking: admin.firestore.Timestamp.now(),
-            password: "",
-            health: defaultPersonHealthObject,
-            path: [],
-            schedule: await generateNpcSchedule(),
-            directionMap: "",
-            cell: "",
-            inventory: {
-                rows: 1,
-                columns: 10,
-                slots: []
-            },
-            amount: 1,
-            craftingSeed: new Array(20).fill(0).map(() => Math.floor(Math.random() * 36).toString(36)).join(""),
-            craftingState: true
-        };
-        const streetWalkerData = await streetWalkerPath(data, {x: 0, y: 0});
-        data = {
-            ...data,
-            doneWalking: streetWalkerData.doneWalking,
-            path: streetWalkerData.path,
-            directionMap: streetWalkerData.directionMap
-        };
-
-        // collect old cell times, must remove them
-        const oldCellTimes = await admin.firestore().collection("npcTimes")
-            .where("npcId", "==", npc.id)
-            .get();
-        await Promise.all([
-            // update npc with path
-            npc.ref.set(data),
-            // remove old cell times
-            ...oldCellTimes.docs.map((queryDocumentSnapshot): Promise<any> => {
-                return queryDocumentSnapshot.ref.delete();
-            }),
-            // add new cell times
-            ...streetWalkerData.cellTimes.map((cellTime): Promise<any> => {
-                return admin.firestore().collection("npcTimes").add(cellTime);
-            })
-        ]);
-    }*/
-};
 
 /**
  * Handle each NPC in the game.
  */
 const performNpcTick = async () => {
-    // get a list of npcIds of npcs that are done walking
-    const npcDocuments = await admin.firestore().collection("npcs")
-        .where("doneWalking", "<=", admin.firestore.Timestamp.now())
-        .get();
-    const npcIds = npcDocuments.docs.map(doc => doc.id);
+    // get cellStrings from houses
+    const houseDocuments = await admin.firestore().collection("houses").get();
+    const cellStrings = Array.from(new Set(houseDocuments.docs.map((houseDocument): string => {
+        const houseData = houseDocument.data() as IHouseDatabase;
+        return houseData.cell;
+    })));
 
-    // update only the npcs that are done walking
-    // each npc uses a pubsub topic so each npc is simulated by a separate CPU.
+    // generate a NPC for each house
     const pubSubClient = new PubSub();
-    await Promise.all(npcIds.map((id) => {
-        const data = Buffer.from(JSON.stringify({id}));
+    await Promise.all(cellStrings.map(cellString => {
+        const data = Buffer.from(JSON.stringify({cellString}));
         return pubSubClient.topic("npc").publish(data);
     }));
 };
@@ -684,9 +443,6 @@ generateApp.post("/city", (req, res, next) => {
             deleteAllFromCollection("cityMaps")
         ]);
 
-        // create new city data
-        await generateCityMapWithRooms();
-
         res.sendStatus(200);
     })().catch((err) => next(err));
 });
@@ -696,19 +452,21 @@ generateApp.post("/npcs", (req, res, next) => {
         await deleteAllFromCollection("npcs");
         await deleteAllFromCollection("npcTimes");
 
-        // get npcIds from houses
-        const houseDocuments = await admin.firestore().collection("houses").get();
-        const npcIds = houseDocuments.docs.map(houseDocument => {
-            const houseData = houseDocument.data() as IHouse;
-            return houseData.npcId;
-        });
+        await performNpcTick();
+
+        res.sendStatus(200);
+    })().catch((err) => next(err));
+});
+generateApp.post("/npcs/:cellString", (req, res, next) => {
+    (async () => {
+        const cellString = req.params.cellString;
+
+        // delete previous npc data
+        await deleteAllFromCollection("npcs");
+        await deleteAllFromCollection("npcTimes");
 
         // generate a NPC for each house
-        const pubSubClient = new PubSub();
-        await Promise.all(npcIds.map(id => {
-            const data = Buffer.from(JSON.stringify({id}));
-            return pubSubClient.topic("npc").publish(data);
-        }));
+        await simulateCell(cellString, 10 * 60 * 1000);
 
         res.sendStatus(200);
     })().catch((err) => next(err));
@@ -808,20 +566,14 @@ export const lots = functions.https.onRequest(lotsApp);
 
 // handle the npc using a pubsub topic
 export const npcTick = functions.pubsub.topic("npc").onPublish((message) => {
-    const id = message.json.id;
-    return handleStreetWalkingNpc({id});
+    const cellString = message.json.cellString;
+    return simulateCell(cellString, 60 * 1000);
 });
 
 // handle the terrain generation using a pubsub topic
 export const generateTerrain = functions.pubsub.topic("generateTerrain").onPublish((message) => {
     const terrainTile = message.json.terrainTile;
     return handleGenerateTerrainTile(terrainTile);
-});
-
-// generate a direction map for a location
-export const generateDirectionMap = functions.pubsub.topic("directionMaps").onPublish((message) => {
-    const to = message.json.to;
-    return getDirectionMap(to);
 });
 
 // every minute, run a tick to update all persons
@@ -835,7 +587,7 @@ export const personsTick = functions.pubsub.schedule("every 1 minutes").onRun(()
         await performHealthTickOnCollectionOfNetworkObjects("objects", defaultObjectHealthObject);
 
         // handle each npc
-        await performNpcTick();
+        //await performNpcTick();
     })().catch((err) => {
         throw err;
     });

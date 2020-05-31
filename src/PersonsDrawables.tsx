@@ -2,7 +2,7 @@ import {
     ECarDirection,
     EDrawableType, EFloorPattern,
     ENetworkObjectType,
-    ERoadDirection, EWallDirection, EWallPattern, getMaxStackSize,
+    ERoadDirection, EWallDirection, EWallPattern,
     ICar,
     IDrawable, IFloor, IHouse,
     ILot,
@@ -19,6 +19,8 @@ import {
 } from "persons-game-common/lib/types/GameTypes";
 import React from "react";
 import seedrandom from "seedrandom";
+import {getMaxStackSize} from "persons-game-common/lib/inventory";
+import {applyStateToNetworkObject} from "persons-game-common/lib/npc";
 
 /**
  * Represent a leaf on a tree.
@@ -1492,7 +1494,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             })),
 
             // for each network object
-            ...this.state.objects.filter(this.isNearWorldView(worldOffset)).reduce((arr: IDrawable[], networkObject: INetworkObject): IDrawable[] => {
+            ...this.state.objects.map(obj => applyStateToNetworkObject(obj)).filter(obj => obj.exist).filter(this.isNearWorldView(worldOffset)).reduce((arr: IDrawable[], networkObject: INetworkObject): IDrawable[] => {
                 const previousNetworkObject = component.state.previousNetworkObjects.objects.find(p => {
                     return p.id === networkObject.id && networkObject.grabbedByPersonId !== component.state.currentPersonId;
                 });
@@ -1503,7 +1505,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             }, []),
 
             // for each resource object
-            ...this.state.resources.filter(this.isNearWorldView(worldOffset)).map(this.interpolateResource).reduce((arr: IDrawable[], resource: IResource): IDrawable[] => {
+            ...this.state.resources.map(resource => applyStateToNetworkObject(resource) as IResource).filter(this.isNearWorldView(worldOffset)).map(this.interpolateResource).reduce((arr: IDrawable[], resource: IResource): IDrawable[] => {
                 return [
                     ...arr,
                     ...this.drawResource(resource)

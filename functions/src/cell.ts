@@ -14,8 +14,8 @@ import {cellSize} from "./config";
  * @param networkObject The object to compute position for.
  */
 const getNetworkObjectWorldCellPosition = (networkObject: IObject): INetworkObjectCellPosition => {
-    const x = Math.round(networkObject.x / cellSize);
-    const y = Math.round(networkObject.y / cellSize);
+    const x = Math.floor(networkObject.x / cellSize);
+    const y = Math.floor(networkObject.y / cellSize);
     return {
         x,
         y

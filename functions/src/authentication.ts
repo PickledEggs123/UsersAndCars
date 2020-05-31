@@ -66,7 +66,9 @@ export const handleLogin = (req: { body: IApiPersonsLoginPost; }, res: any, next
                 },
                 amount: 1,
                 craftingSeed: new Array(20).fill(0).map(() => Math.floor(Math.random() * 36).toString(36)).join(""),
-                craftingState: true
+                craftingState: true,
+                exist: true,
+                state: []
             };
             await admin.firestore().collection("persons").doc(id).set(data);
 

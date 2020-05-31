@@ -8,10 +8,9 @@ import {
     IApiPersonsObjectPickUpPost,
     ICraftingRecipe,
     INetworkObject,
-    IPerson,
-    listOfRecipes
+    IPerson
 } from "persons-game-common/lib/types/GameTypes";
-import {InventoryController} from "persons-game-common/lib/inventory";
+import {InventoryController, listOfRecipes} from "persons-game-common/lib/inventory";
 import {
     networkObjectClientToDatabase,
     networkObjectDatabaseToClient,
@@ -135,11 +134,10 @@ const craftObject = async ({personId, recipeProduct}: {personId: string, recipeP
         } = controller.craftItem(recipe);
 
         // convert controller result from client into database
-        const inventory = controller.getInventory();
         const updatedItem: INetworkObjectDatabase | null = updatedItemClient ? networkObjectClientToDatabase(updatedItemClient) : null;
         const newPersonData: Partial<IPersonDatabase> = personClientToDatabase({
             ...personDataClient,
-            inventory
+            ...controller.getState()
         });
         const stackableSlot: INetworkObjectDatabase | null = stackableSlotsClient[0] ? networkObjectClientToDatabase(stackableSlotsClient[0]) : null;
         const modifiedSlots: INetworkObjectDatabase[] = modifiedSlotsClient.map(m => networkObjectClientToDatabase(m));

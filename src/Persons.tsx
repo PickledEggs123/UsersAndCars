@@ -2,7 +2,7 @@ import React from 'react';
 import './App.scss';
 import axios from "axios";
 import {
-    ECarDirection, getCurrentTDayNightTime,
+    ECarDirection,
     IApiLotsBuyPost,
     IApiLotsSellPost,
     IApiPersonsGetResponse,
@@ -27,8 +27,7 @@ import {
     IPersonsInventory,
     IResource,
     IRoad,
-    IVendorInventoryItem, IWall,
-    listOfRecipes, TDayNightTimeHour
+    IVendorInventoryItem, IWall
 } from "persons-game-common/lib/types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
 import {
@@ -38,8 +37,9 @@ import {
 } from "./PersonsDrawables";
 import {applyAudioFilters, rtcPeerConnectionConfiguration, userMediaConfig} from "./config";
 import {HarvestResourceController} from "persons-game-common/lib/resources";
-import {InventoryController} from "persons-game-common/lib/inventory";
+import {InventoryController, listOfRecipes} from "persons-game-common/lib/inventory";
 import {ConstructionController} from "persons-game-common/lib/construction";
+import {getCurrentTDayNightTime, TDayNightTimeHour} from "persons-game-common/lib/types/time";
 
 /**
  * The input to the [[Persons]] component that changes how the game is rendered.
@@ -1879,7 +1879,6 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 deletedSlots,
                 modifiedSlots
             } = controller.craftItem(recipe);
-            const inventory = controller.getInventory();
 
             const postData = controller.craftItemRequest(currentPerson, recipe);
             await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/object/craft", postData);
@@ -1895,7 +1894,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     // found person, update inventory
                     return {
                         ...person,
-                        inventory
+                        ...controller.getState()
                     };
                 } else {
                     // did not find person, do nothing
@@ -1941,7 +1940,6 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 updatedItems,
                 stackableSlots
             } = controller.constructBuilding({location});
-            const inventory = controller.getState().inventoryHolder.inventory;
 
             const postData = controller.getConstructionRequest(location);
             await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/construction", postData);
@@ -1971,7 +1969,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     // found person, update inventory
                     return {
                         ...person,
-                        inventory
+                        ...controller.getState().inventoryHolder
                     };
                 } else {
                     // did not find person, do nothing
@@ -2327,7 +2325,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                                                 max: 1,
                                                                 value: 1
                                                             },
-                                                            amount: 1
+                                                            amount: 1,
+                                                            exist: true,
+                                                            state: []
                                                         }).draw()
                                                     }
                                                 </g>

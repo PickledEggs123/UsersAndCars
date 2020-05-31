@@ -1,5 +1,5 @@
-import {INetworkObject, IObject, IPerson} from "persons-game-common/lib/types/GameTypes";
-import {INetworkObjectDatabase, IPersonDatabase} from "./types/database";
+import {INetworkObject, INpc, IObject, IPerson, IResource} from "persons-game-common/lib/types/GameTypes";
+import {INetworkObjectDatabase, INpcDatabase, IPersonDatabase, IResourceDatabase} from "./types/database";
 import admin from "firebase-admin";
 import {getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell";
 
@@ -11,6 +11,17 @@ export const networkObjectClientToDatabase = (networkObjectClient: INetworkObjec
     ...networkObjectClient,
     lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(networkObjectClient.lastUpdate)),
     cell: getNetworkObjectCellString(networkObjectClient)
+});
+export const resourceDatabaseToClient = (resourceDatabase: IResourceDatabase): IResource => ({
+    ...resourceDatabase,
+    lastUpdate: resourceDatabase.lastUpdate.toDate().toISOString(),
+    readyTime: resourceDatabase.readyTime.toDate().toISOString()
+});
+export const resourceClientToDatabase = (resourceClient: IResource): IResourceDatabase => ({
+    ...resourceClient,
+    lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(resourceClient.lastUpdate)),
+    readyTime: admin.firestore.Timestamp.fromMillis(Date.parse(resourceClient.readyTime)),
+    cell: getNetworkObjectCellString(resourceClient)
 });
 export const personDatabaseToClient = (personDatabase: IPersonDatabase): IPerson => ({
     ...personDatabase,
@@ -28,6 +39,25 @@ export const personClientToDatabase = (personClient: IPerson): Partial<IPersonDa
         slots: personClient.inventory.slots.map(networkObjectClientToDatabase)
     },
     cell: getNetworkObjectCellString(personClient)
+});
+export const npcDatabaseToClient = (npcDatabase: INpcDatabase): INpc => ({
+    ...npcDatabase,
+    lastUpdate: npcDatabase.lastUpdate.toDate().toISOString(),
+    readyTime: npcDatabase.readyTime.toDate().toISOString(),
+    inventory: {
+        ...npcDatabase.inventory,
+        slots: npcDatabase.inventory.slots.map(networkObjectDatabaseToClient)
+    }
+});
+export const npcClientToDatabase = (npcClient: INpc): Partial<INpcDatabase> => ({
+    ...npcClient,
+    lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(npcClient.lastUpdate)),
+    readyTime: admin.firestore.Timestamp.fromMillis(Date.parse(npcClient.readyTime)),
+    inventory: {
+        ...npcClient.inventory,
+        slots: npcClient.inventory.slots.map(networkObjectClientToDatabase)
+    },
+    cell: getNetworkObjectCellString(npcClient)
 });
 /**
  * The distance from the object to the current person.

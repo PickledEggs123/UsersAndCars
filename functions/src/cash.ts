@@ -69,7 +69,9 @@ export const handleVend = (req: { body: IApiPersonsVendPost; }, res: any, next: 
                             x,
                             y
                         }),
-                        amount: 1
+                        amount: 1,
+                        exist: true,
+                        state: []
                     };
 
                     // update two database objects
@@ -100,7 +102,9 @@ export const handleVend = (req: { body: IApiPersonsVendPost; }, res: any, next: 
                             x,
                             y
                         }),
-                        amount: 1
+                        amount: 1,
+                        exist: true,
+                        state: []
                     };
 
                     // update two database objects

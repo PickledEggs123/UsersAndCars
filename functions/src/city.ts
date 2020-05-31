@@ -463,12 +463,11 @@ const generateRoads = ({format, offset: {x, y}}: {format: string, offset: IObjec
 
 /**
  * Generate a city from an ASCII map.
- * @param prefix The name of the city. It's prepended to the [[ILot]] names.
  * @param format The ASCII map of the city.
  * @param x The x offset of the city.
  * @param y The y offset of the city.
  */
-export const generateCity = ({prefix, format, offset: {x, y}}: {prefix: string, format: string, offset: IObject}): ICity => {
+export const generateCity = ({format, offset: {x, y}}: {format: string, offset: IObject}): ICity => {
     const roads = generateRoads({format, offset: {x, y}});
     const {lots, objects} = generateLots({format, offset: {x, y}});
 

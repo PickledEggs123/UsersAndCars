@@ -3,9 +3,9 @@ import {
     ELotZone,
     ENetworkObjectType,
     ILot,
-    INetworkObject,
+    INetworkObject, INetworkObjectState,
     INpcPathPoint, INpcSchedule,
-    IObjectHealth, IResourceSpawn
+    IObjectHealth, IOwner, IResource, IResourceSpawn
 } from "persons-game-common/lib/types/GameTypes";
 import * as admin from "firebase-admin";
 import * as seedrandom from "seedrandom";
@@ -75,6 +75,8 @@ export interface INetworkObjectDatabase {
     health: IObjectHealth;
     cell: string;
     amount: number;
+    exist: boolean;
+    state: INetworkObjectState<INetworkObject>[];
 }
 
 /**
@@ -113,7 +115,7 @@ export interface IPersonDatabase extends INetworkObjectDatabase {
 export interface INpcDatabase extends IPersonDatabase {
     path: INpcPathPoint[];
     directionMap: string;
-    doneWalking: admin.firestore.Timestamp;
+    readyTime: admin.firestore.Timestamp;
     /**
      * A list of actions to perform every 4 hours.
      */
@@ -130,5 +132,16 @@ export interface IResourceDatabase extends INetworkObjectDatabase {
     spawns: IResourceSpawn[];
     spawnState: seedrandom.State | true;
     depleted: boolean;
-    readyTime: admin.firestore.Timestamp
+    readyTime: admin.firestore.Timestamp;
+    state: INetworkObjectState<IResource>[];
+}
+
+/**
+ * Houses provide a location for NPCs to store things, work from, and sleep.
+ */
+export interface IHouseDatabase extends INetworkObjectDatabase, IOwner {
+    /**
+     * The npc id of the NPC that lives in the house.
+     */
+    npcId: string;
 }

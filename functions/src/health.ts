@@ -9,6 +9,7 @@ import {INetworkObjectDatabase} from "./types/database";
 /**
  * Perform health updates on a database collection of [[INetworkObject]] objects.
  * @param collectionName The name of the collection to update.
+ * @param defaultHealthObject The default health object of the collection.
  */
 export const performHealthTickOnCollectionOfNetworkObjects = async (collectionName: string, defaultHealthObject: IObjectHealth) => {
     const collectionQuery = await admin.firestore().collection(collectionName).get();

@@ -16,6 +16,7 @@ import {getNetworkObjectCellString} from "./cell";
 import express from "express";
 import {HarvestResourceController} from "persons-game-common/lib/resources";
 import {createResource} from "persons-game-common/lib/terrain";
+import {resourceClientToDatabase} from "./common";
 
 /**
  * Convert terrain tile to an id.
@@ -271,10 +272,12 @@ export const handleGenerateTerrainTile = async (terrainTile: ITerrainTilePositio
     while (batch.length > 0) {
         // save a batch
         await Promise.all(batch.map(resource => {
-            return admin.firestore().collection("resources").doc(resource.id).set({
-                ...resource,
-                cell: getNetworkObjectCellString(resource)
-            }, {merge: true});
+            return admin.firestore().collection("resources").doc(resource.id).set(
+                resourceClientToDatabase(resource),
+                {
+                    merge: true
+                }
+            );
         }));
 
         // create new batch

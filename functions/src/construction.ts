@@ -44,10 +44,9 @@ const constructLocation = async ({personId, location}: IApiPersonsConstructionPo
         } = controller.constructBuilding({location});
 
         // convert inventory result into database format
-        const inventory = controller.getState().inventoryHolder.inventory;
         const newPersonData: Partial<IPersonDatabase> = personClientToDatabase({
             ...personClient,
-            inventory
+            ...controller.getState().inventoryHolder
         });
 
         // update database with result of construction
