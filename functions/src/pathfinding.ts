@@ -184,7 +184,6 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
                 x: house.x,
                 y: house.y,
                 path: [],
-                directionMap: "",
                 carId: null,
                 craftingSeed: `npc-${npcId}`,
                 craftingState: true,
@@ -211,7 +210,8 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
                 },
                 amount: 1,
                 exist: true,
-                objectType: ENetworkObjectType.PERSON
+                objectType: ENetworkObjectType.PERSON,
+                inventoryState: []
             };
             npcs.push(newNpc);
         }

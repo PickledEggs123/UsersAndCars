@@ -1986,6 +1986,96 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         }
     };
 
+    drawInventory = (inventory: IPersonsInventory, showCraftingRecipes: boolean): JSX.Element => (
+        <g>
+            <rect x="0" y="0" width={this.state.width} height={this.state.height} fill="white" opacity="0.3"/>
+            {
+                new Array(inventory.rows).fill(0).map((v, rowIndex) => {
+                    return new Array(inventory.columns).fill(0).map((v1, columnIndex) => {
+                        const slotIndex = rowIndex * inventory.columns + columnIndex;
+                        const inventoryObject = inventory.slots[slotIndex] ?
+                            inventory.slots[slotIndex] :
+                            null;
+                        let inventoryRender: JSX.Element | null = null;
+                        if (inventoryObject) {
+                            inventoryRender = this.drawNetworkObject(inventoryObject, undefined, true).draw();
+                        }
+
+                        return (
+                            <g key={`inventory-slot(${rowIndex},${columnIndex})`}>
+                                <rect x={50 + 80 * columnIndex} y={50 + 80 * rowIndex} width={60} height={60} fill="tan" opacity={0.3}/>
+                                {
+                                    inventoryRender ? (
+                                        <g transform={`translate(${50 + 80 * columnIndex + 30},${50 + 80 * rowIndex + 60})`} onClick={inventoryObject ? () => this.dropObject(inventoryObject) : undefined}>
+                                            {inventoryRender}
+                                        </g>
+                                    ) : null
+                                }
+                            </g>
+                        );
+                    });
+                }).reduce((acc: JSX.Element[], row: JSX.Element[], index: number): JSX.Element[] => {
+                    if (index === 0) {
+                        return [
+                            ...acc,
+                            ...row
+                        ];
+                    } else {
+                        const y = 50 * 80 * index + 10;
+                        return [
+                            ...acc,
+                            <line key={`inventory-row-divider-${index}`} x1={50} x2={this.state.width - 50} y1={y} y2={y} stroke="black"/>,
+                            ...row
+                        ];
+                    }
+                }, [])
+            }
+            {
+                showCraftingRecipes ? (
+                    <>
+                        <text x={50} y={330} fontSize={18}>Crafting Recipes</text>
+                        {
+                            listOfRecipes.filter(recipe => recipe.byHand).map((recipe, index) => {
+                                const row = Math.floor(index / 10);
+                                const column = index % 10;
+                                const x = 50 + column * 80;
+                                const y = 350 + row * 80;
+                                return (
+                                    <g key={recipe.product} transform={`translate(${x},${y})`}
+                                       onClick={() => this.craftRecipe(recipe)}>
+                                        <rect x={0} y={0} width={60} height={60} fill="tan" opacity={0.3}/>
+                                        <g transform="translate(30,60)">
+                                            {
+                                                this.drawNetworkObject({
+                                                    id: `recipe-${recipe.product}`,
+                                                    x: 0,
+                                                    y: 0,
+                                                    objectType: recipe.product,
+                                                    lastUpdate: new Date().toISOString(),
+                                                    grabbedByNpcId: null,
+                                                    grabbedByPersonId: null,
+                                                    isInInventory: true,
+                                                    health: {
+                                                        rate: 0,
+                                                        max: 1,
+                                                        value: 1
+                                                    },
+                                                    amount: 1,
+                                                    exist: true,
+                                                    state: []
+                                                }).draw()
+                                            }
+                                        </g>
+                                    </g>
+                                );
+                            })
+                        }
+                    </>
+                ) : null
+            }
+        </g>
+    );
+
     render() {
         // find the current person
         const currentPerson = this.getCurrentPerson();
@@ -2218,11 +2308,18 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                 <rect x="0" y="0" width={this.state.width} height={this.state.height} fill="white" opacity="0.3"/>
                                 <text x="20" y="60" fontSize="24">NPC id: {this.state.npc.id}</text>
                                 <text x="20" y="100" fontSize="18" onClick={this.followNpc(this.state.npc)}>Follow</text>
-                                {
-                                    this.state.npc.directionMap.split(/\r|\n|\r\n/).map((row, rowIndex) => {
-                                        return <text x="20" y={120 + rowIndex * 20} fontSize="24" fontFamily="monospace">{row}</text>
-                                    })
-                                }
+                                <text x="20" y="140">NPC Inventory</text>
+                                <g transform={"translate(0, 160)"}>
+                                    {
+                                        this.drawInventory(this.state.npc.inventory, false)
+                                    }
+                                </g>
+                                <text x="20" y="300">Your Inventory</text>
+                                <g transform={"translate(0, 320)"}>
+                                    {
+                                        currentPerson ? this.drawInventory(currentPerson.inventory, false) : null
+                                    }
+                                </g>
                             </g>
                         ) : null
                     }
@@ -2255,88 +2352,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         ) : null
                     }
                     {
-                        this.state.inventory && this.state.showInventory ? (
-                            <g>
-                                <rect x="0" y="0" width={this.state.width} height={this.state.height} fill="white" opacity="0.3"/>
-                                {
-                                    new Array(this.state.inventory.rows).fill(0).map((v, rowIndex) => {
-                                        return new Array(this.state.inventory ? this.state.inventory.columns : 0).fill(0).map((v1, columnIndex) => {
-                                            const slotIndex = this.state.inventory ? rowIndex * this.state.inventory.columns + columnIndex : 0;
-                                            const inventoryObject = this.state.inventory && this.state.inventory.slots[slotIndex] ?
-                                                this.state.inventory.slots[slotIndex] :
-                                                null;
-                                            let inventoryRender: JSX.Element | null = null;
-                                            if (inventoryObject) {
-                                                inventoryRender = this.drawNetworkObject(inventoryObject, undefined, true).draw();
-                                            }
-
-                                            return (
-                                                <g key={`inventory-slot(${rowIndex},${columnIndex})`}>
-                                                    <rect x={50 + 80 * columnIndex} y={50 + 80 * rowIndex} width={60} height={60} fill="tan" opacity={0.3}/>
-                                                    {
-                                                        inventoryRender ? (
-                                                            <g transform={`translate(${50 + 80 * columnIndex + 30},${50 + 80 * rowIndex + 60})`} onClick={inventoryObject ? () => this.dropObject(inventoryObject) : undefined}>
-                                                                {inventoryRender}
-                                                            </g>
-                                                        ) : null
-                                                    }
-                                                </g>
-                                            );
-                                        });
-                                    }).reduce((acc: JSX.Element[], row: JSX.Element[], index: number): JSX.Element[] => {
-                                        if (index === 0) {
-                                            return [
-                                                ...acc,
-                                                ...row
-                                            ];
-                                        } else {
-                                            const y = 50 * 80 * index + 10;
-                                            return [
-                                                ...acc,
-                                                <line key={`inventory-row-divider-${index}`} x1={50} x2={this.state.width - 50} y1={y} y2={y} stroke="black"/>,
-                                                ...row
-                                            ];
-                                        }
-                                    }, [])
-                                }
-                                <text x={50} y={330} fontSize={18}>Crafting Recipes</text>
-                                {
-                                    listOfRecipes.filter(recipe => recipe.byHand).map((recipe, index) => {
-                                        const row = Math.floor(index / 10);
-                                        const column = index % 10;
-                                        const x = 50 + column * 80;
-                                        const y = 350 + row * 80;
-                                        return (
-                                            <g key={recipe.product} transform={`translate(${x},${y})`} onClick={() => this.craftRecipe(recipe)}>
-                                                <rect x={0} y={0} width={60} height={60} fill="tan" opacity={0.3}/>
-                                                <g transform="translate(30,60)">
-                                                    {
-                                                        this.drawNetworkObject({
-                                                            id: `recipe-${recipe.product}`,
-                                                            x: 0,
-                                                            y: 0,
-                                                            objectType: recipe.product,
-                                                            lastUpdate: new Date().toISOString(),
-                                                            grabbedByNpcId: null,
-                                                            grabbedByPersonId: null,
-                                                            isInInventory: true,
-                                                            health: {
-                                                                rate: 0,
-                                                                max: 1,
-                                                                value: 1
-                                                            },
-                                                            amount: 1,
-                                                            exist: true,
-                                                            state: []
-                                                        }).draw()
-                                                    }
-                                                </g>
-                                            </g>
-                                        );
-                                    })
-                                }
-                            </g>
-                        ) : null
+                        this.state.inventory && this.state.showInventory ? this.drawInventory(this.state.inventory, true) : null
                     }
                 </svg>
                 <div>

@@ -1,7 +1,7 @@
 import {
     ECarDirection,
     ELotZone,
-    ENetworkObjectType,
+    ENetworkObjectType, IInventoryState,
     ILot,
     INetworkObject, INetworkObjectState,
     INpcPathPoint, INpcSchedule,
@@ -114,12 +114,12 @@ export interface IPersonDatabase extends INetworkObjectDatabase {
 
 export interface INpcDatabase extends IPersonDatabase {
     path: INpcPathPoint[];
-    directionMap: string;
     readyTime: admin.firestore.Timestamp;
     /**
      * A list of actions to perform every 4 hours.
      */
     schedule: INpcSchedule[];
+    inventoryState: IInventoryState[];
 }
 
 export interface ICarDatabase extends INetworkObjectDatabase {
