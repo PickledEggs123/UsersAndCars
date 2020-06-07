@@ -47,9 +47,6 @@ export const handleLogin = (req: { body: IApiPersonsLoginPost; }, res: any, next
                 pantColor: "blue",
                 shirtColor: "grey",
                 carId: null,
-                grabbedByPersonId: null,
-                grabbedByNpcId: null,
-                isInInventory: false,
                 lastUpdate: admin.firestore.Timestamp.now(),
                 cash: 1000,
                 creditLimit: 1000,
@@ -64,11 +61,8 @@ export const handleLogin = (req: { body: IApiPersonsLoginPost; }, res: any, next
                     columns: 10,
                     slots: []
                 },
-                amount: 1,
                 craftingSeed: new Array(20).fill(0).map(() => Math.floor(Math.random() * 36).toString(36)).join(""),
                 craftingState: true,
-                exist: true,
-                state: []
             };
             await admin.firestore().collection("persons").doc(id).set(data);
 

@@ -1,11 +1,11 @@
 import express from "express";
 import admin from "firebase-admin";
-import {INetworkObjectDatabase, IPersonDatabase} from "./types/database";
+import {INetworkObjectDatabase, IPersonDatabase, IStockpileDatabase} from "./types/database";
 import {
     ENetworkObjectType,
     IApiPersonsObjectCraftPost,
     IApiPersonsObjectDropPost,
-    IApiPersonsObjectPickUpPost,
+    IApiPersonsObjectPickUpPost, IApiPersonsStockpileDepositPost, IApiPersonsStockpileWithdrawPost,
     ICraftingRecipe,
     INetworkObject,
     IPerson
@@ -15,7 +15,7 @@ import {
     networkObjectClientToDatabase,
     networkObjectDatabaseToClient,
     personClientToDatabase,
-    personDatabaseToClient
+    personDatabaseToClient, stockpileClientToDatabase, stockpileDatabaseToClient
 } from "./common";
 
 /**
@@ -166,6 +166,148 @@ const craftObject = async ({personId, recipeProduct}: {personId: string, recipeP
     }
 };
 
+/**
+ * Withdraw an object from a stockpile.
+ * @param objectId The object to withdraw.
+ * @param personId The person which will withdraw the object.
+ * @param stockpileId The stockpile which will be withdrawn from.
+ * @param amount The amount to withdraw.
+ */
+const withdrawObject = async ({
+    objectId,
+    personId,
+    stockpileId,
+    amount
+}: {objectId: string, personId: string, stockpileId: string, amount: number}) => {
+    // check to see that both the person and object exists
+    const objectDocument = await admin.firestore().collection("objects").doc(objectId).get();
+    const personDocument = await admin.firestore().collection("persons").doc(personId).get();
+    const stockpileDocument = await admin.firestore().collection("stockpiles").doc(stockpileId).get();
+    if (objectDocument.exists && personDocument.exists && stockpileDocument.exists) {
+        // they both exist, get the data
+        const objectData = objectDocument.data() as INetworkObjectDatabase;
+        const personData = personDocument.data() as IPersonDatabase;
+        const stockpileData = stockpileDocument.data() as IStockpileDatabase;
+
+        // convert from database to client format so controller can use it
+        const objectDataClient = networkObjectDatabaseToClient(objectData);
+        const personDataClient = personDatabaseToClient(personData);
+        const stockpileDataClient = stockpileDatabaseToClient(stockpileData);
+
+        // use controller to withdraw item
+        const personController = new InventoryController(personDataClient);
+        const stockpileController = new InventoryController(stockpileDataClient);
+        const {
+            updatedItem: withdrawnItem
+        } = stockpileController.withdrawFromStockpile(objectDataClient, amount);
+        if (!withdrawnItem) {
+            throw new Error("Withdrawn nothing from stockpile");
+        }
+        const {
+            updatedItem: updatedItemClient,
+            stackableSlots: stackableSlotsClient
+        } = personController.pickUpItem(withdrawnItem);
+
+        // convert controller result from client into database
+        const updatedItem: INetworkObjectDatabase | null = updatedItemClient ? networkObjectClientToDatabase(updatedItemClient) : null;
+        const newPersonData: Partial<IPersonDatabase> = personClientToDatabase({
+            ...personDataClient,
+            inventory: personController.getInventory()
+        });
+        const newStockpileData: Partial<IStockpileDatabase> = stockpileClientToDatabase({
+            ...stockpileDataClient,
+            inventory: stockpileController.getInventory()
+        });
+        const stackableSlot: INetworkObjectDatabase | null = stackableSlotsClient[0] ? networkObjectClientToDatabase(stackableSlotsClient[0]) : null;
+
+        // update both the person, stockpile and the object
+        await Promise.all([
+            // update person's inventory
+            admin.firestore().collection("persons").doc(personId).set(newPersonData, {merge: true}),
+            // update stockpile's inventory
+            admin.firestore().collection("stockpiles").doc(stockpileId).set(newStockpileData, {merge: true}),
+            // update or delete the picked up item. If there was a stackable slot, delete old item, else, update old item
+            updatedItem ?
+                admin.firestore().collection("objects").doc(objectId).set(updatedItem, {merge: true}) :
+                admin.firestore().collection("objects").doc(objectId).delete(),
+            // update a stackable slot if there was a stackable slot update
+            stackableSlot ?
+                admin.firestore().collection("objects").doc(stackableSlot.id).set(stackableSlot, {merge: true}) :
+                null
+        ]);
+    }
+};
+
+/**
+ * Deposit an object into a stockpile.
+ * @param objectId The object to deposit.
+ * @param personId The person which will deposit the object.
+ * @param stockpileId The stockpile which will be deposited into.
+ */
+const depositObject = async ({
+    objectId,
+    personId,
+    stockpileId,
+}: {objectId: string, personId: string, stockpileId: string}) => {
+    // check to see that both the person and object exists
+    const objectDocument = await admin.firestore().collection("objects").doc(objectId).get();
+    const personDocument = await admin.firestore().collection("persons").doc(personId).get();
+    const stockpileDocument = await admin.firestore().collection("stockpiles").doc(stockpileId).get();
+    if (objectDocument.exists && personDocument.exists && stockpileDocument.exists) {
+        // they both exist, get the data
+        const objectData = objectDocument.data() as INetworkObjectDatabase;
+        const personData = personDocument.data() as IPersonDatabase;
+        const stockpileData = stockpileDocument.data() as IStockpileDatabase;
+
+        // convert from database to client format so controller can use it
+        const objectDataClient = networkObjectDatabaseToClient(objectData);
+        const personDataClient = personDatabaseToClient(personData);
+        const stockpileDataClient = stockpileDatabaseToClient(stockpileData);
+
+        // use controller to withdraw item
+        const personController = new InventoryController(personDataClient);
+        const stockpileController = new InventoryController(stockpileDataClient);
+        const {
+            updatedItem: droppedItem
+        } = personController.dropItem(objectDataClient);
+        if (!droppedItem) {
+            throw new Error("Nothing to deposit into stockpile");
+        }
+        const {
+            updatedItem: updatedItemClient,
+            stackableSlots: stackableSlotsClient
+        } = stockpileController.insertIntoStockpile(droppedItem);
+
+        // convert controller result from client into database
+        const updatedItem: INetworkObjectDatabase | null = updatedItemClient ? networkObjectClientToDatabase(updatedItemClient) : null;
+        const newPersonData: Partial<IPersonDatabase> = personClientToDatabase({
+            ...personDataClient,
+            inventory: personController.getInventory()
+        });
+        const newStockpileData: Partial<IStockpileDatabase> = stockpileClientToDatabase({
+            ...stockpileDataClient,
+            inventory: stockpileController.getInventory()
+        });
+        const stackableSlot: INetworkObjectDatabase | null = stackableSlotsClient[0] ? networkObjectClientToDatabase(stackableSlotsClient[0]) : null;
+
+        // update both the person, stockpile and the object
+        await Promise.all([
+            // update person's inventory
+            admin.firestore().collection("persons").doc(personId).set(newPersonData, {merge: true}),
+            // update stockpile's inventory
+            admin.firestore().collection("stockpiles").doc(stockpileId).set(newStockpileData, {merge: true}),
+            // update or delete the picked up item. If there was a stackable slot, delete old item, else, update old item
+            updatedItem ?
+                admin.firestore().collection("objects").doc(objectId).set(updatedItem, {merge: true}) :
+                admin.firestore().collection("objects").doc(objectId).delete(),
+            // update a stackable slot if there was a stackable slot update
+            stackableSlot ?
+                admin.firestore().collection("objects").doc(stackableSlot.id).set(stackableSlot, {merge: true}) :
+                null
+        ]);
+    }
+};
+
 export const handlePickUpObject = (req: express.Request, res: express.Response, next: express.NextFunction) => {
     (async () => {
         const {personId, objectId} = req.body as IApiPersonsObjectPickUpPost;;
@@ -199,6 +341,34 @@ export const handleCraftObject = (req: express.Request, res: express.Response, n
         const {personId, recipeProduct} = req.body as IApiPersonsObjectCraftPost;;
         if (typeof personId === "string" && typeof recipeProduct === "string") {
             await craftObject({personId, recipeProduct});
+            res.sendStatus(200);
+        } else {
+            res.status(400).json({
+                message: "require personId and objectId"
+            });
+        }
+    })().catch((err) => next(err));
+};
+
+export const handleWithdrawObjectFromStockpile = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    (async () => {
+        const {personId, objectId, stockpileId, amount} = req.body as IApiPersonsStockpileWithdrawPost;
+        if (typeof personId === "string" && typeof objectId === "string" && typeof stockpileId === "string" && typeof amount === "number") {
+            await withdrawObject({personId, objectId, stockpileId, amount});
+            res.sendStatus(200);
+        } else {
+            res.status(400).json({
+                message: "require personId and objectId"
+            });
+        }
+    })().catch((err) => next(err));
+};
+
+export const handleDepositObjectIntoStockpile = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    (async () => {
+        const {personId, objectId, stockpileId} = req.body as IApiPersonsStockpileDepositPost;
+        if (typeof personId === "string" && typeof objectId === "string" && typeof stockpileId === "string") {
+            await depositObject({personId, objectId, stockpileId});
             res.sendStatus(200);
         } else {
             res.status(400).json({

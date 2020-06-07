@@ -19,14 +19,14 @@ import {
     IGameTutorials, IHouse,
     IKeyDownHandler,
     ILot,
-    INetworkObject,
+    INetworkObject, INetworkObjectBase,
     INpc,
     INpcPathPoint,
     IObject,
     IPerson,
     IPersonsInventory,
     IResource,
-    IRoad,
+    IRoad, IStockpile, IStockpileTile,
     IVendorInventoryItem, IWall
 } from "persons-game-common/lib/types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
@@ -37,9 +37,11 @@ import {
 } from "./PersonsDrawables";
 import {applyAudioFilters, rtcPeerConnectionConfiguration, userMediaConfig} from "./config";
 import {HarvestResourceController} from "persons-game-common/lib/resources";
-import {InventoryController, listOfRecipes} from "persons-game-common/lib/inventory";
+import {getMaxStackSize, InventoryController, listOfRecipes} from "persons-game-common/lib/inventory";
 import {ConstructionController} from "persons-game-common/lib/construction";
 import {getCurrentTDayNightTime, TDayNightTimeHour} from "persons-game-common/lib/types/time";
+import {StockpileController} from "persons-game-common/lib/stockpile";
+import {applyInventoryState} from "persons-game-common/lib/npc";
 
 /**
  * The input to the [[Persons]] component that changes how the game is rendered.
@@ -86,6 +88,10 @@ interface IPersonsState extends IPersonsDrawablesState {
      * The time of the error message of the last global error.
      */
     errorTime: Date;
+    /**
+     * If stockpile editing should be enabled.
+     */
+    showStockpile: boolean;
 }
 
 /**
@@ -211,9 +217,12 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         lot: null as ILot | null,
         lotPrice: null as number | null,
         resources: [] as IResource[],
+        stockpiles: [] as IStockpile[],
+        stockpileTiles: [] as IStockpileTile[],
         inventory: null as IPersonsInventory | null,
         showInventory: false,
         showConstruction: false,
+        showStockpile: false,
         errorMessage: "",
         errorTime: new Date()
     };
@@ -790,7 +799,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * @param networkArr The network data.
      * @param networkItem A single network data item.
      */
-    updateMergeLocalAndNetworkData = <T extends INetworkObject>(localArr: T[], networkArr: T[], networkItem: T): T[] => {
+    updateMergeLocalAndNetworkData = <T extends INetworkObjectBase>(localArr: T[], networkArr: T[], networkItem: T): T[] => {
         // find local data
         const localItem = localArr.find(d => d.id === networkItem.id);
 
@@ -848,6 +857,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 cars: serverCars,
                 objects: serverObjects,
                 resources: serverResources,
+                stockpiles: serverStockpiles,
+                stockpileTiles: serverStockpileTiles,
                 houses: serverHouses,
                 floors: serverFloors,
                 walls: serverWalls,
@@ -880,6 +891,12 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             }, []);
             const resources = serverResources.reduce((arr: IResource[], networkObject: IResource): IResource[] => {
                 return this.updateMergeLocalAndNetworkData(this.state.resources, arr, networkObject);
+            }, []);
+            const stockpiles = serverStockpiles.reduce((arr: IStockpile[], networkObject: IStockpile): IStockpile[] => {
+                return this.updateMergeLocalAndNetworkData(this.state.stockpiles, arr, networkObject);
+            }, []);
+            const stockpileTiles = serverStockpileTiles.reduce((arr: IStockpileTile[], networkObject: IStockpileTile): IStockpileTile[] => {
+                return this.updateMergeLocalAndNetworkData(this.state.stockpileTiles, arr, networkObject);
             }, []);
             const houses = serverHouses.reduce((arr: IHouse[], networkObject: IHouse): IHouse[] => {
                 return this.updateMergeLocalAndNetworkData(this.state.houses, arr, networkObject);
@@ -922,7 +939,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 npc,
                 lot,
                 resources,
-                inventory
+                inventory,
+                stockpiles,
+                stockpileTiles
             });
         }
 
@@ -1210,8 +1229,6 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     lot: null,
                     // close person inventory
                     showInventory: false,
-                    // close construction screen
-                    showConstruction: false,
                 });
 
                 // merge optional state updates into one state update object to perform a single setState.
@@ -1781,6 +1798,90 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         }
     };
 
+    withdrawFromStockpile = async (networkObject: INetworkObject, stockpile: IStockpile) => {
+        // get current person
+        const currentPerson = this.getCurrentPerson();
+        if (currentPerson) {
+            const stockpileController = new InventoryController(stockpile);
+            const personController = new InventoryController(currentPerson);
+            const amount = getMaxStackSize(networkObject.objectType);
+            const {
+                updatedItem: withdrawnItem
+            } = stockpileController.withdrawFromStockpile(networkObject, amount);
+            if (!withdrawnItem) {
+                throw new Error("No item withdrawn from stockpile");
+            }
+            const {
+                updatedItem,
+                stackableSlots
+            } = personController.pickUpItem(withdrawnItem);
+
+            // make http request to pick up item
+            const withdrawRequest = personController.withdrawItemFromStockpileRequest(currentPerson, networkObject, stockpile, amount);
+            // begin picking up
+            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/stockpile/withdraw", withdrawRequest);
+
+            // update objects array
+            const objects = this.state.objects.reduce((acc: INetworkObject[], obj: INetworkObject): INetworkObject[] => {
+                if (obj.id === networkObject.id) {
+                    // found object
+                    if (updatedItem === null) {
+                        // updated item was deleted, do not include in new array
+                        return acc;
+                    } else {
+                        // updated item was updated, replace old object with new updated item
+                        return [
+                            ...acc,
+                            updatedItem
+                        ];
+                    }
+                } else if (stackableSlots.map(s => s.id).includes(obj.id)) {
+                    // the item was placed into a stackable slot, update stackable slot
+                    const stackableSlot = stackableSlots.find(s => s.id === obj.id) as INetworkObject;
+                    return [
+                        ...acc,
+                        stackableSlot
+                    ];
+                } else {
+                    // not object, keep same item
+                    return [
+                        ...acc,
+                        obj
+                    ];
+                }
+            }, []);
+            const persons = this.state.persons.map(person => {
+                if (person.id === currentPerson.id) {
+                    // found person, update inventory
+                    return {
+                        ...person,
+                        inventory: personController.getInventory()
+                    };
+                } else {
+                    // not person, do nothing
+                    return person;
+                }
+            });
+            const stockpiles = this.state.stockpiles.map(s => {
+                if (s.id === stockpile.id) {
+                    // found person, update inventory
+                    return {
+                        ...s,
+                        inventory: stockpileController.getInventory()
+                    };
+                } else {
+                    // not person, do nothing
+                    return s;
+                }
+            });
+            this.setState({
+                objects,
+                persons,
+                stockpiles
+            });
+        }
+    };
+
     dropObject = async (networkObject: INetworkObject) => {
         // get current person
         const currentPerson = this.getCurrentPerson();
@@ -1914,6 +2015,68 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
 
     showConstruction = () => {
         this.setState({showConstruction: !this.state.showConstruction});
+    };
+
+    showStockpile = () => {
+        this.setState({showStockpile: !this.state.showStockpile});
+    };
+
+    /**
+     * Construct a stockpile at a location.
+     */
+    constructStockpileAtLocation = async (location: IObject) => {
+        const currentPerson = this.getCurrentPerson();
+        if (currentPerson) {
+            const controller = new StockpileController({
+                person: currentPerson,
+                stockpiles: this.state.stockpiles,
+                stockpileTiles: this.state.stockpileTiles
+            });
+            const {
+                stockpileTilesToRemove,
+                stockpileTilesToAdd,
+                stockpileTilesToModify,
+                stockpilesToRemove,
+                stockpilesToModify,
+                stockpilesToAdd
+            } = controller.constructStockpile({location});
+
+            const postData = controller.getConstructionStockpileRequest(location);
+            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/construction/stockpile", postData);
+
+            // update local state with the changes
+            const stockpiles: IStockpile[] = [
+                ...this.state.stockpiles.filter(stockpile => {
+                    return !stockpilesToRemove.some(s => s.id === stockpile.id)
+                }).map(stockpile => {
+                    const modifiedStockpile = stockpilesToModify.find(s => s.id === stockpile.id);
+                    if (modifiedStockpile) {
+                        return modifiedStockpile;
+                    } else {
+                        return stockpile;
+                    }
+                }),
+                ...stockpilesToAdd
+            ];
+            const stockpileTiles: IStockpileTile[] = [
+                ...this.state.stockpileTiles.filter(tile => {
+                    return !stockpileTilesToRemove.some(t => t.id === tile.id)
+                }).map(tile => {
+                    const modifiedStockpileTile = stockpileTilesToModify.find(s => s.id === tile.id);
+                    if (modifiedStockpileTile) {
+                        return modifiedStockpileTile;
+                    } else {
+                        return tile;
+                    }
+                }),
+                ...stockpileTilesToAdd
+            ];
+
+            this.setState({
+                stockpiles,
+                stockpileTiles
+            });
+        }
     };
 
     /**
@@ -2052,6 +2215,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                                     y: 0,
                                                     objectType: recipe.product,
                                                     lastUpdate: new Date().toISOString(),
+                                                    insideStockpile: null,
                                                     grabbedByNpcId: null,
                                                     grabbedByPersonId: null,
                                                     isInInventory: true,
@@ -2113,6 +2277,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         const day: boolean = timeOfDayScalar >= 0.25 && timeOfDayScalar < 0.75;
         const sunMoonScale = (timeOfDayScalar + 0.25) % 0.5;
 
+        const npc = this.state.npc ? applyInventoryState(this.state.npc) : null;
+
         return (
             <div className="persons">
                 <h1>Multiplayer Room</h1>
@@ -2122,6 +2288,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     <button onClick={this.beginLogin}>Login</button>
                     <button onClick={this.showInventory}>Inventory</button>
                     <button onClick={this.showConstruction}>Construction</button>
+                    <button onClick={this.showStockpile}>Stockpile</button>
                 </div>
                 <div style={{backgroundColor: "red", color: "white"}}>
                     {this.state.errorMessage}
@@ -2192,7 +2359,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         }
                         {
                             // draw transparent cells to highlight zones in the world, each zone will group npcs together, the player should know zone boundaries
-                            this.state.showConstruction ? this.generateWorldTiles(worldOffset, {tileWidth: 2000, tileHeight: 2000}).map(({x, y}: IObject) => {
+                            this.state.showConstruction || this.state.showStockpile ? this.generateWorldTiles(worldOffset, {tileWidth: 2000, tileHeight: 2000}).map(({x, y}: IObject) => {
                                 return (
                                     <g key={`cellZone(${x},${y})`} transform={`translate(${x},${y})`}>
                                         <rect x="0" y="0" width="2000" height="2000" stroke="green" fill="green" fillOpacity={0.3}/>
@@ -2211,6 +2378,58 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                     </g>
                                 )
                             }) : null
+                        }
+                        {
+                            this.state.showStockpile ? this.generateWorldTiles(worldOffset, {tileWidth: 200, tileHeight: 200}).map(({x, y}: IObject) => {
+                                const stockpileTile = this.state.stockpileTiles.find(tile => tile.x === x && tile.y === y);
+                                return (
+                                    <g key={`stockpileTile(${x},${y})`} transform={`translate(${x},${y})`} onClick={() => this.constructStockpileAtLocation({x, y})}>
+                                        {
+                                            stockpileTile ? (
+                                                <rect x="0" y="0" width={200} height={200} fill="lightgrey" fillOpacity={0.6}/>
+                                            ) : (
+                                                <rect x="20" y="20" width={160} height={160} fill="lightgrey" fillOpacity={0.3}/>
+                                            )
+                                        }
+                                        <text x="50" y="100" fontSize={14}>{stockpileTile ? `Click to Remove` : `Click to Build`}</text>
+                                    </g>
+                                );
+                            }) : this.state.stockpileTiles.map(({x, y, stockpileId, stockpileIndex}) => {
+                                const foundStockpile = this.state.stockpiles.find(s => s.id === stockpileId);
+                                if (!foundStockpile) {
+                                    return null;
+                                }
+                                const stockpile = applyInventoryState(foundStockpile);
+                                const items = stockpile.inventory.slots.slice(
+                                    stockpileIndex * StockpileController.NUMBER_OF_COLUMNS_PER_STOCKPILE_TILE * StockpileController.NUMBER_OF_ROWS_PER_STOCKPILE_TILE,
+                                    (stockpileIndex + 1) * StockpileController.NUMBER_OF_COLUMNS_PER_STOCKPILE_TILE * StockpileController.NUMBER_OF_ROWS_PER_STOCKPILE_TILE
+                                );
+                                return (
+                                    <g key={`stockpileTile(${x},${y})`} transform={`translate(${x},${y})`}>
+                                        {
+                                            <rect x="0" y="0" width={200} height={200} fill="lightgrey" fillOpacity={0.3}/>
+                                        }
+                                        {
+                                            items.map((item, index) => {
+                                                const numColumns = 5;
+                                                const columnWidth = 40;
+                                                const columnOffset = 20;
+                                                const rowHeight = 100;
+                                                const rowOffset = 50;
+                                                const itemX = (index % numColumns) * columnWidth + columnOffset;
+                                                const itemY = Math.floor(index / numColumns) * rowHeight + rowOffset;
+                                                return (
+                                                    <g transform={`translate(${itemX},${itemY})`}>
+                                                        {
+                                                            this.drawNetworkObject(item, undefined, true, stockpile).draw()
+                                                        }
+                                                    </g>
+                                                );
+                                            })
+                                        }
+                                    </g>
+                                );
+                            })
                         }
                         {
                             // draw roads
@@ -2303,15 +2522,15 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         ) : null
                     }
                     {
-                        this.state.npc ? (
+                        npc ? (
                             <g>
                                 <rect x="0" y="0" width={this.state.width} height={this.state.height} fill="white" opacity="0.3"/>
-                                <text x="20" y="60" fontSize="24">NPC id: {this.state.npc.id}</text>
-                                <text x="20" y="100" fontSize="18" onClick={this.followNpc(this.state.npc)}>Follow</text>
+                                <text x="20" y="60" fontSize="24">NPC id: {npc.id}</text>
+                                <text x="20" y="100" fontSize="18" onClick={this.followNpc(npc)}>Follow</text>
                                 <text x="20" y="140">NPC Inventory</text>
                                 <g transform={"translate(0, 160)"}>
                                     {
-                                        this.drawInventory(this.state.npc.inventory, false)
+                                        this.drawInventory(npc.inventory, false)
                                     }
                                 </g>
                                 <text x="20" y="300">Your Inventory</text>

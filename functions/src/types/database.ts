@@ -63,17 +63,21 @@ export interface INpcCellTimeDatabase {
 /**
  * An object that should be networked in multiplayer.
  */
-export interface INetworkObjectDatabase {
+export interface INetworkObjectBaseDatabase {
     id: string;
     x: number;
     y: number;
     objectType: ENetworkObjectType;
-    grabbedByPersonId: string | null;
-    grabbedByNpcId: string | null;
-    isInInventory: boolean;
     lastUpdate: admin.firestore.Timestamp;
     health: IObjectHealth;
     cell: string;
+}
+
+export interface INetworkObjectDatabase extends INetworkObjectBaseDatabase {
+    insideStockpile: string | null;
+    grabbedByPersonId: string | null;
+    grabbedByNpcId: string | null;
+    isInInventory: boolean;
     amount: number;
     exist: boolean;
     state: INetworkObjectState<INetworkObject>[];
@@ -99,7 +103,7 @@ export interface IPersonsInventoryDatabase {
     slots: INetworkObjectDatabase[];
 }
 
-export interface IPersonDatabase extends INetworkObjectDatabase {
+export interface IPersonDatabase extends INetworkObjectBaseDatabase {
     shirtColor: string;
     pantColor: string;
     carId: string | null;
@@ -122,12 +126,12 @@ export interface INpcDatabase extends IPersonDatabase {
     inventoryState: IInventoryState[];
 }
 
-export interface ICarDatabase extends INetworkObjectDatabase {
+export interface ICarDatabase extends INetworkObjectBaseDatabase {
     direction: ECarDirection;
     objectType: ENetworkObjectType;
 }
 
-export interface IResourceDatabase extends INetworkObjectDatabase {
+export interface IResourceDatabase extends INetworkObjectBaseDatabase {
     spawnSeed: string;
     spawns: IResourceSpawn[];
     spawnState: seedrandom.State | true;
@@ -139,9 +143,49 @@ export interface IResourceDatabase extends INetworkObjectDatabase {
 /**
  * Houses provide a location for NPCs to store things, work from, and sleep.
  */
-export interface IHouseDatabase extends INetworkObjectDatabase, IOwner {
+export interface IHouseDatabase extends INetworkObjectBaseDatabase, IOwner {
     /**
      * The npc id of the NPC that lives in the house.
      */
     npcId: string;
+}
+
+/**
+ * A stockpile object inside the database.
+ */
+export interface IStockpileDatabase extends INetworkObjectBaseDatabase, IOwner {
+    /**
+     * The inventory of the stockpile.
+     */
+    inventory: IPersonsInventoryDatabase;
+    /**
+     * The stockpile is object type stockpile.
+     */
+    objectType: ENetworkObjectType.STOCKPILE;
+    /**
+     * A seed used to generate random crafting ids.
+     */
+    craftingSeed: string;
+    /**
+     * The state of the random number generator used to generate new item ids.
+     */
+    craftingState: true | seedrandom.State;
+    /**
+     * Represent the change to npc inventory over time.
+     */
+    inventoryState: IInventoryState[];
+}
+
+/**
+ * A stockpile tile object inside the database.
+ */
+export interface IStockpileTileDatabase extends INetworkObjectBaseDatabase, IOwner {
+    /**
+     * The id of the stockpile the stockpile tile is related to.
+     */
+    stockpileId: string;
+    /**
+     * The index into the stockpile inventory. Used to render slices of the stockpile.
+     */
+    stockpileIndex: number;
 }

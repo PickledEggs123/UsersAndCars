@@ -1,5 +1,20 @@
-import {INetworkObject, INpc, IObject, IPerson, IResource} from "persons-game-common/lib/types/GameTypes";
-import {INetworkObjectDatabase, INpcDatabase, IPersonDatabase, IResourceDatabase} from "./types/database";
+import {
+    IFloor,
+    IHouse,
+    INetworkObject,
+    INpc,
+    IObject,
+    IPerson,
+    IResource, IStockpile, IStockpileTile,
+    IWall
+} from "persons-game-common/lib/types/GameTypes";
+import {
+    IHouseDatabase, INetworkObjectBaseDatabase,
+    INetworkObjectDatabase,
+    INpcDatabase,
+    IPersonDatabase,
+    IResourceDatabase, IStockpileDatabase, IStockpileTileDatabase
+} from "./types/database";
 import admin from "firebase-admin";
 import {getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell";
 
@@ -11,6 +26,25 @@ export const networkObjectClientToDatabase = (networkObjectClient: INetworkObjec
     ...networkObjectClient,
     lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(networkObjectClient.lastUpdate)),
     cell: getNetworkObjectCellString(networkObjectClient)
+});
+export const houseDatabaseToClient = (house: IHouseDatabase): IHouse => ({
+    ...house,
+    lastUpdate: house.lastUpdate.toDate().toISOString()
+});
+export const houseClientToDatabase = (house: IHouse): IHouseDatabase => ({
+    ...house,
+    lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(house.lastUpdate)),
+    cell: getNetworkObjectCellString(house)
+});
+export const floorClientToDatabase = (floor: IFloor): INetworkObjectBaseDatabase => ({
+    ...floor,
+    lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(floor.lastUpdate)),
+    cell: getNetworkObjectCellString(floor)
+});
+export const wallClientToDatabase = (wall: IWall): INetworkObjectBaseDatabase => ({
+    ...wall,
+    lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(wall.lastUpdate)),
+    cell: getNetworkObjectCellString(wall)
 });
 export const resourceDatabaseToClient = (resourceDatabase: IResourceDatabase): IResource => ({
     ...resourceDatabase,
@@ -39,6 +73,28 @@ export const personClientToDatabase = (personClient: IPerson): Partial<IPersonDa
         slots: personClient.inventory.slots.map(networkObjectClientToDatabase)
     },
     cell: getNetworkObjectCellString(personClient)
+});
+export const stockpileDatabaseToClient = (stockpile: IStockpileDatabase): IStockpile => ({
+    ...stockpile,
+    lastUpdate: stockpile.lastUpdate.toDate().toISOString(),
+    inventory: {
+        ...stockpile.inventory,
+        slots: stockpile.inventory.slots.map(networkObjectDatabaseToClient)
+    }
+});
+export const stockpileClientToDatabase = (stockpile: IStockpile): Partial<IStockpileDatabase> => ({
+    ...stockpile,
+    lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(stockpile.lastUpdate)),
+    inventory: {
+        ...stockpile.inventory,
+        slots: stockpile.inventory.slots.map(networkObjectClientToDatabase)
+    },
+    cell: getNetworkObjectCellString(stockpile)
+});
+export const stockpileTileClientToDatabase = (stockpile: IStockpileTile): Partial<IStockpileTileDatabase> => ({
+    ...stockpile,
+    lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(stockpile.lastUpdate)),
+    cell: getNetworkObjectCellString(stockpile)
 });
 export const npcDatabaseToClient = (npcDatabase: INpcDatabase): INpc => ({
     ...npcDatabase,
@@ -79,36 +135,35 @@ export const sortNetworkObjectsByDistance = (currentPersonData: IPersonDatabase)
  * @param collectionName The name of the collection.
  * @param cellsArray If the collection uses cells string array instead of cell string.
  */
-export const getSimpleCollection = async <T extends IObject>(currentPersonData: IPersonDatabase, collectionName: string, cellsArray: boolean = false): Promise<Array<T>> => {
+export const getSimpleCollection = async <T extends IObject>(currentPersonData: IPersonDatabase, collectionName: string, cellsArray: boolean = false, networkObject: boolean = false): Promise<Array<T>> => {
     const dataArrayToReturnAsJson: T[] = [];
 
     // list of objects near the person
     let queryNotInInventory: admin.firestore.Query;
     // list of objects in the person's inventory
-    let queryIsInInventory: admin.firestore.Query;
+    let queryIsInInventory: admin.firestore.Query | null = null;
     if (cellsArray) {
         // using cells array, perform a search in an array of cells
         // used for objects that can be in multiple cells like lots. Lots can be larger than cellSize.
         queryNotInInventory = admin.firestore().collection(collectionName)
-            .where("cells", "array-contains-any", getRelevantNetworkObjectCells(currentPersonData))
-            .where("isInInventory", "==", false);
-        queryIsInInventory = admin.firestore().collection(collectionName)
-            .where("grabbedByPersonId", "==", currentPersonData ? currentPersonData.id : "")
-            .where("isInInventory", "==", true);
+            .where("cells", "array-contains-any", getRelevantNetworkObjectCells(currentPersonData));
     } else {
         // using cell field, perform a search for a cell field
         // used for objects that are in one cell at a time. The objects are smaller than cellSize.
         queryNotInInventory = admin.firestore().collection(collectionName)
-            .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData))
-            .where("isInInventory", "==", false);
-        queryIsInInventory = admin.firestore().collection(collectionName)
-            .where("grabbedByPersonId", "==", currentPersonData ? currentPersonData.id : "")
-            .where("isInInventory", "==", true);
+            .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData));
     }
-    const querySnapshots = await Promise.all([
-        queryNotInInventory.get(),
-        queryIsInInventory.get()
-    ]);
+    if (networkObject) {
+        queryNotInInventory = queryNotInInventory.where("isInInventory", "==", false);
+        queryIsInInventory = admin.firestore().collection(collectionName)
+            .where("grabbedByPersonId", "==", currentPersonData ? currentPersonData.id : "");
+        queryIsInInventory = queryIsInInventory.where("isInInventory", "==", true);
+    }
+    const queries: Promise<admin.firestore.QuerySnapshot>[] = [queryNotInInventory.get()];
+    if (queryIsInInventory) {
+        queries.push(queryIsInInventory.get());
+    }
+    const querySnapshots = await Promise.all(queries);
 
     for (const querySnapshot of querySnapshots) {
         for (const documentSnapshot of querySnapshot.docs) {

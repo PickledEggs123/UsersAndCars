@@ -1,4 +1,29 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "npcTimes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "cell", "order": "ASCENDING" },
+        { "fieldPath": "startTime", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "persons",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "cell", "order": "ASCENDING" },
+        { "fieldPath": "lastUpdate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "npcTimes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "expired", "order": "ASCENDING" },
+        { "fieldPath": "startTime", "order": "ASCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }

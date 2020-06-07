@@ -1,6 +1,6 @@
 import {IObjectHealth} from "persons-game-common/lib/types/GameTypes";
 import * as admin from "firebase-admin";
-import {INetworkObjectDatabase} from "./types/database";
+import {INetworkObjectBaseDatabase} from "./types/database";
 
 /**
  * Handle all health related status.
@@ -14,7 +14,7 @@ import {INetworkObjectDatabase} from "./types/database";
 export const performHealthTickOnCollectionOfNetworkObjects = async (collectionName: string, defaultHealthObject: IObjectHealth) => {
     const collectionQuery = await admin.firestore().collection(collectionName).get();
     for (const doc of collectionQuery.docs) {
-        const data = doc.data() as INetworkObjectDatabase;
+        const data = doc.data() as INetworkObjectBaseDatabase;
         // use existing or default health object
         const healthData: IObjectHealth = data.health || defaultHealthObject;
         // compute new health value
@@ -27,7 +27,7 @@ export const performHealthTickOnCollectionOfNetworkObjects = async (collectionNa
                 await doc.ref.delete();
             } else {
                 // change person or object health
-                const newData: Partial<INetworkObjectDatabase> = {
+                const newData: Partial<INetworkObjectBaseDatabase> = {
                     health: {
                         ...healthData,
                         value: newValue

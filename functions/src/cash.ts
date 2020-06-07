@@ -58,9 +58,6 @@ export const handleVend = (req: { body: IApiPersonsVendPost; }, res: any, next: 
                         id,
                         x,
                         y,
-                        grabbedByPersonId: null,
-                        grabbedByNpcId: null,
-                        isInInventory: false,
                         lastUpdate: admin.firestore.Timestamp.now(),
                         objectType,
                         direction: ECarDirection.RIGHT,
@@ -69,9 +66,6 @@ export const handleVend = (req: { body: IApiPersonsVendPost; }, res: any, next: 
                             x,
                             y
                         }),
-                        amount: 1,
-                        exist: true,
-                        state: []
                     };
 
                     // update two database objects
@@ -92,6 +86,7 @@ export const handleVend = (req: { body: IApiPersonsVendPost; }, res: any, next: 
                         id,
                         x,
                         y,
+                        insideStockpile: null,
                         grabbedByPersonId: null,
                         grabbedByNpcId: null,
                         isInInventory: false,

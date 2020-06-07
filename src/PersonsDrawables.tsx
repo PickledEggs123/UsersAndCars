@@ -6,21 +6,20 @@ import {
     ICar,
     IDrawable, IFloor, IHouse,
     ILot,
-    INetworkObject,
+    INetworkObject, INetworkObjectBase,
     INpc,
     INpcPathPoint,
     IObject,
     IPerson,
     IResource,
-    IRoad,
+    IRoad, IStockpile, IStockpileTile,
     ITree,
-    IVendor,
     IVendorInventoryItem, IWall
 } from "persons-game-common/lib/types/GameTypes";
 import React from "react";
 import seedrandom from "seedrandom";
 import {getMaxStackSize} from "persons-game-common/lib/inventory";
-import {applyStateToNetworkObject} from "persons-game-common/lib/npc";
+import {applyStateToNetworkObject, applyStateToResource} from "persons-game-common/lib/npc";
 
 /**
  * Represent a leaf on a tree.
@@ -91,6 +90,14 @@ export interface IPersonsDrawablesState {
      * A list of resource producing objects.
      */
     resources: IResource[];
+    /**
+     * A list of stockpiles. Stockpiles can store large amount of items.
+     */
+    stockpiles: IStockpile[];
+    /**
+     * A list of stockpile tiles. Adding more tiles will increase the number of slots in a stockpile.
+     */
+    stockpileTiles: IStockpileTile[];
     /**
      * The randomly generated ID of the current person shown.
      */
@@ -171,7 +178,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param networkObject The last object position
      * @param previousNetworkObject The second last object position
      */
-    interpolateObjectPosition = <T extends INetworkObject>(networkObject: T, previousNetworkObject?: T): T => {
+    interpolateObjectPosition = <T extends INetworkObjectBase>(networkObject: T, previousNetworkObject?: T): T => {
         let {x, y} = networkObject;
 
         if (previousNetworkObject) {
@@ -200,7 +207,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         };
     };
 
-    drawHealthBar = (networkObject: INetworkObject, offset?: IObject) => {
+    drawHealthBar = (networkObject: INetworkObjectBase, offset?: IObject) => {
         let healthPixel = 100;
         if (networkObject.health) {
             const {value, max} = networkObject.health;
@@ -607,16 +614,16 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             </g>
         );
     };
-
-    /**
-     * Open the inventory of a vendor.
-     * @param vendor The vendor to check inventory for.
-     */
-    selectVendingOption = (vendor: IVendor) => () => {
-        this.setState({
-            vendingInventory: vendor.inventory
-        });
-    };
+    //
+    // /**
+    //  * Open the inventory of a vendor.
+    //  * @param vendor The vendor to check inventory for.
+    //  */
+    // selectVendingOption = (vendor: IVendor) => () => {
+    //     this.setState({
+    //         vendingInventory: vendor.inventory
+    //     });
+    // };
 
     /**
      * Draw a vending machine.
@@ -627,7 +634,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     drawVendingMachine = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
         return (
-            <g key={`chair-${drawable.id}`} transform={`translate(${x - 50},${y - 200})`} filter={filter} onClick={this.selectVendingOption(drawable as IVendor)}>
+            <g key={`chair-${drawable.id}`} transform={`translate(${x - 50},${y - 200})`} filter={filter}>
                 <polygon fill="blue" stroke="black" strokeWidth={2} points="-50,-100 50,-100 50,100, -50,100"/>
                 <polygon fill="black" points="-30,20 30,20, 30,40 -30,40"/>
                 <polygon fill="white" stroke="black" strokeWidth={2} points="20,-40 40,-40 40,-30 20,-30"/>
@@ -638,6 +645,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     abstract pickUpObject: (networkObject: INetworkObject) => void;
+    abstract withdrawFromStockpile: (networkObject: INetworkObject, stockpile: IStockpile) => void;
 
     /**
      * Draw a piece of wood on the ground.
@@ -645,11 +653,18 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param filter The filter to apply to the object.
      * @param previousNetworkObject The previous position of the object for interpolation.
      * @param inventory The object is in an inventory.
+     * @param stockpile The stockpile the object is inside of.
      */
-    drawWood = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
+    drawWood = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean, stockpile?: IStockpile) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        let onClick: undefined | (() => void);
+        if (inventory && stockpile) {
+            onClick = () => this.withdrawFromStockpile(drawable, stockpile);
+        } else if (!inventory) {
+            onClick = () => this.pickUpObject(drawable);
+        }
         return (
-            <g key={`wood-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
+            <g key={`wood-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <path fill="tan" stroke="black" strokeWidth={2} d="M -50 -20 c -5 -5 -5 -15 0 -20 l 50 0 c 5 5 5 15 0 20 z"/>
                 <path fill="tan" stroke="black" strokeWidth={2} d="M 0 -20 c -5 -5 -5 -15 0 -20 c 5 5 5 15 0 20"/>
                 <path fill="tan" stroke="black" strokeWidth={2} d="M 0 -20 c -5 -5 -5 -15 0 -20 l 50 0 c 5 5 5 15 0 20 z"/>
@@ -683,11 +698,18 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param filter The filter to apply to the object.
      * @param previousNetworkObject The previous position of the object for interpolation.
      * @param inventory The object is in an inventory.
+     * @param stockpile The stockpile the object is inside of.
      */
-    drawStick = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
+    drawStick = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean, stockpile?: IStockpile) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        let onClick: undefined | (() => void);
+        if (inventory && stockpile) {
+            onClick = () => this.withdrawFromStockpile(drawable, stockpile);
+        } else if (!inventory) {
+            onClick = () => this.pickUpObject(drawable);
+        }
         return (
-            <g key={`stick-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
+            <g key={`stick-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <path fill="tan" stroke="black" strokeWidth={2} d="M -25 0 l 50 0 l 0 -5 l -50 0 z "/>
                 {this.drawAmountTag(drawable)}
             </g>
@@ -700,11 +722,18 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param filter The filter to apply to the object.
      * @param previousNetworkObject The previous position of the object for interpolation.
      * @param inventory The object is in an inventory.
+     * @param stockpile The stockpile the object is inside of.
      */
-    drawStone = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
+    drawStone = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean, stockpile?: IStockpile) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        let onClick: undefined | (() => void);
+        if (inventory && stockpile) {
+            onClick = () => this.withdrawFromStockpile(drawable, stockpile);
+        } else if (!inventory) {
+            onClick = () => this.pickUpObject(drawable);
+        }
         return (
-            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
+            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <path fill="grey" stroke="black" strokeWidth={2} d="m -40 -40 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
             </g>
         )
@@ -716,11 +745,18 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param filter The filter to apply to the object.
      * @param previousNetworkObject The previous position of the object for interpolation.
      * @param inventory The object is in an inventory.
+     * @param stockpile The stockpile the object is inside of.
      */
-    drawCoal = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
+    drawCoal = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean, stockpile?: IStockpile) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        let onClick: undefined | (() => void);
+        if (inventory && stockpile) {
+            onClick = () => this.withdrawFromStockpile(drawable, stockpile);
+        } else if (!inventory) {
+            onClick = () => this.pickUpObject(drawable);
+        }
         return (
-            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
+            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <path fill="black" stroke="black" strokeWidth={2} d="m -40 -40 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
             </g>
         )
@@ -732,11 +768,18 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param filter The filter to apply to the object.
      * @param previousNetworkObject The previous position of the object for interpolation.
      * @param inventory The object is in an inventory.
+     * @param stockpile The stockpile the object is inside of.
      */
-    drawIron = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
+    drawIron = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean, stockpile?: IStockpile) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        let onClick: undefined | (() => void);
+        if (inventory && stockpile) {
+            onClick = () => this.withdrawFromStockpile(drawable, stockpile);
+        } else if (!inventory) {
+            onClick = () => this.pickUpObject(drawable);
+        }
         return (
-            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
+            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <path fill="maroon" stroke="black" strokeWidth={2} d="m -40 -40 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
             </g>
         )
@@ -748,11 +791,18 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param filter The filter to apply to the object.
      * @param previousNetworkObject The previous position of the object for interpolation.
      * @param inventory The object is in an inventory.
+     * @param stockpile The stockpile the object is inside of.
      */
-    drawMud = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
+    drawMud = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean, stockpile?: IStockpile) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        let onClick: undefined | (() => void);
+        if (inventory && stockpile) {
+            onClick = () => this.withdrawFromStockpile(drawable, stockpile);
+        } else if (!inventory) {
+            onClick = () => this.pickUpObject(drawable);
+        }
         return (
-            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
+            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <path fill="brown" stroke="black" strokeWidth={2} d="m -40 -40 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
             </g>
         )
@@ -764,11 +814,18 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param filter The filter to apply to the object.
      * @param previousNetworkObject The previous position of the object for interpolation.
      * @param inventory The object is in an inventory.
+     * @param stockpile The stockpile the object is inside of.
      */
-    drawClay = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
+    drawClay = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean, stockpile?: IStockpile) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        let onClick: undefined | (() => void);
+        if (inventory && stockpile) {
+            onClick = () => this.withdrawFromStockpile(drawable, stockpile);
+        } else if (!inventory) {
+            onClick = () => this.pickUpObject(drawable);
+        }
         return (
-            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
+            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <path fill="grey" stroke="black" strokeWidth={2} d="m -40 -40 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
             </g>
         )
@@ -780,11 +837,18 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param filter The filter to apply to the object.
      * @param previousNetworkObject The previous position of the object for interpolation.
      * @param inventory The object is in an inventory.
+     * @param stockpile The stockpile the object is inside of.
      */
-    drawReed = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
+    drawReed = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean, stockpile?: IStockpile) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        let onClick: undefined | (() => void);
+        if (inventory && stockpile) {
+            onClick = () => this.withdrawFromStockpile(drawable, stockpile);
+        } else if (!inventory) {
+            onClick = () => this.pickUpObject(drawable);
+        }
         return (
-            <g key={`stick-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
+            <g key={`stick-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <path fill="green" stroke="black" strokeWidth={2} d="M -25 0 l 50 0 l 0 -5 l -50 0 z "/>
                 <text x={-25} y={-30} fontSize={14}>{drawable.amount}</text>
             </g>
@@ -797,11 +861,18 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param filter The filter to apply to the object.
      * @param previousNetworkObject The previous position of the object for interpolation.
      * @param inventory The object is in an inventory.
+     * @param stockpile The stockpile the object is inside of.
      */
-    drawWattleWall = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean) => {
+    drawWattleWall = (drawable: INetworkObject, filter: string, previousNetworkObject?: INetworkObject, inventory?: boolean, stockpile?: IStockpile) => {
         const {x, y} = this.interpolateObjectPosition(drawable, previousNetworkObject);
+        let onClick: undefined | (() => void);
+        if (inventory && stockpile) {
+            onClick = () => this.withdrawFromStockpile(drawable, stockpile);
+        } else if (!inventory) {
+            onClick = () => this.pickUpObject(drawable);
+        }
         return (
-            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={inventory ? undefined : () => this.pickUpObject(drawable)}>
+            <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <rect x={-28} y={-56} width={56} height={56} fill="url(#wattle)"/>
                 {this.drawAmountTag(drawable)}
             </g>
@@ -813,8 +884,9 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param networkObject The network object to draw.
      * @param previousNetworkObject The previous network object used for interpolation.
      * @param inventory The image is in an inventory, not in the world.
+     * @param stockpile The stockpile the item is inside of.
      */
-    drawNetworkObject = (networkObject: INetworkObject, previousNetworkObject?: INetworkObject, inventory?: boolean): IDrawable => {
+    drawNetworkObject = (networkObject: INetworkObject, previousNetworkObject?: INetworkObject, inventory?: boolean, stockpile?: IStockpile): IDrawable => {
         const component = this;
 
         // highlight objects near current person with a white outline
@@ -864,7 +936,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     ...networkObject,
                     type: EDrawableType.OBJECT,
                     draw() {
-                        return component.drawWood(networkObject, filter, previousNetworkObject, inventory);
+                        return component.drawWood(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
                 }
             }
@@ -873,7 +945,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     ...networkObject,
                     type: EDrawableType.OBJECT,
                     draw() {
-                        return component.drawStick(networkObject, filter, previousNetworkObject, inventory);
+                        return component.drawStick(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
                 }
             }
@@ -882,7 +954,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     ...networkObject,
                     type: EDrawableType.OBJECT,
                     draw() {
-                        return component.drawStone(networkObject, filter, previousNetworkObject, inventory);
+                        return component.drawStone(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
                 }
             }
@@ -891,7 +963,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     ...networkObject,
                     type: EDrawableType.OBJECT,
                     draw() {
-                        return component.drawCoal(networkObject, filter, previousNetworkObject, inventory);
+                        return component.drawCoal(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
                 }
             }
@@ -900,7 +972,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     ...networkObject,
                     type: EDrawableType.OBJECT,
                     draw() {
-                        return component.drawIron(networkObject, filter, previousNetworkObject, inventory);
+                        return component.drawIron(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
                 }
             }
@@ -909,7 +981,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     ...networkObject,
                     type: EDrawableType.OBJECT,
                     draw() {
-                        return component.drawMud(networkObject, filter, previousNetworkObject, inventory);
+                        return component.drawMud(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
                 }
             }
@@ -918,7 +990,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     ...networkObject,
                     type: EDrawableType.OBJECT,
                     draw() {
-                        return component.drawClay(networkObject, filter, previousNetworkObject, inventory);
+                        return component.drawClay(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
                 }
             }
@@ -927,7 +999,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     ...networkObject,
                     type: EDrawableType.OBJECT,
                     draw() {
-                        return component.drawReed(networkObject, filter, previousNetworkObject, inventory);
+                        return component.drawReed(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
                 }
             }
@@ -936,7 +1008,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                     ...networkObject,
                     type: EDrawableType.OBJECT,
                     draw() {
-                        return component.drawWattleWall(networkObject, filter, previousNetworkObject, inventory);
+                        return component.drawWattleWall(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
                 }
             }
@@ -1505,7 +1577,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             }, []),
 
             // for each resource object
-            ...this.state.resources.map(resource => applyStateToNetworkObject(resource) as IResource).filter(this.isNearWorldView(worldOffset)).map(this.interpolateResource).reduce((arr: IDrawable[], resource: IResource): IDrawable[] => {
+            ...this.state.resources.map(resource => applyStateToResource(resource)).filter(this.isNearWorldView(worldOffset)).map(this.interpolateResource).reduce((arr: IDrawable[], resource: IResource): IDrawable[] => {
                 return [
                     ...arr,
                     ...this.drawResource(resource)
@@ -1578,7 +1650,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * Determine if a network object is nearby the person.
      * @param person The person which could be nearby the object.
      */
-    objectNearby = (person: IPerson) => (object: INetworkObject) => {
+    objectNearby = (person: IPerson) => (object: INetworkObjectBase) => {
         return Math.abs(object.x - person.x) <= 100 && Math.abs(object.y - person.y) <= 100;
     };
 

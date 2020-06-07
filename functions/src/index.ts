@@ -23,7 +23,7 @@ import {
     INpc,
     IPerson,
     IResource,
-    IRoad,
+    IRoad, IStockpile, IStockpileTile,
     IWall
 } from "persons-game-common/lib/types/GameTypes";
 import {
@@ -37,7 +37,7 @@ import {
     INetworkObjectDatabase,
     INpcCellTimeDatabase,
     INpcDatabase,
-    IPersonDatabase
+    IPersonDatabase, IStockpileDatabase
 } from "./types/database";
 import {defaultCarHealthObject, defaultObjectHealthObject, defaultPersonHealthObject} from "./config";
 import {giveEveryoneCash, handleVend} from "./cash";
@@ -45,9 +45,15 @@ import {performHealthTickOnCollectionOfNetworkObjects} from "./health";
 import {getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell";
 import {getThirtySecondsAgo, handleLogin} from "./authentication";
 import {handleGenerateTerrainTile, handleHarvestResource, updateTerrain} from "./terrain";
-import {handleCraftObject, handleDropObject, handlePickUpObject} from "./inventory";
-import {getSimpleCollection, sortNetworkObjectsByDistance} from "./common";
-import {handleConstructionRequest} from "./construction";
+import {
+    handleCraftObject,
+    handleDepositObjectIntoStockpile,
+    handleDropObject,
+    handlePickUpObject,
+    handleWithdrawObjectFromStockpile
+} from "./inventory";
+import {getSimpleCollection, networkObjectDatabaseToClient, sortNetworkObjectsByDistance} from "./common";
+import {handleConstructionRequest, handleStockpileConstructionRequest} from "./construction";
 import {simulateCell} from "./pathfinding";
 
 const matchAll = require("string.prototype.matchall");
@@ -75,6 +81,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
         const personsToReturnAsJson: IPerson[] = [];
         const npcsToReturnAsJson: INpc[] = [];
         const lotsToReturnAsJson: ILot[] = [];
+        const stockpilesToReturnAsJson: IStockpile[] = [];
 
         const {id} = req.query as {id: string};
 
@@ -116,10 +123,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
                         new Date().toISOString(),
                     inventory: {
                         ...dataWithoutPassword.inventory,
-                        slots: dataWithoutPassword.inventory.slots.map(slot => ({
-                            ...slot,
-                            lastUpdate: slot.lastUpdate.toDate().toISOString()
-                        }))
+                        slots: dataWithoutPassword.inventory.slots.map(slot => networkObjectDatabaseToClient(slot))
                     }
                 };
                 personsToReturnAsJson.push(personToReturnAsJson);
@@ -127,6 +131,34 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
 
             // get sorted list of nearest persons
             personsToReturnAsJson.sort(sortNetworkObjectsByDistance(currentPersonData));
+        }
+        // get stockpiles
+        {
+            // get a list of all people who have updated within the last thirty seconds
+            const querySnapshot = await admin.firestore().collection("stockpiles")
+                .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData))
+                .get();
+
+            // add to json list
+            for (const documentSnapshot of querySnapshot.docs) {
+                const data = documentSnapshot.data() as IStockpileDatabase;
+
+                // save database record into json array
+                const stockpileToReturnAsJson: IStockpile = {
+                    ...data,
+                    lastUpdate: data.lastUpdate ?
+                        data.lastUpdate.toDate().toISOString() :
+                        new Date().toISOString(),
+                    inventory: {
+                        ...data.inventory,
+                        slots: data.inventory.slots.map(slot => networkObjectDatabaseToClient(slot))
+                    }
+                };
+                stockpilesToReturnAsJson.push(stockpileToReturnAsJson);
+            }
+
+            // get sorted list of nearest persons
+            stockpilesToReturnAsJson.sort(sortNetworkObjectsByDistance(currentPersonData));
         }
 
         // get npcs
@@ -243,12 +275,14 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
             npcs: npcsToReturnAsJson,
             lots: lotsToReturnAsJson,
             cars: await getSimpleCollection<ICar>(currentPersonData, "personalCars"),
-            objects: await getSimpleCollection<INetworkObject>(currentPersonData, "objects"),
+            objects: await getSimpleCollection<INetworkObject>(currentPersonData, "objects", false, true),
             roads: await getSimpleCollection<IRoad>(currentPersonData, "roads"),
             houses: await getSimpleCollection<IHouse>(currentPersonData, "houses"),
             floors: await getSimpleCollection<IFloor>(currentPersonData, "floors"),
             walls: await getSimpleCollection<IWall>(currentPersonData, "walls"),
             resources: await getSimpleCollection<IResource>(currentPersonData, "resources"),
+            stockpiles: stockpilesToReturnAsJson,
+            stockpileTiles: await getSimpleCollection<IStockpileTile>(currentPersonData, "stockpileTiles"),
             voiceMessages: await getVoiceMessages(id)
         };
         res.json(jsonData);
@@ -291,9 +325,24 @@ personsApp.post("/resource/harvest", handleHarvestResource);
 personsApp.post("/object/pickup", handlePickUpObject);
 
 /**
+ * Withdraw an object from a stockpile into the inventory.
+ */
+personsApp.post("/stockpile/withdraw", handleWithdrawObjectFromStockpile);
+
+/**
+ * Deposit an object from the inventory to the stockpile.
+ */
+personsApp.post("/stockpile/deposit", handleDepositObjectIntoStockpile);
+
+/**
  * Construct a building using inventory items.
  */
 personsApp.post("/construction", handleConstructionRequest);
+
+/**
+ * Construct a stockpile.
+ */
+personsApp.post("/construction/stockpile", handleStockpileConstructionRequest);
 
 /**
  * Drop an object from the inventory.

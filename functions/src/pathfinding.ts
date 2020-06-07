@@ -1,15 +1,22 @@
-import {ENetworkObjectType, IHouse, INpc, INpcPathPoint} from "persons-game-common/lib/types/GameTypes";
-import {INetworkObjectDatabase, INpcCellTimeDatabase, INpcDatabase, IResourceDatabase} from "./types/database";
+import {ENetworkObjectType, INpc, INpcPathPoint} from "persons-game-common/lib/types/GameTypes";
+import {
+    IHouseDatabase,
+    INetworkObjectDatabase,
+    INpcCellTimeDatabase,
+    INpcDatabase,
+    IResourceDatabase, IStockpileDatabase
+} from "./types/database";
 import {cellSize} from "./config";
 import * as admin from "firebase-admin";
 import {getNetworkObjectCellString} from "./cell";
 import {CellController} from "persons-game-common/lib/npc";
 import {
+    houseDatabaseToClient,
     networkObjectClientToDatabase,
     networkObjectDatabaseToClient,
     npcClientToDatabase,
     npcDatabaseToClient, resourceClientToDatabase,
-    resourceDatabaseToClient
+    resourceDatabaseToClient, stockpileClientToDatabase, stockpileDatabaseToClient
 } from "./common";
 
 /**
@@ -109,10 +116,6 @@ const findCellTimesBetweenTwoPathPoints = (npc: INpcDatabase, a: INpcPathPoint, 
 const findCellTimesInPath = (npc: INpcDatabase, path: INpcPathPoint[]): INpcCellTimeDatabase[] => {
     const cellTimes: INpcCellTimeDatabase[] = [];
 
-    // pick a date 100 years from now, algorithm requires timespan to represent a non moving, always present NPC
-    const longTimeFromNow = new Date();
-    longTimeFromNow.setFullYear(longTimeFromNow.getFullYear() + 100);
-
     const firstPoint = path[0];
     const lastPoint = path[path.length - 1];
     if (firstPoint) {
@@ -138,7 +141,7 @@ const findCellTimesInPath = (npc: INpcDatabase, path: INpcPathPoint[]): INpcCell
         cellTimes.push({
             npcId: npc.id,
             startTime: admin.firestore.Timestamp.fromMillis(Math.round(Date.parse(lastPoint.time))),
-            endTime: admin.firestore.Timestamp.fromDate(longTimeFromNow),
+            endTime: admin.firestore.Timestamp.fromMillis(Math.round(Date.parse(lastPoint.time) + 10 * 1000)),
             cell: getNetworkObjectCellString(lastPoint.location),
             expired: false
         });
@@ -147,13 +150,27 @@ const findCellTimesInPath = (npc: INpcDatabase, path: INpcPathPoint[]): INpcCell
         cellTimes.push({
             npcId: npc.id,
             startTime: admin.firestore.Timestamp.now(),
-            endTime: admin.firestore.Timestamp.fromDate(longTimeFromNow),
+            endTime: admin.firestore.Timestamp.fromMillis(+new Date() + 60 * 1000),
             cell: getNetworkObjectCellString(npc),
             expired: false
         });
     }
 
-    return cellTimes;
+    // reduce duplicate cell times
+    return cellTimes.reduce((acc: INpcCellTimeDatabase[], cellTime: INpcCellTimeDatabase): INpcCellTimeDatabase[] => {
+        const lastCellTime = acc[0];
+        if (lastCellTime && cellTime.cell === lastCellTime.cell) {
+            lastCellTime.endTime = cellTime.endTime;
+            return acc;
+        } else {
+            return [
+                ...acc,
+                {
+                    ...cellTime
+                }
+            ]
+        }
+    }, []);
 };
 
 /**
@@ -165,11 +182,15 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
     const houseQuery = await admin.firestore().collection("houses").where("cell", "==", cellString).get();
     const objectQuery = await admin.firestore().collection("objects").where("cell", "==", cellString).get();
     const resourceQuery = await admin.firestore().collection("resources").where("cell", "==", cellString).get();
+    const stockpileQuery = await admin.firestore().collection("stockpiles").where("cell", "==", cellString).get();
 
-    const houses = houseQuery.docs.map(doc => doc.data() as IHouse);
+    const houses = houseQuery.docs.map(doc => houseDatabaseToClient(doc.data() as IHouseDatabase));
     const objects = objectQuery.docs.map(doc => networkObjectDatabaseToClient(doc.data() as INetworkObjectDatabase));
     const resources = resourceQuery.docs.map(doc => {
         return resourceDatabaseToClient(doc.data() as IResourceDatabase);
+    });
+    const stockpiles = stockpileQuery.docs.map(doc => {
+        return stockpileDatabaseToClient(doc.data() as IStockpileDatabase);
     });
 
     const npcs: INpc[] = [];
@@ -192,12 +213,8 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
                 pantColor: "tan",
                 shirtColor: "green",
                 schedule: [],
-                state: [],
                 lastUpdate: new Date().toISOString(),
                 readyTime: new Date().toISOString(),
-                grabbedByPersonId: null,
-                grabbedByNpcId: null,
-                isInInventory: false,
                 inventory: {
                     rows: 1,
                     columns: 10,
@@ -208,8 +225,6 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
                     max: 10,
                     value: 10
                 },
-                amount: 1,
-                exist: true,
                 objectType: ENetworkObjectType.PERSON,
                 inventoryState: []
             };
@@ -221,7 +236,8 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
         houses,
         objects,
         npcs,
-        resources
+        resources,
+        stockpiles
     });
 
     controller.run(milliseconds);
@@ -242,6 +258,9 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
         }),
         ...finalState.resources.map(resource => {
             return admin.firestore().collection("resources").doc(resource.id).set(resourceClientToDatabase(resource), {merge: true});
+        }),
+        ...finalState.stockpiles.map(stockpile => {
+            return admin.firestore().collection("stockpiles").doc(stockpile.id).set(stockpileClientToDatabase(stockpile), {merge: true});
         })
     ])
 };

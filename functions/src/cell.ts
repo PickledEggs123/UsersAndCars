@@ -1,5 +1,5 @@
 import {ILot, IObject} from "persons-game-common/lib/types/GameTypes";
-import {INetworkObjectCellPosition, INetworkObjectDatabase} from "./types/database";
+import {INetworkObjectCellPosition, INetworkObjectBaseDatabase} from "./types/database";
 import * as admin from "firebase-admin";
 import {cellSize} from "./config";
 
@@ -103,12 +103,12 @@ export const getRelevantNetworkObjectCells = (networkObject: IObject): string[] 
 export const addCellStringToBlankCellObjects = async (collectionName: string) => {
     const collectionQuery = await admin.firestore().collection(collectionName).get();
     for (const doc of collectionQuery.docs) {
-        const data = doc.data() as INetworkObjectDatabase;
+        const data = doc.data() as INetworkObjectBaseDatabase;
 
         // if object does not have a cell string
         if (!data.cell) {
             // add cell string to object
-            const newData: Partial<INetworkObjectDatabase> = {
+            const newData: Partial<INetworkObjectBaseDatabase> = {
                 cell: getNetworkObjectCellString(data)
             };
             await doc.ref.set(newData, {merge: true});

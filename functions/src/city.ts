@@ -2,7 +2,6 @@ import {ILotFiller, ILotFillerLotAndObjects} from "./types/database";
 import {
     ELotExpandType,
     ELotZone,
-    ENetworkObjectType,
     ERoadDirection,
     ERoadType,
     ICity,
@@ -11,7 +10,6 @@ import {
     INetworkObject,
     IObject,
     IRoad,
-    IVendor,
     IWhichDirectionIsNearby
 } from "persons-game-common/lib/types/GameTypes";
 
@@ -127,87 +125,7 @@ const getLotExpandTypeAndAffectedLocations = (lot: ILot, lots: ILot[]): ILotExpa
         };
     }
 };
-const lotFillers: ILotFiller[] = [{
-    width: 2500,
-    height: 1200,
-    zone: ELotZone.RESIDENTIAL,
-    fillLot(lot: ILot): ILotFillerLotAndObjects {
-        return {
-            lot: {
-                ...lot,
-                format: "" +
-                    "  E  \n" +
-                    "OHHO \n" +
-                    "OHOH \n" +
-                    " E   "
-            },
-            objects: []
-        };
-    }
-}, {
-    width: 2500,
-    height: 900,
-    zone: ELotZone.RESIDENTIAL,
-    fillLot(lot: ILot): ILotFillerLotAndObjects {
-        return {
-            lot: {
-                ...lot,
-                format: "" +
-                    "OE EO\n" +
-                    "HH HH\n" +
-                    "OE EO"
-            },
-            objects: []
-        };
-    }
-}, {
-    width: 2500,
-    height: 1200,
-    zone: ELotZone.COMMERCIAL,
-    fillLot(lot: ILot): ILotFillerLotAndObjects {
-        return {
-            lot: {
-                ...lot,
-                format: "" +
-                    "  E  \n" +
-                    "OHHHH\n" +
-                    "OHHHH\n" +
-                    "  E  "
-            },
-            objects: [{
-                x: lot.x + 1250,
-                y: lot.y + 600,
-                objectType: ENetworkObjectType.VENDING_MACHINE,
-                grabbedByPersonId: null,
-                id: `lot-${lot.x}-${lot.y}-vending-machine`,
-                lastUpdate: new Date().toISOString(),
-                inventory: [{
-                    price: 3000,
-                    objectType: ENetworkObjectType.CAR
-                }, {
-                    price: 10,
-                    objectType: ENetworkObjectType.BOX
-                }]
-            } as IVendor] as INetworkObject[]
-        };
-    }
-}, {
-    width: 2500,
-    height: 900,
-    zone: ELotZone.COMMERCIAL,
-    fillLot(lot: ILot): ILotFillerLotAndObjects {
-        return {
-            lot: {
-                ...lot,
-                format: "" +
-                    "  E  \n" +
-                    "OHHHO\n" +
-                    "  E  "
-            },
-            objects: []
-        };
-    }
-}];
+const lotFillers: ILotFiller[] = [];
 /**
  * Fill a lot with rooms.
  * @param lot The lot to fill.
