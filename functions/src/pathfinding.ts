@@ -1,10 +1,18 @@
-import {ENetworkObjectType, INpc, INpcPathPoint} from "persons-game-common/lib/types/GameTypes";
+import {
+    ENetworkObjectType,
+    ENpcJobType,
+    EOwnerType,
+    IApiPersonsNpcJobPost,
+    INpc,
+    INpcPathPoint
+} from "persons-game-common/lib/types/GameTypes";
 import {
     IHouseDatabase,
     INetworkObjectDatabase,
     INpcCellTimeDatabase,
     INpcDatabase,
-    IResourceDatabase, IStockpileDatabase
+    IResourceDatabase,
+    IStockpileDatabase
 } from "./types/database";
 import {cellSize} from "./config";
 import * as admin from "firebase-admin";
@@ -15,9 +23,13 @@ import {
     networkObjectClientToDatabase,
     networkObjectDatabaseToClient,
     npcClientToDatabase,
-    npcDatabaseToClient, resourceClientToDatabase,
-    resourceDatabaseToClient, stockpileClientToDatabase, stockpileDatabaseToClient
+    npcDatabaseToClient,
+    resourceClientToDatabase,
+    resourceDatabaseToClient,
+    stockpileClientToDatabase,
+    stockpileDatabaseToClient
 } from "./common";
+import * as express from "express";
 
 /**
  * Handle pathfinding AI for each NPC.
@@ -33,8 +45,8 @@ const findCellTimesBetweenTwoPathPoints = (npc: INpcDatabase, a: INpcPathPoint, 
     const cellTimes: INpcCellTimeDatabase[] = [];
 
     // determine the number of times crossing a cell boundary
-    const dCellX = Math.round(b.location.x / cellSize) - Math.round(a.location.x / cellSize);
-    const dCellY = Math.round(b.location.y / cellSize) - Math.round(a.location.y / cellSize);
+    const dCellX = Math.floor(b.location.x / cellSize) - Math.floor(a.location.x / cellSize);
+    const dCellY = Math.floor(b.location.y / cellSize) - Math.floor(a.location.y / cellSize);
     const numberOfCellBoundaries = Math.abs(dCellX) + Math.abs(dCellY);
     if (numberOfCellBoundaries > 0) {
         // cell crossings, determine the times when crossing x or y cell boundaries
@@ -48,9 +60,9 @@ const findCellTimesBetweenTwoPathPoints = (npc: INpcDatabase, a: INpcPathPoint, 
             const mod = (v + (dv * t)) % cellSize;
             const positionInCell = mod >= 0 ? mod : mod + cellSize;
             if (dv > 0) {
-                return (cellSize - positionInCell) / dv * 1000;
+                return (cellSize - positionInCell) / (dv * 1000);
             } else if (dv < 0) {
-                return (-positionInCell) / dv * 1000;
+                return (-positionInCell) / (dv * 1000);
             } else {
                 return undefined;
             }
@@ -114,13 +126,13 @@ const findCellTimesBetweenTwoPathPoints = (npc: INpcDatabase, a: INpcPathPoint, 
  * @param path The path the NPC is traveling.
  */
 const findCellTimesInPath = (npc: INpcDatabase, path: INpcPathPoint[]): INpcCellTimeDatabase[] => {
-    const cellTimes: INpcCellTimeDatabase[] = [];
+    const cellTimesWithDuplicates: INpcCellTimeDatabase[] = [];
 
     const firstPoint = path[0];
     const lastPoint = path[path.length - 1];
     if (firstPoint) {
         // initial cell
-        cellTimes.push({
+        cellTimesWithDuplicates.push({
             npcId: npc.id,
             startTime: admin.firestore.Timestamp.now(),
             endTime: admin.firestore.Timestamp.fromDate(new Date(Date.parse(firstPoint.time))),
@@ -133,12 +145,12 @@ const findCellTimesInPath = (npc: INpcDatabase, path: INpcPathPoint[]): INpcCell
             const a = path[i];
             const b = path[i + 1];
             if (a && b) {
-                cellTimes.push(...findCellTimesBetweenTwoPathPoints(npc, a, b));
+                cellTimesWithDuplicates.push(...findCellTimesBetweenTwoPathPoints(npc, a, b));
             }
         }
 
         // final cell
-        cellTimes.push({
+        cellTimesWithDuplicates.push({
             npcId: npc.id,
             startTime: admin.firestore.Timestamp.fromMillis(Math.round(Date.parse(lastPoint.time))),
             endTime: admin.firestore.Timestamp.fromMillis(Math.round(Date.parse(lastPoint.time) + 10 * 1000)),
@@ -147,7 +159,7 @@ const findCellTimesInPath = (npc: INpcDatabase, path: INpcPathPoint[]): INpcCell
         });
     } else {
         // no path data, render one cell time
-        cellTimes.push({
+        cellTimesWithDuplicates.push({
             npcId: npc.id,
             startTime: admin.firestore.Timestamp.now(),
             endTime: admin.firestore.Timestamp.fromMillis(+new Date() + 60 * 1000),
@@ -157,7 +169,7 @@ const findCellTimesInPath = (npc: INpcDatabase, path: INpcPathPoint[]): INpcCell
     }
 
     // reduce duplicate cell times
-    return cellTimes.reduce((acc: INpcCellTimeDatabase[], cellTime: INpcCellTimeDatabase): INpcCellTimeDatabase[] => {
+    return cellTimesWithDuplicates.reduce((acc: INpcCellTimeDatabase[], cellTime: INpcCellTimeDatabase): INpcCellTimeDatabase[] => {
         const lastCellTime = acc[0];
         if (lastCellTime && cellTime.cell === lastCellTime.cell) {
             lastCellTime.endTime = cellTime.endTime;
@@ -226,7 +238,10 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
                     value: 10
                 },
                 objectType: ENetworkObjectType.PERSON,
-                inventoryState: []
+                inventoryState: [],
+                job: {
+                    type: ENpcJobType.GATHER
+                }
             };
             npcs.push(newNpc);
         }
@@ -263,4 +278,31 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
             return admin.firestore().collection("stockpiles").doc(stockpile.id).set(stockpileClientToDatabase(stockpile), {merge: true});
         })
     ])
+};
+
+export const handleSetNpcJob = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    (async () => {
+        const {
+            personId,
+            npcId,
+            job
+        } = req.body as IApiPersonsNpcJobPost;
+
+        const personDocument = await admin.firestore().collection("persons").doc(personId).get();
+        const npcDocument = await admin.firestore().collection("npcs").doc(npcId).get();
+        const houseQuery = await admin.firestore().collection("houses")
+            .where("npcId", "==", npcId).limit(1).get();
+        if (personDocument.exists && npcDocument.exists && !houseQuery.empty) {
+            // objects exist in database
+            const houseDatabase = houseQuery.docs[0].data() as IHouseDatabase;
+            if (houseDatabase.ownerType === EOwnerType.PERSON && houseDatabase.ownerId === personId) {
+                // person has permission to edit npc
+                await npcDocument.ref.set({job}, {merge: true});
+            } else {
+                throw new Error("Person does not have permission to edit the npc");
+            }
+        } else {
+            throw new Error("Person, Npc, or Npc House does not exist");
+        }
+    })().catch((err) => next(err));
 };

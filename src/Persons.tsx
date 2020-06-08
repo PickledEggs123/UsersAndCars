@@ -3,9 +3,11 @@ import './App.scss';
 import axios from "axios";
 import {
     ECarDirection,
+    ENetworkObjectType,
+    ENpcJobType,
     IApiLotsBuyPost,
     IApiLotsSellPost,
-    IApiPersonsGetResponse,
+    IApiPersonsGetResponse, IApiPersonsNpcJobPost,
     IApiPersonsPut,
     IApiPersonsVendPost,
     IApiPersonsVoiceAnswerMessage,
@@ -15,26 +17,30 @@ import {
     IApiPersonsVoiceOfferMessage,
     IApiPersonsVoiceOfferPost,
     ICar,
-    ICraftingRecipe, IFloor,
-    IGameTutorials, IHouse,
+    ICraftingRecipe,
+    IFloor,
+    IGameTutorials,
+    IHouse,
     IKeyDownHandler,
     ILot,
-    INetworkObject, INetworkObjectBase,
+    INetworkObject,
+    INetworkObjectBase,
     INpc,
+    INpcJob,
+    INpcJobCrafting,
     INpcPathPoint,
     IObject,
     IPerson,
     IPersonsInventory,
     IResource,
-    IRoad, IStockpile, IStockpileTile,
-    IVendorInventoryItem, IWall
+    IRoad,
+    IStockpile,
+    IStockpileTile,
+    IVendorInventoryItem,
+    IWall
 } from "persons-game-common/lib/types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
-import {
-    IPersonsDrawablesProps,
-    IPersonsDrawablesState,
-    PersonsDrawables
-} from "./PersonsDrawables";
+import {IPersonsDrawablesProps, IPersonsDrawablesState, PersonsDrawables} from "./PersonsDrawables";
 import {applyAudioFilters, rtcPeerConnectionConfiguration, userMediaConfig} from "./config";
 import {HarvestResourceController} from "persons-game-common/lib/resources";
 import {getMaxStackSize, InventoryController, listOfRecipes} from "persons-game-common/lib/inventory";
@@ -92,6 +98,10 @@ interface IPersonsState extends IPersonsDrawablesState {
      * If stockpile editing should be enabled.
      */
     showStockpile: boolean;
+    /**
+     * If the NPCs screen should be shown.
+     */
+    showNpcs: boolean;
 }
 
 /**
@@ -223,6 +233,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         showInventory: false,
         showConstruction: false,
         showStockpile: false,
+        showNpcs: false,
         errorMessage: "",
         errorTime: new Date()
     };
@@ -1995,7 +2006,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     // found person, update inventory
                     return {
                         ...person,
-                        ...controller.getState()
+                        ...controller.getState() as Partial<IPerson>
                     };
                 } else {
                     // did not find person, do nothing
@@ -2019,6 +2030,10 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
 
     showStockpile = () => {
         this.setState({showStockpile: !this.state.showStockpile});
+    };
+
+    showNpcs = () => {
+        this.setState({showNpcs: !this.state.showNpcs});
     };
 
     /**
@@ -2132,7 +2147,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     // found person, update inventory
                     return {
                         ...person,
-                        ...controller.getState().inventoryHolder
+                        ...controller.getState().inventoryHolder as Partial<IPerson>
                     };
                 } else {
                     // did not find person, do nothing
@@ -2240,6 +2255,36 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         </g>
     );
 
+    /**
+     * Make a POST request to change the job of the NPC.
+     */
+    npcSetJob = async (npc: INpc, jobType: ENpcJobType) => {
+        let job: INpcJob;
+        if (jobType === ENpcJobType.GATHER) {
+            job = {
+                type: jobType
+            };
+        } else if (jobType === ENpcJobType.CRAFT) {
+            job = {
+                type: jobType,
+                products: [ENetworkObjectType.WATTLE_WALL]
+            } as INpcJobCrafting;
+        } else if (jobType === ENpcJobType.HAUL) {
+            job = {
+                type: jobType
+            };
+        } else {
+            throw new Error("Unknown NPC Job Type");
+        }
+
+        const postData: IApiPersonsNpcJobPost = {
+            personId: this.state.currentPersonId,
+            npcId: npc.id,
+            job
+        };
+        await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/npc/job", postData);
+    };
+
     render() {
         // find the current person
         const currentPerson = this.getCurrentPerson();
@@ -2289,6 +2334,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     <button onClick={this.showInventory}>Inventory</button>
                     <button onClick={this.showConstruction}>Construction</button>
                     <button onClick={this.showStockpile}>Stockpile</button>
+                    <button onClick={this.showNpcs}>NPCs</button>
                 </div>
                 <div style={{backgroundColor: "red", color: "white"}}>
                     {this.state.errorMessage}
@@ -2419,7 +2465,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                                 const itemX = (index % numColumns) * columnWidth + columnOffset;
                                                 const itemY = Math.floor(index / numColumns) * rowHeight + rowOffset;
                                                 return (
-                                                    <g transform={`translate(${itemX},${itemY})`}>
+                                                    <g key={item.id} transform={`translate(${itemX},${itemY})`}>
                                                         {
                                                             this.drawNetworkObject(item, undefined, true, stockpile).draw()
                                                         }
@@ -2572,6 +2618,25 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     }
                     {
                         this.state.inventory && this.state.showInventory ? this.drawInventory(this.state.inventory, true) : null
+                    }
+                    {
+                        this.state.showNpcs ? (
+                            <g>
+                                <text x={20} y={20} fontSize={18}>NPCs</text>
+                                {
+                                    this.state.npcs.map((n, index) => {
+                                        return (
+                                            <g key={n.id} transform={`translate(20,${60 + index * 40})`}>
+                                                <text x={20} y={20}>{n.id}</text>
+                                                <text x={250} y={20} fill={n.job.type === ENpcJobType.GATHER ? "blue" : "black"} onClick={() => this.npcSetJob(n, ENpcJobType.GATHER)}>Gather</text>
+                                                <text x={350} y={20} fill={n.job.type === ENpcJobType.CRAFT ? "blue" : "black"} onClick={() => this.npcSetJob(n, ENpcJobType.CRAFT)}>Craft</text>
+                                                <text x={450} y={20} fill={n.job.type === ENpcJobType.HAUL ? "blue" : "black"} onClick={() => this.npcSetJob(n, ENpcJobType.HAUL)}>Haul</text>
+                                            </g>
+                                        )
+                                    })
+                                }
+                            </g>
+                        ) : null
                     }
                 </svg>
                 <div>

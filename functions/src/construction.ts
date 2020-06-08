@@ -2,7 +2,7 @@ import {
     IApiPersonsConstructionPost,
     IApiPersonsConstructionStockpilePost,
     IFloor,
-    IHouse, IStockpileTile,
+    IHouse, IPerson, IStockpileTile,
     IWall,
 } from "persons-game-common/lib/types/GameTypes";
 import {ConstructionController} from "persons-game-common/lib/construction";
@@ -60,7 +60,7 @@ const constructLocation = async ({personId, location}: IApiPersonsConstructionPo
         // convert inventory result into database format
         const newPersonData: Partial<IPersonDatabase> = personClientToDatabase({
             ...personClient,
-            ...controller.getState().inventoryHolder
+            ...controller.getState().inventoryHolder as Partial<IPerson>
         });
 
         // update database with result of construction

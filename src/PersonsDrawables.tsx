@@ -648,6 +648,19 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     abstract withdrawFromStockpile: (networkObject: INetworkObject, stockpile: IStockpile) => void;
 
     /**
+     * Draw the amount tag on the item to show how many items are in the stack.
+     * @param drawable The drawable item with amount information.
+     */
+    drawAmountTag = (drawable: INetworkObject): JSX.Element | null => {
+        return (
+            <g opacity={0.6}>
+                <circle cx={30} cy={-5} r={10} fill="white"/>
+                <text x={25} y={0} fontSize={14}>{drawable.amount}</text>
+            </g>
+        );
+    };
+
+    /**
      * Draw a piece of wood on the ground.
      * @param drawable The object to draw.
      * @param filter The filter to apply to the object.
@@ -671,25 +684,11 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 <path fill="tan" stroke="black" strokeWidth={2} d="M 50 -20 c -5 -5 -5 -15 0 -20 c 5 5 5 15 0 20"/>
                 <path fill="tan" stroke="black" strokeWidth={2} d="M -25 -40 c -5 -5 -5 -15 0 -20 l 50 0 c 5 5 5 15 0 20 z"/>
                 <path fill="tan" stroke="black" strokeWidth={2} d="M 25 -40 c -5 -5 -5 -15 0 -20 c 5 5 5 15 0 20"/>
+                {
+                    inventory && stockpile ? this.drawAmountTag(drawable) : null
+                }
             </g>
         )
-    };
-
-    /**
-     * Draw the amount tag on the item to show how many items are in the stack.
-     * @param drawable The drawable item with amount information.
-     */
-    drawAmountTag = (drawable: INetworkObject): JSX.Element | null => {
-        if (getMaxStackSize(drawable.objectType) > 1) {
-            return (
-                <g opacity={0.6}>
-                    <circle cx={30} cy={-5} r={10} fill="white"/>
-                    <text x={25} y={0} fontSize={14}>{drawable.amount}</text>
-                </g>
-            );
-        } else {
-            return null;
-        }
     };
 
     /**
@@ -734,7 +733,10 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         }
         return (
             <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
-                <path fill="grey" stroke="black" strokeWidth={2} d="m -40 -40 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+                <path fill="grey" stroke="black" strokeWidth={2} d="m -20 -15 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+                {
+                    inventory && stockpile ? this.drawAmountTag(drawable) : null
+                }
             </g>
         )
     };
@@ -757,7 +759,10 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         }
         return (
             <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
-                <path fill="black" stroke="black" strokeWidth={2} d="m -40 -40 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+                <path fill="black" stroke="black" strokeWidth={2} d="m -20 -15 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+                {
+                    inventory && stockpile ? this.drawAmountTag(drawable) : null
+                }
             </g>
         )
     };
@@ -780,7 +785,10 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         }
         return (
             <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
-                <path fill="maroon" stroke="black" strokeWidth={2} d="m -40 -40 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+                <path fill="maroon" stroke="black" strokeWidth={2} d="m -20 -15 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+                {
+                    inventory && stockpile ? this.drawAmountTag(drawable) : null
+                }
             </g>
         )
     };
@@ -803,7 +811,10 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         }
         return (
             <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
-                <path fill="brown" stroke="black" strokeWidth={2} d="m -40 -40 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+                <path fill="brown" stroke="black" strokeWidth={2} d="m -20 -15 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+                {
+                    inventory && stockpile ? this.drawAmountTag(drawable) : null
+                }
             </g>
         )
     };
@@ -826,7 +837,10 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         }
         return (
             <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
-                <path fill="grey" stroke="black" strokeWidth={2} d="m -40 -40 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+                <path fill="grey" stroke="black" strokeWidth={2} d="m -20 -15 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
+                {
+                    inventory && stockpile ? this.drawAmountTag(drawable) : null
+                }
             </g>
         )
     };
@@ -851,6 +865,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             <g key={`stick-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <path fill="green" stroke="black" strokeWidth={2} d="M -25 0 l 50 0 l 0 -5 l -50 0 z "/>
                 <text x={-25} y={-30} fontSize={14}>{drawable.amount}</text>
+                {this.drawAmountTag(drawable)}
             </g>
         )
     };

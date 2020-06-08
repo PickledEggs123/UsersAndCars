@@ -3,7 +3,7 @@ import {
     ELotZone,
     ENetworkObjectType, IInventoryState,
     ILot,
-    INetworkObject, INetworkObjectState,
+    INetworkObject, INetworkObjectState, INpcJob,
     INpcPathPoint, INpcSchedule,
     IObjectHealth, IOwner, IResource, IResourceSpawn
 } from "persons-game-common/lib/types/GameTypes";
@@ -124,6 +124,7 @@ export interface INpcDatabase extends IPersonDatabase {
      */
     schedule: INpcSchedule[];
     inventoryState: IInventoryState[];
+    job: INpcJob;
 }
 
 export interface ICarDatabase extends INetworkObjectBaseDatabase {

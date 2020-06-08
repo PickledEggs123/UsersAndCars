@@ -54,7 +54,7 @@ import {
 } from "./inventory";
 import {getSimpleCollection, networkObjectDatabaseToClient, sortNetworkObjectsByDistance} from "./common";
 import {handleConstructionRequest, handleStockpileConstructionRequest} from "./construction";
-import {simulateCell} from "./pathfinding";
+import {handleSetNpcJob, simulateCell} from "./pathfinding";
 
 const matchAll = require("string.prototype.matchall");
 matchAll.shim();
@@ -178,12 +178,9 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
                 const data = document.data() as INpcCellTimeDatabase;
                 return +new Date() >= data.endTime.toMillis();
             });
-            // update time cells by setting expired to true
+            // update time cells by deleting expired cell times, should reduce read load over time
             await Promise.all(expiredTimeCells.map(timeCell => {
-                const data: Partial<INpcCellTimeDatabase> = {
-                    expired: true
-                };
-                return timeCell.ref.set(data, {merge: true});
+                return timeCell.ref.delete();
             }));
 
             // get npc ids
@@ -353,6 +350,11 @@ personsApp.post("/object/drop", handleDropObject);
  * Craft an object in the inventory
  */
 personsApp.post("/object/craft", handleCraftObject);
+
+/**
+ * Handle setting npc job.
+ */
+personsApp.post("/npc/job", handleSetNpcJob);
 
 /**
  * Update game state.
