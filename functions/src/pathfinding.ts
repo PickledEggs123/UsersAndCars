@@ -195,6 +195,11 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
     const objectQuery = await admin.firestore().collection("objects").where("cell", "==", cellString).get();
     const resourceQuery = await admin.firestore().collection("resources").where("cell", "==", cellString).get();
     const stockpileQuery = await admin.firestore().collection("stockpiles").where("cell", "==", cellString).get();
+    const npcTimeQuery = await admin.firestore().collection("npcTimes").where("cell", "==", cellString).get();
+    const expiredNpcTimeIds = npcTimeQuery.docs.filter(doc => {
+        const cellTime = doc.data() as INpcCellTimeDatabase;
+        return +new Date() > cellTime.endTime.toMillis();
+    }).map(doc => doc.id);
 
     const houses = houseQuery.docs.map(doc => houseDatabaseToClient(doc.data() as IHouseDatabase));
     const objects = objectQuery.docs.map(doc => networkObjectDatabaseToClient(doc.data() as INetworkObjectDatabase));
@@ -276,6 +281,9 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
         }),
         ...finalState.stockpiles.map(stockpile => {
             return admin.firestore().collection("stockpiles").doc(stockpile.id).set(stockpileClientToDatabase(stockpile), {merge: true});
+        }),
+        ...expiredNpcTimeIds.map(id => {
+            return admin.firestore().collection("npcTimes").doc(id).delete();
         })
     ])
 };

@@ -617,7 +617,7 @@ export const lots = functions.https.onRequest(lotsApp);
 // handle the npc using a pubsub topic
 export const npcTick = functions.pubsub.topic("npc").onPublish((message) => {
     const cellString = message.json.cellString;
-    return simulateCell(cellString, 60 * 1000);
+    return simulateCell(cellString, 10 * 60 * 1000);
 });
 
 // handle the terrain generation using a pubsub topic
@@ -627,7 +627,7 @@ export const generateTerrain = functions.pubsub.topic("generateTerrain").onPubli
 });
 
 // every minute, run a tick to update all persons
-export const personsTick = functions.pubsub.schedule("every 1 minutes").onRun(() => {
+export const personsTick = functions.pubsub.schedule("every 10 minutes").onRun(() => {
     return (async () => {
         await giveEveryoneCash();
 
