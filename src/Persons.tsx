@@ -3,11 +3,13 @@ import './App.scss';
 import axios from "axios";
 import {
     ECarDirection,
+    EDrawableType,
     ENetworkObjectType,
     ENpcJobType,
     IApiLotsBuyPost,
     IApiLotsSellPost,
-    IApiPersonsGetResponse, IApiPersonsNpcJobPost,
+    IApiPersonsGetResponse,
+    IApiPersonsNpcJobPost,
     IApiPersonsPut,
     IApiPersonsVendPost,
     IApiPersonsVoiceAnswerMessage,
@@ -17,7 +19,7 @@ import {
     IApiPersonsVoiceOfferMessage,
     IApiPersonsVoiceOfferPost,
     ICar,
-    ICraftingRecipe,
+    ICraftingRecipe, IDrawable,
     IFloor,
     IGameTutorials,
     IHouse,
@@ -47,7 +49,7 @@ import {getMaxStackSize, InventoryController, listOfRecipes} from "persons-game-
 import {ConstructionController} from "persons-game-common/lib/construction";
 import {getCurrentTDayNightTime, TDayNightTimeHour} from "persons-game-common/lib/types/time";
 import {StockpileController} from "persons-game-common/lib/stockpile";
-import {applyInventoryState} from "persons-game-common/lib/npc";
+import {applyInventoryState, applyPathToNpc} from "persons-game-common/lib/npc";
 
 /**
  * The input to the [[Persons]] component that changes how the game is rendered.
@@ -333,7 +335,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         return () => {
             const currentPerson = this.getCurrentPerson();
             const foundNpc = this.state.npcs.find(n => n.id === npcCopy.id);
-            const npc = foundNpc ? this.applyPathToNpc(foundNpc) : undefined;
+            const npc = foundNpc ? applyPathToNpc(foundNpc) : undefined;
 
             /**
              * Simulate keyboard events to trigger the following of an object.
@@ -650,7 +652,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      */
     handleLoginSuccess = (username: string) => {
         this.setState({
-            currentPersonId: username
+            currentPersonId: username,
+            currentNpcId: null
         });
     };
 
@@ -2199,9 +2202,11 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         const inventoryObject = inventory.slots[slotIndex] ?
                             inventory.slots[slotIndex] :
                             null;
-                        let inventoryRender: JSX.Element | null = null;
+                        let inventoryRender: JSX.Element[] | null = null;
                         if (inventoryObject) {
-                            inventoryRender = this.drawNetworkObject(inventoryObject, undefined, true).draw();
+                            inventoryRender = this.sortDrawablesInUiOrder(
+                                this.drawNetworkObject(inventoryObject, undefined, true)
+                            ).map(drawable => drawable.draw());
                         }
 
                         return (
@@ -2249,7 +2254,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                         <rect x={0} y={0} width={60} height={60} fill="tan" opacity={0.3}/>
                                         <g transform="translate(30,60)">
                                             {
-                                                this.drawNetworkObject({
+                                                this.sortDrawablesInUiOrder(
+                                                    this.drawNetworkObject({
                                                     id: `recipe-${recipe.product}`,
                                                     x: 0,
                                                     y: 0,
@@ -2267,7 +2273,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                                     amount: 1,
                                                     exist: true,
                                                     state: []
-                                                }).draw()
+                                                })).map(drawable => drawable.draw())
                                             }
                                         </g>
                                     </g>
@@ -2469,42 +2475,52 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                         <text x="50" y="100" fontSize={14}>{stockpileTile ? `Click to Remove` : `Click to Build`}</text>
                                     </g>
                                 );
-                            }) : this.state.stockpileTiles.map(({x, y, stockpileId, stockpileIndex}) => {
+                            }) : this.state.stockpileTiles.reduce((acc: Array<JSX.Element | null>, {x, y, stockpileId, stockpileIndex}: IStockpileTile): Array<JSX.Element | null> => {
                                 const foundStockpile = this.state.stockpiles.find(s => s.id === stockpileId);
                                 if (!foundStockpile) {
-                                    return null;
+                                    return acc;
                                 }
                                 const stockpile = applyInventoryState(foundStockpile);
                                 const items = stockpile.inventory.slots.slice(
                                     stockpileIndex * StockpileController.NUMBER_OF_COLUMNS_PER_STOCKPILE_TILE * StockpileController.NUMBER_OF_ROWS_PER_STOCKPILE_TILE,
                                     (stockpileIndex + 1) * StockpileController.NUMBER_OF_COLUMNS_PER_STOCKPILE_TILE * StockpileController.NUMBER_OF_ROWS_PER_STOCKPILE_TILE
                                 );
-                                return (
-                                    <g key={`stockpileTile(${x},${y})`} transform={`translate(${x},${y})`}>
-                                        {
+
+                                return [
+                                    ...acc,
+                                    (
+                                        <g key={`stockpileTile(${x},${y})-background`} transform={`translate(${x},${y})`}>
                                             <rect x="0" y="0" width={200} height={200} fill="lightgrey" fillOpacity={0.3}/>
-                                        }
-                                        {
-                                            items.map((item, index) => {
-                                                const numColumns = 5;
-                                                const columnWidth = 40;
-                                                const columnOffset = 20;
-                                                const rowHeight = 100;
-                                                const rowOffset = 50;
-                                                const itemX = (index % numColumns) * columnWidth + columnOffset;
-                                                const itemY = Math.floor(index / numColumns) * rowHeight + rowOffset;
-                                                return (
-                                                    <g key={item.id} transform={`translate(${itemX},${itemY})`}>
-                                                        {
-                                                            this.drawNetworkObject(item, undefined, true, stockpile).draw()
-                                                        }
-                                                    </g>
-                                                );
-                                            })
-                                        }
-                                    </g>
-                                );
-                            })
+                                        </g>
+                                    ),
+                                    ...this.sortDrawablesInUiOrder(items.reduce((acc: Array<IDrawable & {item: INetworkObject, itemX: number, itemY: number}>, item, index) => {
+                                        const numColumns = 5;
+                                        const columnWidth = 40;
+                                        const columnOffset = 20;
+                                        const rowHeight = 100;
+                                        const rowOffset = 50;
+                                        const itemX = (index % numColumns) * columnWidth + columnOffset;
+                                        const itemY = Math.floor(index / numColumns) * rowHeight + rowOffset;
+                                        return [
+                                            ...acc,
+                                            ...this.drawNetworkObject(item, undefined, true, stockpile).map((drawable: IDrawable): IDrawable & { itemX: number, itemY: number, item: INetworkObject } => ({
+                                                ...drawable,
+                                                itemX,
+                                                itemY,
+                                                item
+                                            }))
+                                        ];
+                                    }, [])).map((drawable: any) => {
+                                        return (
+                                            <g key={`${drawable.item.id}-${drawable.type}`} z={drawable.type === EDrawableType.TAG ? 1 : 0} transform={`translate(${x + drawable.itemX},${y + drawable.itemY})`}>
+                                                {
+                                                    drawable.draw()
+                                                }
+                                            </g>
+                                        );
+                                    })
+                                ];
+                            }, [])
                         }
                         {
                             // draw roads

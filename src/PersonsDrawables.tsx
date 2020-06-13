@@ -27,7 +27,7 @@ import {
 } from "persons-game-common/lib/types/GameTypes";
 import React from "react";
 import seedrandom from "seedrandom";
-import {applyStateToNetworkObject, applyStateToResource} from "persons-game-common/lib/npc";
+import {applyPathToNpc, applyStateToNetworkObject, applyStateToResource} from "persons-game-common/lib/npc";
 
 /**
  * Represent a leaf on a tree.
@@ -666,8 +666,8 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     drawAmountTag = (drawable: INetworkObject): JSX.Element | null => {
         return (
             <g opacity={0.6}>
-                <circle cx={30} cy={-5} r={10} fill="white"/>
-                <text x={25} y={0} fontSize={14}>{drawable.amount}</text>
+                <ellipse cx={25} cy={-5} ry={10} rx={drawable.amount.toString().length * 5} fill="white"/>
+                <text x={25} y={0} textAnchor="middle" fontSize={14}>{drawable.amount}</text>
             </g>
         );
     };
@@ -696,9 +696,6 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 <path fill="tan" stroke="black" strokeWidth={2} d="M 50 -20 c -5 -5 -5 -15 0 -20 c 5 5 5 15 0 20"/>
                 <path fill="tan" stroke="black" strokeWidth={2} d="M -25 -40 c -5 -5 -5 -15 0 -20 l 50 0 c 5 5 5 15 0 20 z"/>
                 <path fill="tan" stroke="black" strokeWidth={2} d="M 25 -40 c -5 -5 -5 -15 0 -20 c 5 5 5 15 0 20"/>
-                {
-                    inventory && stockpile ? this.drawAmountTag(drawable) : null
-                }
             </g>
         )
     };
@@ -722,7 +719,6 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         return (
             <g key={`stick-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <path fill="tan" stroke="black" strokeWidth={2} d="M -25 0 l 50 0 l 0 -5 l -50 0 z "/>
-                {this.drawAmountTag(drawable)}
             </g>
         )
     };
@@ -746,9 +742,6 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         return (
             <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <path fill="grey" stroke="black" strokeWidth={2} d="m -20 -15 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
-                {
-                    inventory && stockpile ? this.drawAmountTag(drawable) : null
-                }
             </g>
         )
     };
@@ -772,9 +765,6 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         return (
             <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <path fill="black" stroke="black" strokeWidth={2} d="m -20 -15 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
-                {
-                    inventory && stockpile ? this.drawAmountTag(drawable) : null
-                }
             </g>
         )
     };
@@ -798,9 +788,6 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         return (
             <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <path fill="maroon" stroke="black" strokeWidth={2} d="m -20 -15 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
-                {
-                    inventory && stockpile ? this.drawAmountTag(drawable) : null
-                }
             </g>
         )
     };
@@ -824,9 +811,6 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         return (
             <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <path fill="brown" stroke="black" strokeWidth={2} d="m -20 -15 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
-                {
-                    inventory && stockpile ? this.drawAmountTag(drawable) : null
-                }
             </g>
         )
     };
@@ -850,9 +834,6 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         return (
             <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <path fill="grey" stroke="black" strokeWidth={2} d="m -20 -15 a 20 15 0 0 0 40 0 a 20 15 0 0 0 -40 0"/>
-                {
-                    inventory && stockpile ? this.drawAmountTag(drawable) : null
-                }
             </g>
         )
     };
@@ -877,7 +858,6 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             <g key={`stick-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <path fill="green" stroke="black" strokeWidth={2} d="M -25 0 l 50 0 l 0 -5 l -50 0 z "/>
                 <text x={-25} y={-30} fontSize={14}>{drawable.amount}</text>
-                {this.drawAmountTag(drawable)}
             </g>
         )
     };
@@ -901,7 +881,6 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         return (
             <g key={`stone-${drawable.id}`} transform={inventory ? "" : `translate(${x},${y})`} filter={filter} onClick={onClick}>
                 <rect x={-28} y={-56} width={56} height={56} fill="url(#wattle)"/>
-                {this.drawAmountTag(drawable)}
             </g>
         )
     };
@@ -913,7 +892,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * @param inventory The image is in an inventory, not in the world.
      * @param stockpile The stockpile the item is inside of.
      */
-    drawNetworkObject = (networkObject: INetworkObject, previousNetworkObject?: INetworkObject, inventory?: boolean, stockpile?: IStockpile): IDrawable => {
+    drawNetworkObject = (networkObject: INetworkObject, previousNetworkObject?: INetworkObject, inventory?: boolean, stockpile?: IStockpile): IDrawable[] => {
         const component = this;
 
         // highlight objects near current person with a white outline
@@ -930,126 +909,271 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             filter = "url(#highlight-blue)";
         }
 
+        const drawables: IDrawable[] = [];
         switch (networkObject.objectType) {
             case ENetworkObjectType.CHAIR: {
-                return {
-                    ...networkObject,
+                drawables.push({
+                    x: networkObject.x,
+                    y: networkObject.y,
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawChair(networkObject, filter, previousNetworkObject);
                     }
-                };
+                });
+                break;
             }
             case ENetworkObjectType.TABLE: {
-                return {
-                    ...networkObject,
+                drawables.push({
+                    x: networkObject.x,
+                    y: networkObject.y,
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawTable(networkObject, filter, previousNetworkObject);
                     }
-                };
+                });
+                break;
             }
             case ENetworkObjectType.VENDING_MACHINE: {
-                return {
-                    ...networkObject,
+                drawables.push({
+                    x: networkObject.x,
+                    y: networkObject.y,
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawVendingMachine(networkObject, filter, previousNetworkObject);
                     }
-                };
+                });
+                break;
             }
             case ENetworkObjectType.WOOD: {
-                return {
-                    ...networkObject,
+                drawables.push({
+                    x: networkObject.x,
+                    y: networkObject.y,
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawWood(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
-                }
+                }, {
+                    x: networkObject.x,
+                    y: networkObject.y,
+                    type: EDrawableType.TAG,
+                    draw() {
+                        return (
+                            <g key={`tag-${networkObject.id}`} transform={inventory ? "" : `translate(${networkObject.x},${networkObject.y})`} filter={filter}>
+                                {
+                                    inventory && stockpile ? component.drawAmountTag(networkObject) : null
+                                }
+                            </g>
+                        )
+                    }
+                });
+                break;
             }
             case ENetworkObjectType.STICK: {
-                return {
-                    ...networkObject,
+                drawables.push({
+                    x: networkObject.x,
+                    y: networkObject.y,
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawStick(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
-                }
+                }, {
+                    x: networkObject.x,
+                    y: networkObject.y,
+                    type: EDrawableType.TAG,
+                    draw() {
+                        return (
+                            <g key={`tag-${networkObject.id}`} transform={inventory ? "" : `translate(${networkObject.x},${networkObject.y})`} filter={filter}>
+                                {
+                                    inventory && stockpile ? component.drawAmountTag(networkObject) : null
+                                }
+                            </g>
+                        )
+                    }
+                });
+                break;
             }
             case ENetworkObjectType.STONE: {
-                return {
-                    ...networkObject,
+                drawables.push({
+                    x: networkObject.x,
+                    y: networkObject.y,
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawStone(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
-                }
+                }, {
+                    x: networkObject.x,
+                    y: networkObject.y,
+                    type: EDrawableType.TAG,
+                    draw() {
+                        return (
+                            <g key={`tag-${networkObject.id}`} transform={inventory ? "" : `translate(${networkObject.x},${networkObject.y})`} filter={filter}>
+                                {
+                                    inventory && stockpile ? component.drawAmountTag(networkObject) : null
+                                }
+                            </g>
+                        )
+                    }
+                });
+                break;
             }
             case ENetworkObjectType.COAL: {
-                return {
-                    ...networkObject,
+                drawables.push({
+                    x: networkObject.x,
+                    y: networkObject.y,
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawCoal(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
-                }
+                }, {
+                    x: networkObject.x,
+                    y: networkObject.y,
+                    type: EDrawableType.TAG,
+                    draw() {
+                        return (
+                            <g key={`tag-${networkObject.id}`} transform={inventory ? "" : `translate(${networkObject.x},${networkObject.y})`} filter={filter}>
+                                {
+                                    inventory && stockpile ? component.drawAmountTag(networkObject) : null
+                                }
+                            </g>
+                        )
+                    }
+                });
+                break;
             }
             case ENetworkObjectType.IRON: {
-                return {
-                    ...networkObject,
+                drawables.push({
+                    x: networkObject.x,
+                    y: networkObject.y,
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawIron(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
-                }
+                }, {
+                    x: networkObject.x,
+                    y: networkObject.y,
+                    type: EDrawableType.TAG,
+                    draw() {
+                        return (
+                            <g key={`tag-${networkObject.id}`} transform={inventory ? "" : `translate(${networkObject.x},${networkObject.y})`} filter={filter}>
+                                {
+                                    inventory && stockpile ? component.drawAmountTag(networkObject) : null
+                                }
+                            </g>
+                        )
+                    }
+                });
+                break;
             }
             case ENetworkObjectType.MUD: {
-                return {
-                    ...networkObject,
+                drawables.push({
+                    x: networkObject.x,
+                    y: networkObject.y,
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawMud(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
-                }
+                }, {
+                    x: networkObject.x,
+                    y: networkObject.y,
+                    type: EDrawableType.TAG,
+                    draw() {
+                        return (
+                            <g key={`tag-${networkObject.id}`} transform={inventory ? "" : `translate(${networkObject.x},${networkObject.y})`} filter={filter}>
+                                {
+                                    inventory && stockpile ? component.drawAmountTag(networkObject) : null
+                                }
+                            </g>
+                        )
+                    }
+                });
+                break;
             }
             case ENetworkObjectType.CLAY: {
-                return {
-                    ...networkObject,
+                drawables.push({
+                    x: networkObject.x,
+                    y: networkObject.y,
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawClay(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
-                }
+                }, {
+                    x: networkObject.x,
+                    y: networkObject.y,
+                    type: EDrawableType.TAG,
+                    draw() {
+                        return (
+                            <g key={`tag-${networkObject.id}`} transform={inventory ? "" : `translate(${networkObject.x},${networkObject.y})`} filter={filter}>
+                                {
+                                    inventory && stockpile ? component.drawAmountTag(networkObject) : null
+                                }
+                            </g>
+                        )
+                    }
+                });
+                break;
             }
             case ENetworkObjectType.REED: {
-                return {
-                    ...networkObject,
+                drawables.push({
+                    x: networkObject.x,
+                    y: networkObject.y,
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawReed(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
-                }
+                }, {
+                    x: networkObject.x,
+                    y: networkObject.y,
+                    type: EDrawableType.TAG,
+                    draw() {
+                        return (
+                            <g key={`tag-${networkObject.id}`} transform={inventory ? "" : `translate(${networkObject.x},${networkObject.y})`} filter={filter}>
+                                {
+                                    component.drawAmountTag(networkObject)
+                                }
+                            </g>
+                        )
+                    }
+                });
+                break;
             }
             case ENetworkObjectType.WATTLE_WALL: {
-                return {
-                    ...networkObject,
+                drawables.push({
+                    x: networkObject.x,
+                    y: networkObject.y,
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawWattleWall(networkObject, filter, previousNetworkObject, inventory, stockpile);
                     }
-                }
+                }, {
+                    x: networkObject.x,
+                    y: networkObject.y,
+                    type: EDrawableType.TAG,
+                    draw() {
+                        return (
+                            <g key={`tag-${networkObject.id}`} transform={inventory ? "" : `translate(${networkObject.x},${networkObject.y})`} filter={filter}>
+                                {
+                                    component.drawAmountTag(networkObject)
+                                }
+                            </g>
+                        )
+                    }
+                });
+                break;
             }
             default:
             case ENetworkObjectType.BOX: {
-                return {
-                    ...networkObject,
+                drawables.push({
+                    x: networkObject.x,
+                    y: networkObject.y,
                     type: EDrawableType.OBJECT,
                     draw() {
                         return component.drawBox(networkObject, filter, previousNetworkObject);
                     }
-                };
+                });
+                break;
             }
         }
+        return drawables;
     };
 
     /**
@@ -1483,70 +1607,6 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
     };
 
     /**
-     * Interpolate path data onto the npc position.
-     * @param npc The npc with path data.
-     */
-    applyPathToNpc = (npc: INpc): INpc => {
-        // get the current time, used to interpolate the npc
-        const now = new Date();
-
-        // determine if there is path data
-        const firstPoint = npc.path[0];
-        if (firstPoint && +now > Date.parse(firstPoint.time)) {
-            // there is path information and the path started
-
-            // a path is made of an array of points. We want to interpolate two points forming a line segment.
-            // find point b in array of points, it's the second point
-            const indexOfPointB = npc.path.findIndex(p => Date.parse(p.time) > +now);
-            if (indexOfPointB >= 0) {
-                // not past last path yet, interpolate point a to point b
-                const a = npc.path[indexOfPointB - 1];
-                const b = npc.path[indexOfPointB];
-                if (a && b) {
-                    const pointA = a.location;
-                    const pointB = b.location;
-                    const timeA = Date.parse(a.time);
-                    const timeB = Date.parse(b.time);
-
-                    const dx = pointB.x - pointA.x;
-                    const dy = pointB.y - pointA.y;
-                    const dt = timeB - timeA;
-                    const t = (+now - timeA) / dt;
-                    const x = pointA.x + dx * t;
-                    const y = pointA.y + dy * t;
-
-                    return {
-                        ...npc,
-                        x,
-                        y
-                    };
-                } else {
-                    // missing points a and b
-                    return npc;
-                }
-            } else {
-                // past last point, path data is over
-                const lastPoint = npc.path[npc.path.length - 1];
-                if (lastPoint) {
-                    // draw npc at last location
-                    const {x, y} = lastPoint.location;
-                    return {
-                        ...npc,
-                        x,
-                        y
-                    };
-                } else {
-                    // cannot find last location, return original npc
-                    return npc;
-                }
-            }
-        } else {
-            // no path information, return original npc
-            return npc;
-        }
-    };
-
-    /**
      * Interpolate the resource state across time. The data will store a time in the future that the resource will respawn
      * without actually changing the data. Instead the depleted state must be interpolated to draw the resource correctly.
      * @param resource The resource with state that should be interpolated.
@@ -1560,6 +1620,22 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         } else {
             return resource;
         }
+    };
+
+    sortDrawablesInUiOrder = (drawables: IDrawable[]): IDrawable[] => {
+        return drawables.sort((a, b) => {
+            // by default, sort by height difference
+            // sort by height differences
+            const heightDifference = a.y - b.y;
+
+            if (a.type === EDrawableType.TAG && b.type !== EDrawableType.TAG) {
+                return 1;
+            } else if (a.type !== EDrawableType.TAG && b.type === EDrawableType.TAG) {
+                return -1;
+            } else {
+                return heightDifference;
+            }
+        });
     };
 
     /**
@@ -1584,7 +1660,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             })),
 
             // add all npcs
-            ...this.state.npcs.map(this.applyPathToNpc).filter(this.isNearWorldView(worldOffset)).map(npc => ({
+            ...this.state.npcs.map(applyPathToNpc).filter(this.isNearWorldView(worldOffset)).map(npc => ({
                 draw(this: IDrawable) {
                     return component.drawPerson(npc, undefined, true);
                 },
@@ -1599,7 +1675,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                 });
                 return [
                     ...arr,
-                    this.drawNetworkObject(networkObject, previousNetworkObject)
+                    ...this.drawNetworkObject(networkObject, previousNetworkObject)
                 ];
             }, []),
 
@@ -1646,24 +1722,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         ];
 
         // sort drawable objects from top to bottom
-        return drawables.sort((a, b) => {
-            // by default, sort by height difference
-            // sort by height differences
-            return a.y - b.y;
-        }).filter((a) => {
-            if (a.type === EDrawableType.WALL) {
-                // check if the wall is near the current person horizontally
-                if (a.x >= worldOffset.x && a.x <= worldOffset.x + 500) {
-                    // remove walls that are below current person
-                    return a.y <= worldOffset.y + (this.state.height / 2);
-                } else {
-                    return true;
-                }
-            } else {
-                // keep other drawables that are not walls
-                return true;
-            }
-        });
+        return this.sortDrawablesInUiOrder(drawables);
     };
 
     /**
@@ -1674,7 +1733,12 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         if (person) {
             return person;
         } else {
-            return this.state.npcs.find(n => n.id === this.state.currentNpcId);
+            const npc = this.state.npcs.find(n => n.id === this.state.currentNpcId);
+            if (npc) {
+                return applyPathToNpc(npc);
+            } else {
+                return undefined;
+            }
         }
     };
 
