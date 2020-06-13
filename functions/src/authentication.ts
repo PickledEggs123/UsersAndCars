@@ -12,63 +12,69 @@ import {getNetworkObjectCellString} from "./cell";
  */
 export const handleLogin = (req: { body: IApiPersonsLoginPost; }, res: any, next: (arg0: any) => any) => {
     (async () => {
-        // check to see if person exists in the database
-        const {id, password} = req.body;
-        const person = await admin.firestore().collection("persons").doc(id).get();
-        if (person.exists) {
-            // person exist, check if logged in already
-            const data = person.data() as IPersonDatabase;
-            if (data.lastUpdate < getThirtySecondsAgo()) {
-                // the person is not logged in, check password
-                if (data.password === password) {
-                    // update lastUpdate to login, keep original position
-                    await person.ref.update({
-                        carId: null,
-                        lastUpdate: admin.firestore.Timestamp.now()
-                    } as Partial<IPersonDatabase>);
+        const { statusCode } = await admin.firestore().runTransaction(async (transaction): Promise<{
+            statusCode: number
+        }> => {
+            // check to see if person exists in the database
+            const {id, password} = req.body;
+            const person = await transaction.get(admin.firestore().collection("persons").doc(id));
+            if (person.exists) {
+                // person exist, check if logged in already
+                const data = person.data() as IPersonDatabase;
+                if (data.lastUpdate < getThirtySecondsAgo()) {
+                    // the person is not logged in, check password
+                    if (data.password === password) {
+                        // update lastUpdate to login, keep original position
+                        transaction.update(person.ref, {
+                            carId: null,
+                            lastUpdate: admin.firestore.Timestamp.now()
+                        } as Partial<IPersonDatabase>);
 
-                    // return accepted
-                    res.sendStatus(202);
+                        // return accepted
+                        return { statusCode: 202 };
+                    } else {
+                        // incorrect password, reject
+                        return { statusCode: 401 };
+                    }
                 } else {
-                    // incorrect password, reject
-                    res.sendStatus(401);
+                    // the person is logged in, do nothing
+                    return { statusCode: 200 };
                 }
             } else {
-                // the person is logged in, do nothing
-                res.sendStatus(200);
-            }
-        } else {
-            // person does not exist, create a new login
-            const data: IPersonDatabase = {
-                id,
-                password,
-                x: 50,
-                y: 150,
-                pantColor: "blue",
-                shirtColor: "grey",
-                carId: null,
-                lastUpdate: admin.firestore.Timestamp.now(),
-                cash: 1000,
-                creditLimit: 1000,
-                objectType: ENetworkObjectType.PERSON,
-                health: defaultPersonHealthObject,
-                cell: getNetworkObjectCellString({
+                // person does not exist, create a new login
+                const data: IPersonDatabase = {
+                    id,
+                    password,
                     x: 50,
-                    y: 150
-                }),
-                inventory: {
-                    rows: 1,
-                    columns: 10,
-                    slots: []
-                },
-                craftingSeed: new Array(20).fill(0).map(() => Math.floor(Math.random() * 36).toString(36)).join(""),
-                craftingState: true,
-            };
-            await admin.firestore().collection("persons").doc(id).set(data);
+                    y: 150,
+                    pantColor: "blue",
+                    shirtColor: "grey",
+                    carId: null,
+                    lastUpdate: admin.firestore.Timestamp.now(),
+                    cash: 1000,
+                    creditLimit: 1000,
+                    objectType: ENetworkObjectType.PERSON,
+                    health: defaultPersonHealthObject,
+                    cell: getNetworkObjectCellString({
+                        x: 50,
+                        y: 150
+                    }),
+                    inventory: {
+                        rows: 1,
+                        columns: 10,
+                        slots: []
+                    },
+                    craftingSeed: new Array(20).fill(0).map(() => Math.floor(Math.random() * 36).toString(36)).join(""),
+                    craftingState: true,
+                };
+                transaction.set(admin.firestore().collection("persons").doc(id), data);
+            }
 
             // return created
-            res.sendStatus(201);
-        }
+            return { statusCode: 201 };
+        });
+
+        res.sendStatus(statusCode);
     })().catch((err) => next(err));
 };
 /**

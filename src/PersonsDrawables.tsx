@@ -1,24 +1,32 @@
 import {
     ECarDirection,
-    EDrawableType, EFloorPattern,
+    EDrawableType,
+    EFloorPattern,
     ENetworkObjectType,
-    ERoadDirection, EWallDirection, EWallPattern,
+    ERoadDirection,
+    EWallDirection,
+    EWallPattern,
     ICar,
-    IDrawable, IFloor, IHouse,
+    IDrawable,
+    IFloor,
+    IHouse,
     ILot,
-    INetworkObject, INetworkObjectBase,
+    INetworkObject,
+    INetworkObjectBase,
     INpc,
     INpcPathPoint,
     IObject,
     IPerson,
     IResource,
-    IRoad, IStockpile, IStockpileTile,
+    IRoad,
+    IStockpile,
+    IStockpileTile,
     ITree,
-    IVendorInventoryItem, IWall
+    IVendorInventoryItem,
+    IWall
 } from "persons-game-common/lib/types/GameTypes";
 import React from "react";
 import seedrandom from "seedrandom";
-import {getMaxStackSize} from "persons-game-common/lib/inventory";
 import {applyStateToNetworkObject, applyStateToResource} from "persons-game-common/lib/npc";
 
 /**
@@ -101,7 +109,11 @@ export interface IPersonsDrawablesState {
     /**
      * The randomly generated ID of the current person shown.
      */
-    currentPersonId: string;
+    currentPersonId: string | null;
+    /**
+     * The id of the npc shown.
+     */
+    currentNpcId: string | null;
     /**
      * Previous copies of networked data. Used for interpolating the drawing of networked objects. The game updates every
      * 2 seconds. We don't want to draw a position change every 2 seconds. Instead we want a smooth animation between two
@@ -1658,7 +1670,12 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
      * Find the current person in the game state.
      */
     getCurrentPerson = (): IPerson | undefined => {
-        return this.state.persons.find(person => person.id === this.state.currentPersonId);
+        const person = this.state.persons.find(p => p.id === this.state.currentPersonId);
+        if (person) {
+            return person;
+        } else {
+            return this.state.npcs.find(n => n.id === this.state.currentNpcId);
+        }
     };
 
     /**

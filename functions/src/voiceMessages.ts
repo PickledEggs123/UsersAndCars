@@ -20,13 +20,13 @@ import * as express from "express";
 /**
  * Get voice related messages for WebRTC voice chat.
  */
-export const getVoiceMessages = async (id: string) => {
+export const getVoiceMessages = async (id: string | null) => {
     const candidates: IApiPersonsVoiceCandidateMessage[] = [];
     const offers: IApiPersonsVoiceOfferMessage[] = [];
     const answers: IApiPersonsVoiceAnswerMessage[] = [];
 
     // a list of WebRTC ICE candidates to add
-    {
+    if (id) {
         const querySnapshot = await admin.firestore().collection("voiceCandidates")
             .where("to", "==", id)
             .get();
@@ -41,7 +41,7 @@ export const getVoiceMessages = async (id: string) => {
     }
 
     // list of WebRTC socket descriptions to add
-    {
+    if (id) {
         const querySnapshot = await admin.firestore().collection("voiceOffers")
             .where("to", "==", id)
             .get();
@@ -56,7 +56,7 @@ export const getVoiceMessages = async (id: string) => {
     }
 
     // list of WebRTC socket descriptions to add
-    {
+    if (id) {
         const querySnapshot = await admin.firestore().collection("voiceAnswers")
             .where("to", "==", id)
             .get();

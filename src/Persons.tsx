@@ -217,7 +217,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             fetchTime: new Date()
         },
         nearbyObjects: [] as INetworkObject[],
-        currentPersonId: this.randomPersonId(),
+        currentPersonId: null as string | null,
+        currentNpcId: null as string | null,
         lastUpdate: new Date().toISOString(),
         fetchTime: new Date(),
         vendingInventory: [] as IVendorInventoryItem[],
@@ -278,7 +279,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 (async () => {
                     // if statement is used so one person will offer to the other and the other person will answer.
                     // the voice chat handshake must happen in a predetermined direction.
-                    if (personId < this.state.currentPersonId) {
+                    if (this.state.currentPersonId && personId < this.state.currentPersonId) {
                         // begin offer of voice chat to other person
                         this.audioChatPeerData[personId] = await this.createVoiceChatChannelForPerson(personId);
                         console.log("VOICE CHAT WITH", personId, "STARTED");
@@ -424,6 +425,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
     addPeerConnectionHandlers = (peerConnection: RTCPeerConnection, personId: string, peerData: IAudioChatPeerData) => {
         peerConnection.onicecandidate = (event) => {
             const {candidate} = event;
+            if (!this.state.currentPersonId) {
+                return;
+            }
             const data: IApiPersonsVoiceCandidatePost = {
                 from: this.state.currentPersonId,
                 to: personId,
@@ -459,6 +463,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             (async () => {
                 const localDescription = await peerConnection.createOffer({offerToReceiveAudio: true, offerToReceiveVideo: false, voiceActivityDetection: false});
                 await peerConnection.setLocalDescription(localDescription);
+                if (!this.state.currentPersonId) {
+                    return;
+                }
                 const data: IApiPersonsVoiceOfferPost = {
                     from: this.state.currentPersonId,
                     to: personId,
@@ -579,6 +586,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             await peerConnection.setLocalDescription(localDescription);
 
             // send answer response back to original person
+            if (!this.state.currentPersonId) {
+                return;
+            }
             const data: IApiPersonsVoiceAnswerPost = {
                 from: this.state.currentPersonId,
                 to: from,
@@ -595,6 +605,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * @param message The candidate message.
      */
     handleVoiceAnswerMessage = (message: IApiPersonsVoiceAnswerMessage) => {
+        if (!this.state.currentPersonId) {
+            return;
+        }
         const {from, description} = message;
         const peerData = this.audioChatPeerData[from];
         if (peerData) {
@@ -858,7 +871,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
 
         // get a list of persons from the database
         const getRequestUrlSearchParams = new URLSearchParams();
-        getRequestUrlSearchParams.append("id", this.state.currentPersonId);
+        if (this.state.currentPersonId) {
+            getRequestUrlSearchParams.append("id", this.state.currentPersonId);
+        }
         const response = await axios.get<IApiPersonsGetResponse>(`https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/data?${getRequestUrlSearchParams}`);
         if (response && response.data) {
             // get persons data from the server
@@ -879,7 +894,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     answers
                 },
                 roads,
-                lots
+                lots,
+                currentPersonId,
+                currentNpcId,
             } = response.data;
 
             // handle voice metadata messages
@@ -952,7 +969,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 resources,
                 inventory,
                 stockpiles,
-                stockpileTiles
+                stockpileTiles,
+                currentPersonId,
+                currentNpcId
             });
         }
 
@@ -1643,6 +1662,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * Create a buy offer for a lot.
      */
     buyLot = (lot: ILot) => async () => {
+        if (!this.state.currentPersonId) {
+            return;
+        }
         if (typeof this.state.lotPrice === "number") {
             const data: IApiLotsBuyPost = {
                 lotId: lot.id,
@@ -1657,6 +1679,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * Create a sell offer for a lot.
      */
     sellLot = (lot: ILot) => async () => {
+        if (!this.state.currentPersonId) {
+            return;
+        }
         if (typeof this.state.lotPrice === "number") {
             const data: IApiLotsSellPost = {
                 lotId: lot.id,
@@ -2259,6 +2284,10 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * Make a POST request to change the job of the NPC.
      */
     npcSetJob = async (npc: INpc, jobType: ENpcJobType) => {
+        if (!this.state.currentPersonId) {
+            return;
+        }
+
         let job: INpcJob;
         if (jobType === ENpcJobType.GATHER) {
             job = {
@@ -2309,8 +2338,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             worldOffset.x = currentPerson.x - (this.state.width / 2);
             worldOffset.y = currentPerson.y - (this.state.height / 2);
         } else {
-            // no player, blur the world
-            worldFilter = "url(#blur)";
+            // // no player, blur the world
+            // worldFilter = "url(#blur)";
         }
 
         const timeOfDay = getCurrentTDayNightTime();

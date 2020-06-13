@@ -270,15 +270,17 @@ export const handleGenerateTerrainTile = async (terrainTile: ITerrainTilePositio
     const batchSize = 100;
     let batch = newResources.splice(0, batchSize);
     while (batch.length > 0) {
+        const batchWrite = admin.firestore().batch();
         // save a batch
-        await Promise.all(batch.map(resource => {
-            return admin.firestore().collection("resources").doc(resource.id).set(
+        batch.forEach(resource => {
+            batchWrite.set(admin.firestore().collection("resources").doc(resource.id),
                 resourceClientToDatabase(resource),
                 {
                     merge: true
                 }
             );
-        }));
+        });
+        await batchWrite.commit();
 
         // create new batch
         batch = newResources.splice(0, batchSize);
@@ -289,37 +291,38 @@ export const handleGenerateTerrainTile = async (terrainTile: ITerrainTilePositio
 };
 
 const harvestResource = async (resourceId: string) => {
-    // check to see if resource exists
-    const resourceDocument = await admin.firestore().collection("resources").doc(resourceId).get();
-    if (resourceDocument.exists) {
-        const resource = resourceDocument.data() as IResourceDatabase;
-        // resource is ready to be harvested
-        if (!resource.depleted || resource.readyTime.toMillis() <= +new Date()) {
-            const controller = new HarvestResourceController(resource as any);
-            const {
-                spawn,
-                respawnTime
-            } = controller.spawn();
+    await admin.firestore().runTransaction(async (transaction) => {
+        // check to see if resource exists
+        const resourceDocument = await transaction.get(admin.firestore().collection("resources").doc(resourceId));
+        if (resourceDocument.exists) {
+            const resource = resourceDocument.data() as IResourceDatabase;
+            // resource is ready to be harvested
+            if (!resource.depleted || resource.readyTime.toMillis() <= +new Date()) {
+                const controller = new HarvestResourceController(resource as any);
+                const {
+                    spawn,
+                    respawnTime
+                } = controller.spawn();
 
-            if (spawn) {
-                const spawnData: INetworkObjectDatabase = {
-                    ...spawn,
-                    lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(spawn.lastUpdate)),
-                    cell: getNetworkObjectCellString(spawn)
-                };
-                const resourceUpdate: Partial<IResourceDatabase> = {
-                    spawnState: controller.saveState(),
-                    lastUpdate: admin.firestore.Timestamp.now(),
-                    depleted: true,
-                    readyTime: admin.firestore.Timestamp.fromMillis(+new Date() + respawnTime)
-                };
-                await Promise.all([
-                    admin.firestore().collection("objects").doc(spawnData.id).set(spawnData, {merge: true}),
-                    admin.firestore().collection("resources").doc(resourceId).set(resourceUpdate, {merge: true})
-                ]);
+                if (spawn) {
+                    const spawnData: INetworkObjectDatabase = {
+                        ...spawn,
+                        lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(spawn.lastUpdate)),
+                        cell: getNetworkObjectCellString(spawn)
+                    };
+                    const resourceUpdate: Partial<IResourceDatabase> = {
+                        spawnState: controller.saveState(),
+                        lastUpdate: admin.firestore.Timestamp.now(),
+                        depleted: true,
+                        readyTime: admin.firestore.Timestamp.fromMillis(+new Date() + respawnTime)
+                    };
+
+                    transaction.set(admin.firestore().collection("objects").doc(spawnData.id), spawnData, {merge: true});
+                    transaction.set(admin.firestore().collection("resources").doc(resourceId), resourceUpdate, {merge: true});
+                }
             }
         }
-    }
+    });
 };
 
 export const handleHarvestResource = (req: express.Request, res: express.Response, next: express.NextFunction) => {

@@ -1,6 +1,5 @@
 import {ILot, IObject} from "persons-game-common/lib/types/GameTypes";
-import {INetworkObjectCellPosition, INetworkObjectBaseDatabase} from "./types/database";
-import * as admin from "firebase-admin";
+import {INetworkObjectCellPosition} from "./types/database";
 import {cellSize} from "./config";
 
 /**
@@ -95,23 +94,4 @@ export const getRelevantNetworkObjectCells = (networkObject: IObject): string[] 
         x,
         y: top ? y - 1 : y + 1
     }].map(networkObjectCellPositionToCellString);
-};
-/**
- * Add cell string to blank cell objects.
- * @param collectionName The collection to process.
- */
-export const addCellStringToBlankCellObjects = async (collectionName: string) => {
-    const collectionQuery = await admin.firestore().collection(collectionName).get();
-    for (const doc of collectionQuery.docs) {
-        const data = doc.data() as INetworkObjectBaseDatabase;
-
-        // if object does not have a cell string
-        if (!data.cell) {
-            // add cell string to object
-            const newData: Partial<INetworkObjectBaseDatabase> = {
-                cell: getNetworkObjectCellString(data)
-            };
-            await doc.ref.set(newData, {merge: true});
-        }
-    }
 };

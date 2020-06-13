@@ -40,7 +40,6 @@ import {
     IPersonDatabase, IStockpileDatabase
 } from "./types/database";
 import {defaultCarHealthObject, defaultObjectHealthObject, defaultPersonHealthObject} from "./config";
-import {giveEveryoneCash, handleVend} from "./cash";
 import {performHealthTickOnCollectionOfNetworkObjects} from "./health";
 import {getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell";
 import {getThirtySecondsAgo, handleLogin} from "./authentication";
@@ -52,9 +51,15 @@ import {
     handlePickUpObject,
     handleWithdrawObjectFromStockpile
 } from "./inventory";
-import {getSimpleCollection, networkObjectDatabaseToClient, sortNetworkObjectsByDistance} from "./common";
+import {
+    getSimpleCollection,
+    networkObjectDatabaseToClient, npcClientToDatabase,
+    npcDatabaseToClient,
+    sortNetworkObjectsByDistance
+} from "./common";
 import {handleConstructionRequest, handleStockpileConstructionRequest} from "./construction";
 import {handleSetNpcJob, simulateCell} from "./pathfinding";
+import {applyPathToNpc} from "persons-game-common/lib/npc";
 
 const matchAll = require("string.prototype.matchall");
 matchAll.shim();
@@ -83,18 +88,23 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
         const lotsToReturnAsJson: ILot[] = [];
         const stockpilesToReturnAsJson: IStockpile[] = [];
 
-        const {id} = req.query as {id: string};
+        const {id = null} = req.query as {id: string};
 
-        if (!id) {
-            res.status(404).json({message: "require id parameter"});
-            return;
-        }
-
-        // get current person, render data relative to current person's position
-        const currentPerson = await admin.firestore().collection("persons").doc(id).get();
-        const currentPersonData = currentPerson.exists ?
+        // get current person or current npc, render data relative to person or npc position
+        const currentPerson = id ? await admin.firestore().collection("persons").doc(id).get() : null;
+        const currentNpcQuery = await admin.firestore().collection("npcs").limit(1).get();
+        const currentNpc: admin.firestore.DocumentSnapshot | null = currentNpcQuery.docs.length > 0 ? currentNpcQuery.docs[0] : null;
+        const currentNpcData: INpcDatabase | null = currentNpc ? currentNpc.data() as INpcDatabase : null;
+        const updatedNpcDataClient: INpc | null = currentNpcData ? applyPathToNpc(npcDatabaseToClient(currentNpcData)) : null;
+        const updatedNpcData: INpcDatabase | null = updatedNpcDataClient ? npcClientToDatabase(updatedNpcDataClient) : null;
+        const currentPersonData: IPersonDatabase = currentPerson && currentPerson.exists ?
             currentPerson.data() as IPersonDatabase :
-            {id, x: 0, y: 0} as IPersonDatabase;
+            currentNpcData ?
+                updatedNpcData as IPersonDatabase :
+                {id, x: 0, y: 0} as IPersonDatabase;
+
+        const currentPersonId = currentPerson && currentPerson.exists ? currentPerson.id : null;
+        const currentNpcId = !(currentPerson && currentPerson.exists) && currentNpc && currentNpc.exists ? currentNpc.id : null;
 
         // begin terrain update
         await updateTerrain({currentPerson: currentPersonData});
@@ -268,11 +278,15 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
 
         // return both persons and cars since both can move and both are network objects
         const jsonData: IApiPersonsGetResponse = {
+            currentPersonId,
+            currentNpcId,
             persons: personsToReturnAsJson,
             npcs: npcsToReturnAsJson,
             lots: lotsToReturnAsJson,
             cars: await getSimpleCollection<ICar>(currentPersonData, "personalCars"),
-            objects: await getSimpleCollection<INetworkObject>(currentPersonData, "objects", false, true),
+            objects: await getSimpleCollection<INetworkObject>(currentPersonData, "objects", {
+                networkObject: true
+            }),
             roads: await getSimpleCollection<IRoad>(currentPersonData, "roads"),
             houses: await getSimpleCollection<IHouse>(currentPersonData, "houses"),
             floors: await getSimpleCollection<IFloor>(currentPersonData, "floors"),
@@ -290,11 +304,6 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
  * The login method.
  */
 personsApp.post("/login", handleLogin);
-
-/**
- * The vend method.
- */
-personsApp.post("/vend", handleVend);
 
 /**
  * Add a WebRTC ICE candidate message for another user.
@@ -365,23 +374,16 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
         const personsToSaveIntoDatabase = req.body.persons.map((person: IPerson): Partial<IPersonDatabase> => {
             // remove cash and credit limit information from person before updating database
             // do not want the client to set their own cash or credit limit
-            const personWithoutSensitiveInformation = {...person};
-            delete personWithoutSensitiveInformation.cash;
-            delete personWithoutSensitiveInformation.creditLimit;
+            const personWithoutSensitiveInformation = {
+                id: person.id,
+                x: person.x,
+                y: person.y
+            };
 
             return {
                 ...personWithoutSensitiveInformation,
-                inventory: {
-                    ...personWithoutSensitiveInformation.inventory,
-                    slots: personWithoutSensitiveInformation.inventory.slots.map(slot => ({
-                        ...slot,
-                        lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(slot.lastUpdate)),
-                        cell: getNetworkObjectCellString(slot)
-                    }))
-                },
                 // convert ISO string date into firebase firestore Timestamp
                 lastUpdate: person.lastUpdate ? admin.firestore.Timestamp.fromDate(new Date(person.lastUpdate)) : admin.firestore.Timestamp.now(),
-                objectType: ENetworkObjectType.PERSON,
                 cell: getNetworkObjectCellString({
                     ...personWithoutSensitiveInformation
                 })
@@ -410,17 +412,17 @@ personsApp.put("/data", (req: { body: IApiPersonsPut; }, res: any, next: (arg0: 
         });
 
         // save all data objects to the database simultaneously
-        await Promise.all([
-            ...personsToSaveIntoDatabase.map((person) => {
-                return admin.firestore().collection("persons").doc(person.id as string).set(person, {merge: true});
-            }),
-            ...carsToSaveIntoDatabase.map((car) => {
-                return admin.firestore().collection("personalCars").doc(car.id as string).set(car, {merge: true});
-            }),
-            ...objectsToSaveIntoDatabase.map((networkObject) => {
-                return admin.firestore().collection("objects").doc(networkObject.id as string).set(networkObject, {merge: true});
-            })
-        ]);
+        const writeBatch = admin.firestore().batch();
+        personsToSaveIntoDatabase.forEach((person) => {
+            writeBatch.set(admin.firestore().collection("persons").doc(person.id as string), person, {merge: true});
+        });
+        carsToSaveIntoDatabase.forEach((car) => {
+            writeBatch.set(admin.firestore().collection("personalCars").doc(car.id as string), car, {merge: true});
+        });
+        objectsToSaveIntoDatabase.forEach((networkObject) => {
+            writeBatch.set(admin.firestore().collection("objects").doc(networkObject.id as string), networkObject, {merge: true});
+        });
+        await writeBatch.commit();
 
         // end request
         res.sendStatus(200);
@@ -497,6 +499,24 @@ generateApp.post("/city", (req, res, next) => {
         res.sendStatus(200);
     })().catch((err) => next(err));
 });
+generateApp.post("/all", (req, res, next) => {
+    (async () => {
+        // delete previous npc data
+        await deleteAllFromCollection("houses");
+        await deleteAllFromCollection("floors");
+        await deleteAllFromCollection("walls");
+        await deleteAllFromCollection("npcs");
+        await deleteAllFromCollection("npcTimes");
+        await deleteAllFromCollection("resources");
+        await deleteAllFromCollection("terrainTiles");
+        await deleteAllFromCollection("stockpileTiles");
+        await deleteAllFromCollection("stockpiles");
+        await deleteAllFromCollection("persons");
+        await deleteAllFromCollection("objects");
+
+        res.sendStatus(200);
+    })().catch((err) => next(err));
+});
 generateApp.post("/npcs", (req, res, next) => {
     (async () => {
         // delete previous npc data
@@ -536,31 +556,34 @@ export const generate = functions.https.onRequest(generateApp);
  */
 const lotsApp = express();
 const acceptBuyOffer = async (offer: IApiLotsBuyPost) => {
-    const lotDocument = await admin.firestore().collection("lots").doc(offer.lotId).get();
-    const personDocument = await admin.firestore().collection("persons").doc(offer.personId).get();
-    if (lotDocument.exists && personDocument.exists) {
-        const oldBuyOffers = await admin.firestore().collection("buyOffers")
-            .where("lotId", "==", offer.lotId)
-            .get();
-        const oldSellOffers = await admin.firestore().collection("sellOffers")
-            .where("lotId", "==", offer.lotId)
-            .get();
+    await admin.firestore().runTransaction(async (transaction) => {
+        const lotDocument = await transaction.get(admin.firestore().collection("lots").doc(offer.lotId));
+        const personDocument = await transaction.get(admin.firestore().collection("persons").doc(offer.personId));
+        if (lotDocument.exists && personDocument.exists) {
+            const oldBuyOffers = await transaction.get(admin.firestore().collection("buyOffers")
+                .where("lotId", "==", offer.lotId));
+            const oldSellOffers = await transaction.get(admin.firestore().collection("sellOffers")
+                .where("lotId", "==", offer.lotId));
 
-        const lotData: Partial<ILot> = {
-            owner: offer.personId
-        };
-        const personData = personDocument.data() as IPersonDatabase;
-        const newPersonData: Partial<IPersonDatabase> = {
-            cash: personData.cash - offer.price,
-            lastUpdate: admin.firestore.Timestamp.now()
-        };
-        await Promise.all([
-            lotDocument.ref.set(lotData, {merge: true}),
-            personDocument.ref.set(newPersonData, {merge: true}),
-            ...oldBuyOffers.docs.map(o => o.ref.delete()),
-            ...oldSellOffers.docs.map(o => o.ref.delete())
-        ]);
-    }
+            const lotData: Partial<ILot> = {
+                owner: offer.personId
+            };
+            const personData = personDocument.data() as IPersonDatabase;
+            const newPersonData: Partial<IPersonDatabase> = {
+                cash: personData.cash - offer.price,
+                lastUpdate: admin.firestore.Timestamp.now()
+            };
+
+            transaction.set(lotDocument.ref, lotData, {merge: true});
+            transaction.set(personDocument.ref, newPersonData, {merge: true});
+            [
+                ...oldBuyOffers.docs,
+                ...oldSellOffers.docs
+            ].forEach(o => {
+                transaction.delete(o.ref);
+            });
+        }
+    })
 };
 lotsApp.use(cors({origin: true}));
 lotsApp.post("/buy", (req, res, next) => {
@@ -629,8 +652,6 @@ export const generateTerrain = functions.pubsub.topic("generateTerrain").onPubli
 // every minute, run a tick to update all persons
 export const personsTick = functions.pubsub.schedule("every 10 minutes").onRun(() => {
     return (async () => {
-        await giveEveryoneCash();
-
         // health regeneration or object depreciation
         await performHealthTickOnCollectionOfNetworkObjects("persons", defaultPersonHealthObject);
         await performHealthTickOnCollectionOfNetworkObjects("personalCars", defaultCarHealthObject);

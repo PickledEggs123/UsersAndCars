@@ -105,7 +105,7 @@ export const npcDatabaseToClient = (npcDatabase: INpcDatabase): INpc => ({
         slots: npcDatabase.inventory.slots.map(networkObjectDatabaseToClient)
     }
 });
-export const npcClientToDatabase = (npcClient: INpc): Partial<INpcDatabase> => ({
+export const npcClientToDatabase = (npcClient: INpc): INpcDatabase => ({
     ...npcClient,
     lastUpdate: admin.firestore.Timestamp.fromMillis(Date.parse(npcClient.lastUpdate)),
     readyTime: admin.firestore.Timestamp.fromMillis(Date.parse(npcClient.readyTime)),
@@ -113,7 +113,8 @@ export const npcClientToDatabase = (npcClient: INpc): Partial<INpcDatabase> => (
         ...npcClient.inventory,
         slots: npcClient.inventory.slots.map(networkObjectClientToDatabase)
     },
-    cell: getNetworkObjectCellString(npcClient)
+    cell: getNetworkObjectCellString(npcClient),
+    password: ""
 });
 /**
  * The distance from the object to the current person.
@@ -134,8 +135,25 @@ export const sortNetworkObjectsByDistance = (currentPersonData: IPersonDatabase)
  * @param currentPersonData The current person the collection fetch is relative to.
  * @param collectionName The name of the collection.
  * @param cellsArray If the collection uses cells string array instead of cell string.
+ * @param networkObject If the collection is for network objects, or objects type network object.
+ * @param transaction If the collection is using a transaction to fetch data.
  */
-export const getSimpleCollection = async <T extends IObject>(currentPersonData: IPersonDatabase, collectionName: string, cellsArray: boolean = false, networkObject: boolean = false): Promise<Array<T>> => {
+export const getSimpleCollection = async <T extends IObject & {
+    lastUpdate?: string | admin.firestore.Timestamp,
+    readyTime?: string | admin.firestore.Timestamp
+}>(currentPersonData: IPersonDatabase, collectionName: string, {
+    cellsArray,
+    networkObject,
+    transaction
+}: {
+    cellsArray?: boolean,
+    networkObject?: boolean,
+    transaction?: admin.firestore.Transaction | null
+} = {
+    cellsArray: false,
+    networkObject: false,
+    transaction: null
+}): Promise<Array<T>> => {
     const dataArrayToReturnAsJson: T[] = [];
 
     // list of objects near the person
@@ -159,10 +177,11 @@ export const getSimpleCollection = async <T extends IObject>(currentPersonData: 
             .where("grabbedByPersonId", "==", currentPersonData ? currentPersonData.id : "");
         queryIsInInventory = queryIsInInventory.where("isInInventory", "==", true);
     }
-    const queries: Promise<admin.firestore.QuerySnapshot>[] = [queryNotInInventory.get()];
+    const rawQueries: admin.firestore.Query[] = [queryNotInInventory];
     if (queryIsInInventory) {
-        queries.push(queryIsInInventory.get());
+        rawQueries.push(queryIsInInventory);
     }
+    const queries: Promise<admin.firestore.QuerySnapshot>[] = rawQueries.map(q => transaction ? transaction.get(q) : q.get());
     const querySnapshots = await Promise.all(queries);
 
     for (const querySnapshot of querySnapshots) {
@@ -181,6 +200,12 @@ export const getSimpleCollection = async <T extends IObject>(currentPersonData: 
                         data.readyTime.toDate().toISOString()
                     : undefined
             };
+            if (!dataToReturnAsJson.lastUpdate) {
+                delete dataToReturnAsJson.lastUpdate;
+            }
+            if (!dataToReturnAsJson.readyTime) {
+                delete dataToReturnAsJson.readyTime;
+            }
             dataArrayToReturnAsJson.push(dataToReturnAsJson);
         }
     }

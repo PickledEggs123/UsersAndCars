@@ -2,7 +2,7 @@ import {
     ENetworkObjectType,
     ENpcJobType,
     EOwnerType,
-    IApiPersonsNpcJobPost,
+    IApiPersonsNpcJobPost, INetworkObject,
     INpc,
     INpcPathPoint
 } from "persons-game-common/lib/types/GameTypes";
@@ -17,7 +17,7 @@ import {
 import {cellSize} from "./config";
 import * as admin from "firebase-admin";
 import {getNetworkObjectCellString} from "./cell";
-import {CellController} from "persons-game-common/lib/npc";
+import {applyStateToNetworkObject, CellController} from "persons-game-common/lib/npc";
 import {
     houseDatabaseToClient,
     networkObjectClientToDatabase,
@@ -202,7 +202,26 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
     }).map(doc => doc.id);
 
     const houses = houseQuery.docs.map(doc => houseDatabaseToClient(doc.data() as IHouseDatabase));
-    const objects = objectQuery.docs.map(doc => networkObjectDatabaseToClient(doc.data() as INetworkObjectDatabase));
+    const allObjects = objectQuery.docs.map(doc => networkObjectDatabaseToClient(doc.data() as INetworkObjectDatabase));
+    const {objects, objectsThatNoLongerExist} = allObjects.reduce((acc: {
+        objects: INetworkObject[],
+        objectsThatNoLongerExist: INetworkObject[]
+    }, obj: INetworkObject) => {
+        if (applyStateToNetworkObject(obj).exist) {
+            return {
+                ...acc,
+                objects: [...acc.objects, obj]
+            };
+        } else {
+            return {
+                ...acc,
+                objectsThatNoLongerExist: [...acc.objectsThatNoLongerExist, obj]
+            };
+        }
+    }, {
+        objects: [],
+        objectsThatNoLongerExist: []
+    });
     const resources = resourceQuery.docs.map(doc => {
         return resourceDatabaseToClient(doc.data() as IResourceDatabase);
     });
@@ -265,7 +284,7 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
 
     await Promise.all([
         ...finalState.npcs.reduce((acc: Promise<any>[], npc: INpc): Promise<any>[] => {
-            const npcDatabase: INpcDatabase = npcClientToDatabase(npc) as INpcDatabase;
+            const npcDatabase: INpcDatabase = npcClientToDatabase(npc);
             return [
                 admin.firestore().collection("npcs").doc(npc.id).set(npcDatabase, {merge: true}),
                 ...findCellTimesInPath(npcDatabase, npcDatabase.path).map(cellTime => {
@@ -284,6 +303,9 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
         }),
         ...expiredNpcTimeIds.map(id => {
             return admin.firestore().collection("npcTimes").doc(id).delete();
+        }),
+        ...objectsThatNoLongerExist.map(obj => {
+            return admin.firestore().collection("objects").doc(obj.id).delete();
         })
     ])
 };
