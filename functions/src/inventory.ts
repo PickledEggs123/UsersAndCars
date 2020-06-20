@@ -140,7 +140,7 @@ const craftObject = async ({personId, recipeProduct}: {personId: string, recipeP
             const updatedItem: INetworkObjectDatabase | null = updatedItemClient ? networkObjectClientToDatabase(updatedItemClient) : null;
             const newPersonData: Partial<IPersonDatabase> = personClientToDatabase({
                 ...personDataClient,
-                ...controller.getState() as Partial<IPerson>
+                ...controller.getState()
             });
             const stackableSlot: INetworkObjectDatabase | null = stackableSlotsClient[0] ? networkObjectClientToDatabase(stackableSlotsClient[0]) : null;
             const modifiedSlots: INetworkObjectDatabase[] = modifiedSlotsClient.map(m => networkObjectClientToDatabase(m));

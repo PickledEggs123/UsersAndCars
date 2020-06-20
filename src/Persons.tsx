@@ -2,6 +2,8 @@ import React from 'react';
 import './App.scss';
 import axios from "axios";
 import {
+    EAltitudeType,
+    EBiomeType,
     ECarDirection,
     EDrawableType,
     ENetworkObjectType,
@@ -18,8 +20,10 @@ import {
     IApiPersonsVoiceCandidatePost,
     IApiPersonsVoiceOfferMessage,
     IApiPersonsVoiceOfferPost,
+    IArea,
     ICar,
-    ICraftingRecipe, IDrawable,
+    ICraftingRecipe,
+    IDrawable,
     IFloor,
     IGameTutorials,
     IHouse,
@@ -50,6 +54,8 @@ import {ConstructionController} from "persons-game-common/lib/construction";
 import {getCurrentTDayNightTime, TDayNightTimeHour} from "persons-game-common/lib/types/time";
 import {StockpileController} from "persons-game-common/lib/stockpile";
 import {applyInventoryState, applyPathToNpc} from "persons-game-common/lib/npc";
+import * as delaunay from "d3-delaunay";
+import {areaTileToId, generateTerrainAreas, getAreaTilePosition} from "persons-game-common/lib/terrain";
 
 /**
  * The input to the [[Persons]] component that changes how the game is rendered.
@@ -104,6 +110,18 @@ interface IPersonsState extends IPersonsDrawablesState {
      * If the NPCs screen should be shown.
      */
     showNpcs: boolean;
+    /**
+     * A list of areas around the current person.
+     */
+    areas: IArea[];
+    /**
+     * The previous tile position. Compared with the current tile position, if different, then regenerate areas.
+     */
+    lastAreaId: string | null;
+    /**
+     * The delaunay diagram of areas. Allow for quick search of current area.
+     */
+    areaDiagram: delaunay.Delaunay<any> | null;
 }
 
 /**
@@ -123,6 +141,11 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * The interval containing the game loop.
      */
     intervalGameLoop: any = null;
+
+    /**
+     * The interval containing the terrain loop.
+     */
+    intervalTerrainLoop: any = null;
 
     /**
      * The interval containing the animation loop.
@@ -165,6 +188,12 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * money per API call.
      */
     gameRefreshSpeed: number = 2000;
+
+    /**
+     * The terrain refresh rate. 1000 means 1 second. Decreasing the value will update the terrain more often, but terrain
+     * updates can be costly.
+     */
+    terrainRefreshSpeed: number = 6000;
 
     /**
      * The heartbeat refresh rate. 1000 means 1 second. Decreasing this value will increase how often the game sends
@@ -238,7 +267,10 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         showStockpile: false,
         showNpcs: false,
         errorMessage: "",
-        errorTime: new Date()
+        errorTime: new Date(),
+        areas: [] as IArea[],
+        lastAreaId: null as string | null,
+        areaDiagram: null as delaunay.Delaunay<any> | null
     };
 
     /**
@@ -717,6 +749,27 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         });
     };
 
+    terrainLoop = async () => {
+        const currentPerson = this.getCurrentPerson() || {x: 0, y: 0};
+        if (currentPerson) {
+            const currentAreaId = areaTileToId(getAreaTilePosition(currentPerson));
+            if (!this.state.lastAreaId || (this.state.lastAreaId && this.state.lastAreaId !== currentAreaId)) {
+                const areas = generateTerrainAreas(currentPerson);
+                const areaDiagram = delaunay.Delaunay.from(areas.map(({x, y}) => [x, y]));
+                this.setState({
+                    areas,
+                    areaDiagram,
+                    lastAreaId: currentAreaId
+                });
+            }
+        }
+
+        // repeat
+        this.intervalTerrainLoop = setTimeout(() => {
+            this.terrainLoop();
+        }, this.terrainRefreshSpeed);
+    };
+
     /**
      * Begin the game loop.
      */
@@ -727,7 +780,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         window.addEventListener("keyup", this.handleKeyUp);
 
         // begin game loop
-        this.intervalGameLoop = setTimeout(this.gameLoop, this.gameRefreshSpeed);
+        this.intervalGameLoop = setTimeout(this.gameLoop, 0);
+        this.intervalTerrainLoop = setTimeout(this.terrainLoop, 0);
         this.intervalHeartbeat = setInterval(this.heartbeat, this.heartbeatRefreshSpeed);
 
         // begin animation loop
@@ -811,6 +865,12 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         if (this.timeoutAnimationLoop) {
             clearTimeout(this.timeoutAnimationLoop);
             this.timeoutAnimationLoop = null;
+        }
+
+        // stop terrain loop
+        if (this.intervalTerrainLoop) {
+            clearTimeout(this.intervalTerrainLoop);
+            this.intervalTerrainLoop = null;
         }
 
         // stop game loop
@@ -2379,8 +2439,23 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         {
                             this.generateCarMasks()
                         }
+                        <pattern id="loading" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+                            <image href="/loading.gif" width="32" height="32"/>
+                        </pattern>
                         <pattern id="grass" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
                             <image href="/grass.png" width="16" height="16"/>
+                        </pattern>
+                        <pattern id="sand" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+                            <image href="/sand.png" width="32" height="32"/>
+                        </pattern>
+                        <pattern id="water" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+                            <image href="/water.png" width="32" height="32"/>
+                        </pattern>
+                        <pattern id="bog" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+                            <image href="/bog.png" width="32" height="32"/>
+                        </pattern>
+                        <pattern id="gravel" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+                            <image href="/gravel.png" width="32" height="32"/>
                         </pattern>
                         <pattern id="road" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
                             <image href="/road.png" width="16" height="16"/>
@@ -2434,9 +2509,47 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     <g transform={`translate(${-worldOffset.x},${-worldOffset.y})`} filter={worldFilter}>
                         {
                             // draw the grass on the bottom of the world
-                            this.generateWorldTiles(worldOffset, {tileWidth: 500, tileHeight: 500}).map(({x, y}: IObject) => {
-                                return <rect key={`grass-tile-${x}-${y}`} x={x} y={y} width="500" height="500" fill="url(#grass)"/>;
-                            })
+                            this.generateWorldTiles(worldOffset, {tileWidth: 1000, tileHeight: 1000}).reduce((acc: JSX.Element[], {x, y}: IObject) => {
+                                let fill: string = "url(#loading)";
+                                const diagram = delaunay.Delaunay.from(this.state.areas.map(({x, y}) => [x, y])).voronoi([
+                                    x,
+                                    y,
+                                    x + 1000,
+                                    y + 1000
+                                ]);
+                                const polygons: JSX.Element[] = [];
+                                for (let i = 0; i < this.state.areas.length; i++) {
+                                    const cellPolygon = diagram.cellPolygon(i);
+                                    if (!cellPolygon) {
+                                        continue;
+                                    }
+                                    const area = this.state.areas[i];
+                                    if (area) {
+                                        if (area.biomeType === EBiomeType.BEACH) {
+                                            fill = "url(#sand)";
+                                        } else if (area.altitudeType === EAltitudeType.OCEAN) {
+                                            fill = "url(#water)";
+                                        } else if (area.altitudeType === EAltitudeType.SWAMP) {
+                                            fill = "url(#bog)";
+                                        } else if (area.altitudeType === EAltitudeType.PLAIN) {
+                                            fill = "url(#grass)";
+                                        } else if (area.altitudeType === EAltitudeType.HILL) {
+                                            fill = "url(#grass)";
+                                        } else if (area.altitudeType === EAltitudeType.MOUNTAIN) {
+                                            fill = "url(#gravel)";
+                                        } else if (area.altitudeType === EAltitudeType.ROCKY) {
+                                            fill = "url(#gravel)";
+                                        }
+                                    }
+                                    polygons.push(
+                                        <polygon key={`terrain-tile-${x}-${y}-area-tile-${area.x}-${area.y}`} points={cellPolygon.map(([x, y]) => `${x},${y}`).join(" ")} fill={fill}/>
+                                    );
+                                }
+                                return [
+                                    ...acc,
+                                    ...polygons
+                                ];
+                            }, [])
                         }
                         {
                             // draw transparent cells to highlight zones in the world, each zone will group npcs together, the player should know zone boundaries
