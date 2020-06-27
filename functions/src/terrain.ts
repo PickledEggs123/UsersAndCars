@@ -1,6 +1,5 @@
 import {
-    IApiPersonsResourceHarvestPost,
-    IResource,
+    IApiPersonsResourceHarvestPost, IResource,
     ITerrainTilePosition,
 } from "persons-game-common/lib/types/GameTypes";
 import {INetworkObjectDatabase, IPersonDatabase, IResourceDatabase} from "./types/database";
@@ -12,7 +11,7 @@ import {HarvestResourceController} from "persons-game-common/lib/resources";
 import {resourceClientToDatabase} from "./common";
 import {
     generateTerrainForLocation,
-    getTerrainTilePosition,
+    getTerrainTilePosition, IGeneratedResources,
     terrainTileSize,
     terrainTilesThatShouldBeLoaded,
     terrainTileToId
@@ -48,39 +47,46 @@ export const updateTerrain = async ({currentPerson}: {currentPerson: IPersonData
     }));
 };
 
+const saveTerrainTileWithResources = async (terrainTile: ITerrainTilePosition, resources: IResource[]) => {
+    // run a transaction to lock specific terrain tiles to save, do not save the same terrain tile twice
+    await admin.firestore().runTransaction(async (transaction) => {
+        // only if terrain tile does not exist
+        const terrainTileDoc = await transaction.get(admin.firestore().collection("terrainTiles").doc(terrainTileToId(terrainTile)));
+
+        if (!terrainTileDoc.exists) {
+            // add all new resources
+            for (const resource of resources) {
+                transaction.set(admin.firestore().collection("resources").doc(resource.id), resourceClientToDatabase(resource), {merge: true});
+            }
+
+            // add new terrain tile
+            transaction.create(terrainTileDoc.ref, terrainTile);
+        }
+    });
+};
+
 /**
  * PubSub handler for generating and saving terrain tiles.
  * @param terrainTile The terrain tile to generate.
  */
 export const handleGenerateTerrainTile = async (terrainTile: ITerrainTilePosition) => {
     // create resources
-    const newResources: IResource[] = generateTerrainForLocation(terrainTile, {
+    const newResourceData: IGeneratedResources[] = generateTerrainForLocation(terrainTile, {
         x: terrainTile.tileX * terrainTileSize,
         y: terrainTile.tileY * terrainTileSize
     });
 
-    // save resources in batches of 100
-    const batchSize = 100;
-    let batch = newResources.splice(0, batchSize);
-    while (batch.length > 0) {
-        const batchWrite = admin.firestore().batch();
-        // save a batch
-        batch.forEach(resource => {
-            batchWrite.set(admin.firestore().collection("resources").doc(resource.id),
-                resourceClientToDatabase(resource),
-                {
-                    merge: true
-                }
-            );
-        });
-        await batchWrite.commit();
+    // get all resources within terrain tile to the maximum limit of 200 resource nodes within the terrain tile (2000 by 2000 area).
+    const resources: IResource[] = newResourceData.reduce((acc: IResource[], newData): IResource[] => {
+        return [
+            ...acc,
+            ...newData.resources
+        ];
+    }, []).filter((resource) => {
+        return Math.floor(resource.x / terrainTileSize) === terrainTile.tileX && Math.floor(resource.y / terrainTileSize) ===terrainTile.tileY;
+    }).slice(0, 200);
 
-        // create new batch
-        batch = newResources.splice(0, batchSize);
-    }
-
-    // save new terrain tiles
-    await admin.firestore().collection("terrainTiles").doc(terrainTileToId(terrainTile)).set(terrainTile, {merge: true});
+    await saveTerrainTileWithResources(terrainTile, resources);
 };
 
 const harvestResource = async (resourceId: string) => {

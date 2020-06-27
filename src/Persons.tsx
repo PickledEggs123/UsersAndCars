@@ -55,7 +55,7 @@ import {getCurrentTDayNightTime, TDayNightTimeHour} from "persons-game-common/li
 import {StockpileController} from "persons-game-common/lib/stockpile";
 import {applyInventoryState, applyPathToNpc} from "persons-game-common/lib/npc";
 import * as delaunay from "d3-delaunay";
-import {areaTileToId, generateTerrainAreas, getAreaTilePosition} from "persons-game-common/lib/terrain";
+import {areaTileSize, areaTileToId, generateTerrainAreas, getAreaTilePosition} from "persons-game-common/lib/terrain";
 
 /**
  * The input to the [[Persons]] component that changes how the game is rendered.
@@ -110,6 +110,10 @@ interface IPersonsState extends IPersonsDrawablesState {
      * If the NPCs screen should be shown.
      */
     showNpcs: boolean;
+    /**
+     * If the map screen should be drawn.
+     */
+    showMap: boolean;
     /**
      * A list of areas around the current person.
      */
@@ -266,6 +270,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         showConstruction: false,
         showStockpile: false,
         showNpcs: false,
+        showMap: false,
         errorMessage: "",
         errorTime: new Date(),
         areas: [] as IArea[],
@@ -2124,6 +2129,10 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         this.setState({showNpcs: !this.state.showNpcs});
     };
 
+    showMap = () => {
+        this.setState({showMap: !this.state.showMap});
+    };
+
     /**
      * Construct a stockpile at a location.
      */
@@ -2380,6 +2389,27 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/npc/job", postData);
     };
 
+    getAreaFill = (area: IArea | null): string => {
+        if (area) {
+            if (area.biomeType === EBiomeType.BEACH) {
+                return "url(#sand)";
+            } else if (area.altitudeType === EAltitudeType.OCEAN) {
+                return "url(#water)";
+            } else if (area.altitudeType === EAltitudeType.SWAMP) {
+                return "url(#bog)";
+            } else if (area.altitudeType === EAltitudeType.PLAIN) {
+                return "url(#grass)";
+            } else if (area.altitudeType === EAltitudeType.HILL) {
+                return "url(#grass)";
+            } else if (area.altitudeType === EAltitudeType.MOUNTAIN) {
+                return "url(#gravel)";
+            } else if (area.altitudeType === EAltitudeType.ROCKY) {
+                return "url(#gravel)";
+            }
+        }
+        return "url(#loading)";
+    };
+
     render() {
         // find the current person
         const currentPerson = this.getCurrentPerson();
@@ -2410,14 +2440,19 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
 
         const timeOfDay = getCurrentTDayNightTime();
         const timeOfDayScalar = timeOfDay / TDayNightTimeHour / 24;
-        const timeOfDayHour = Math.floor(timeOfDayScalar * 24 % 12);
-        const timeOfDayMinute = Math.floor(timeOfDayScalar * 24 * 60 % 60);
-        const timeOfDaySecond = Math.floor(timeOfDayScalar * 24 * 60 * 60 % 60);
+        const timeOfDayHour = Math.floor(timeOfDayScalar * 24 % 12).toString();
+        const timeOfDayMinuteRaw: string = Math.floor(timeOfDayScalar * 24 * 60 % 60).toString();
+        const timeOfDayMinute = timeOfDayMinuteRaw.length === 1 ? `0${timeOfDayMinuteRaw}` : timeOfDayMinuteRaw;
         const timeOfDayAmPm = timeOfDayScalar < 0.5 ? "am" : "pm";
         const day: boolean = timeOfDayScalar >= 0.25 && timeOfDayScalar < 0.75;
         const sunMoonScale = (timeOfDayScalar + 0.25) % 0.5;
 
         const npc = this.state.npc ? applyInventoryState(this.state.npc) : null;
+
+        const mapPaddingWidth = this.state.width;
+        const mapPaddingHeight = this.state.height;
+        const mapPadding = Math.max(mapPaddingHeight, mapPaddingWidth);
+        const mapScale = mapPadding / (areaTileSize * 2);
 
         return (
             <div className="persons">
@@ -2430,6 +2465,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     <button onClick={this.showConstruction}>Construction</button>
                     <button onClick={this.showStockpile}>Stockpile</button>
                     <button onClick={this.showNpcs}>NPCs</button>
+                    <button onClick={this.showMap}>Map</button>
                 </div>
                 <div style={{backgroundColor: "red", color: "white"}}>
                     {this.state.errorMessage}
@@ -2510,7 +2546,6 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                         {
                             // draw the grass on the bottom of the world
                             this.generateWorldTiles(worldOffset, {tileWidth: 1000, tileHeight: 1000}).reduce((acc: JSX.Element[], {x, y}: IObject) => {
-                                let fill: string = "url(#loading)";
                                 const diagram = delaunay.Delaunay.from(this.state.areas.map(({x, y}) => [x, y])).voronoi([
                                     x,
                                     y,
@@ -2524,25 +2559,10 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                         continue;
                                     }
                                     const area = this.state.areas[i];
-                                    if (area) {
-                                        if (area.biomeType === EBiomeType.BEACH) {
-                                            fill = "url(#sand)";
-                                        } else if (area.altitudeType === EAltitudeType.OCEAN) {
-                                            fill = "url(#water)";
-                                        } else if (area.altitudeType === EAltitudeType.SWAMP) {
-                                            fill = "url(#bog)";
-                                        } else if (area.altitudeType === EAltitudeType.PLAIN) {
-                                            fill = "url(#grass)";
-                                        } else if (area.altitudeType === EAltitudeType.HILL) {
-                                            fill = "url(#grass)";
-                                        } else if (area.altitudeType === EAltitudeType.MOUNTAIN) {
-                                            fill = "url(#gravel)";
-                                        } else if (area.altitudeType === EAltitudeType.ROCKY) {
-                                            fill = "url(#gravel)";
-                                        }
-                                    }
+                                    const fill = this.getAreaFill(area);
+                                    const points = cellPolygon.map(([x, y]) => `${x},${y}`).join(" ");
                                     polygons.push(
-                                        <polygon key={`terrain-tile-${x}-${y}-area-tile-${area.x}-${area.y}`} points={cellPolygon.map(([x, y]) => `${x},${y}`).join(" ")} fill={fill}/>
+                                        <polygon key={`terrain-tile-${x}-${y}-area-tile-${area.x}-${area.y}`} points={points} fill={fill} stroke={fill}/>
                                     );
                                 }
                                 return [
@@ -2661,8 +2681,26 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                             )
                         }
                     </g>
+                    {
+                        this.state.showMap ? (
+                            <g transform={`translate(${this.state.width / 2},${this.state.height / 2})`}>
+                                {
+                                    this.state.areas.map(area => {
+                                        const points = area.corners.map(({x, y}) => {
+                                            return `${(x - worldOffset.x) * mapScale},${(y - worldOffset.y) * mapScale}`;
+                                        }).join(" ");
+                                        const fill = this.getAreaFill(area);
+                                        return (
+                                            <polygon key={`map-area-${area.x}-${area.y}`} points={points} fill={fill} stroke={fill}/>
+                                        );
+                                    })
+                                }
+                                <circle fill="black" r={5} cx={0} cy={0}/>
+                            </g>
+                        ) : null
+                    }
                     <text x="20" y="20">Position: {worldOffset.x + (this.state.width / 2)} {worldOffset.y + (this.state.height / 2)}</text>
-                    <text x="20" y="40">Time: {timeOfDayHour}:{timeOfDayMinute}:{timeOfDaySecond} {timeOfDayAmPm}</text>
+                    <text x="20" y="40">Time: {timeOfDayHour}:{timeOfDayMinute} {timeOfDayAmPm}</text>
                     {
                         this.showWalkingTutorial() ? (
                             <g>

@@ -10,7 +10,7 @@
     "logs": "firebase functions:log"
   },
   "engines": {
-    "node": "8"
+    "node": "10"
   },
   "main": "lib/index.js",
   "dependencies": {
@@ -19,6 +19,7 @@
     "@types/sha.js": "^2.4.0",
     "cors": "^2.8.5",
     "d3-delaunay": "^5.2.1",
+    "d3-polygon": "^1.0.6",
     "express": "^4.17.1",
     "firebase": "^7.14.4",
     "firebase-admin": "^8.12.1",
