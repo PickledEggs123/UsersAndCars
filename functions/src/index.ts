@@ -15,7 +15,7 @@ import {
     IApiLotsSellPost,
     IApiPersonsGetResponse,
     IApiPersonsPut,
-    ICar,
+    ICar, ICellLock,
     IFloor,
     IHouse,
     ILot,
@@ -23,7 +23,7 @@ import {
     INpc,
     IPerson,
     IResource,
-    IRoad, IStockpile, IStockpileTile,
+    IRoad, IStockpile, IStockpileTile, ITerrainTilePosition,
     IWall
 } from "persons-game-common/lib/types/GameTypes";
 import {
@@ -33,7 +33,7 @@ import {
     handleVoiceMessageOffer
 } from "./voiceMessages";
 import {
-    ICarDatabase, IHouseDatabase,
+    ICarDatabase, ICellLockDatabase, IHouseDatabase,
     INetworkObjectDatabase,
     INpcCellTimeDatabase,
     INpcDatabase,
@@ -41,7 +41,7 @@ import {
 } from "./types/database";
 import {defaultCarHealthObject, defaultObjectHealthObject, defaultPersonHealthObject} from "./config";
 import {performHealthTickOnCollectionOfNetworkObjects} from "./health";
-import {getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell";
+import {getRelevantNetworkObjectCellIds, getRelevantNetworkObjectCells} from "./cell";
 import {getThirtySecondsAgo, handleLogin} from "./authentication";
 import {handleGenerateTerrainTile, handleHarvestResource, updateTerrain} from "./terrain";
 import {
@@ -52,6 +52,7 @@ import {
     handleWithdrawObjectFromStockpile
 } from "./inventory";
 import {
+    cellLockDatabaseToClient,
     getSimpleCollection,
     networkObjectDatabaseToClient, npcClientToDatabase,
     npcDatabaseToClient,
@@ -60,6 +61,8 @@ import {
 import {handleConstructionRequest, handleStockpileConstructionRequest} from "./construction";
 import {handleSetNpcJob, simulateCell} from "./pathfinding";
 import {applyPathToNpc} from "persons-game-common/lib/npc";
+import {getNetworkObjectCellString} from "persons-game-common/lib/cell";
+import {getTerrainTilePosition, terrainTilesThatShouldBeLoaded, terrainTileToId} from "persons-game-common/lib/terrain";
 
 const matchAll = require("string.prototype.matchall");
 matchAll.shim();
@@ -114,7 +117,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
             // get a list of all people who have updated within the last thirty seconds
             const querySnapshot = await admin.firestore().collection("persons")
                 .where("lastUpdate", ">=", getThirtySecondsAgo())
-                .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData))
+                .where("cell", "in", getRelevantNetworkObjectCellIds(currentPersonData))
                 .get();
 
             // add to json list
@@ -146,7 +149,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
         {
             // get a list of all people who have updated within the last thirty seconds
             const querySnapshot = await admin.firestore().collection("stockpiles")
-                .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData))
+                .where("cell", "in", getRelevantNetworkObjectCellIds(currentPersonData))
                 .get();
 
             // add to json list
@@ -178,7 +181,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
             // more complicated query involving one npc to many time and cell records
             const querySnapshot = await admin.firestore().collection("npcTimes")
                 .where("startTime", "<=", admin.firestore.Timestamp.now())
-                .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData))
+                .where("cell", "in", getRelevantNetworkObjectCellIds(currentPersonData))
                 .where("expired", "==", false)
                 .get();
 
@@ -244,7 +247,7 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
         // get lots
         {
             const querySnapshot = await admin.firestore().collection("lots")
-                .where("cells", "array-contains-any", getRelevantNetworkObjectCells(currentPersonData))
+                .where("cells", "array-contains-any", getRelevantNetworkObjectCellIds(currentPersonData))
                 .get();
 
             for (const documentSnapshot of querySnapshot.docs) {
@@ -276,6 +279,36 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
             lotsToReturnAsJson.sort(sortNetworkObjectsByDistance(currentPersonData));
         }
 
+        const loadedTerrainTiles: ITerrainTilePosition[] = [];
+        {
+            const shouldBeLoaded = terrainTilesThatShouldBeLoaded(getTerrainTilePosition(currentPersonData));
+            const documents = await Promise.all(
+                shouldBeLoaded.map((tilePosition) => {
+                    return admin.firestore().collection("terrainTiles").doc(terrainTileToId(tilePosition)).get();
+                })
+            );
+            for (const document of documents) {
+                if (document.exists) {
+                    loadedTerrainTiles.push(document.data() as ITerrainTilePosition);
+                }
+            }
+        }
+
+        const cellLocks: ICellLock[] = [];
+        {
+            const relevantCells = getRelevantNetworkObjectCellIds(currentPersonData);
+            const documents = await Promise.all(
+                relevantCells.map((cellId) => {
+                    return admin.firestore().collection("cellLocks").doc(cellId).get()
+                })
+            );
+            for (const document of documents) {
+                if (document.exists) {
+                    cellLocks.push(cellLockDatabaseToClient(document.data() as ICellLockDatabase));
+                }
+            }
+        }
+
         // return both persons and cars since both can move and both are network objects
         const jsonData: IApiPersonsGetResponse = {
             currentPersonId,
@@ -294,7 +327,10 @@ personsApp.get("/data", (req: express.Request, res: express.Response, next: expr
             resources: await getSimpleCollection<IResource>(currentPersonData, "resources"),
             stockpiles: stockpilesToReturnAsJson,
             stockpileTiles: await getSimpleCollection<IStockpileTile>(currentPersonData, "stockpileTiles"),
-            voiceMessages: await getVoiceMessages(id)
+            voiceMessages: await getVoiceMessages(id),
+            loadedCells: getRelevantNetworkObjectCells(currentPersonData),
+            loadedTerrainTiles,
+            cellLocks
         };
         res.json(jsonData);
     })().catch((err) => next(err));
@@ -507,6 +543,7 @@ generateApp.post("/all", (req, res, next) => {
         await deleteAllFromCollection("walls");
         await deleteAllFromCollection("npcs");
         await deleteAllFromCollection("npcTimes");
+        await deleteAllFromCollection("cellLocks");
         await deleteAllFromCollection("resources");
         await deleteAllFromCollection("terrainTiles");
         await deleteAllFromCollection("stockpileTiles");
@@ -640,7 +677,7 @@ export const lots = functions.https.onRequest(lotsApp);
 // handle the npc using a pubsub topic
 export const npcTick = functions.pubsub.topic("npc").onPublish((message) => {
     const cellString = message.json.cellString;
-    return simulateCell(cellString, 10 * 60 * 1000);
+    return simulateCell(cellString, 60 * 1000);
 });
 
 // handle the terrain generation using a pubsub topic
@@ -650,7 +687,7 @@ export const generateTerrain = functions.pubsub.topic("generateTerrain").onPubli
 });
 
 // every minute, run a tick to update all persons
-export const personsTick = functions.pubsub.schedule("every 10 minutes").onRun(() => {
+export const personsTick = functions.pubsub.schedule("every 1 minutes").onRun(() => {
     return (async () => {
         // health regeneration or object depreciation
         await performHealthTickOnCollectionOfNetworkObjects("persons", defaultPersonHealthObject);

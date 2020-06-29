@@ -2,7 +2,7 @@ import {ENetworkObjectType, IApiPersonsLoginPost} from "persons-game-common/lib/
 import * as admin from "firebase-admin";
 import {IPersonDatabase} from "./types/database";
 import {defaultPersonHealthObject} from "./config";
-import {getNetworkObjectCellString} from "./cell";
+import {getNetworkObjectCellString} from "persons-game-common/lib/cell";
 
 /**
  * Handle the login of a user.

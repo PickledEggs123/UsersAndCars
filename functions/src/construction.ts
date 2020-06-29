@@ -22,7 +22,7 @@ import {
 import {IPersonDatabase, IStockpileDatabase} from "./types/database";
 import * as express from "express";
 import {StockpileController} from "persons-game-common/lib/stockpile";
-import {getRelevantNetworkObjectCells} from "./cell";
+import {getRelevantNetworkObjectCellIds} from "./cell";
 
 const constructLocation = async ({personId, location}: IApiPersonsConstructionPost) => {
     await admin.firestore().runTransaction(async (transaction) => {
@@ -130,7 +130,7 @@ const constructStockpile = async ({personId, location}: IApiPersonsConstructionS
 
             // get relevant construction objects near person
             const stockpileQuery = await transaction.get(admin.firestore().collection("stockpiles")
-                .where("cell", "in", getRelevantNetworkObjectCells(personDatabase)));
+                .where("cell", "in", getRelevantNetworkObjectCellIds(personDatabase)));
             const stockpilesClient = stockpileQuery.docs.map(doc => stockpileDatabaseToClient(doc.data() as IStockpileDatabase));
             const stockpileTilesClient = await getSimpleCollection<IStockpileTile>(personDatabase, "stockpileTiles", {transaction});
 

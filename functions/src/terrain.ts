@@ -5,10 +5,9 @@ import {
 import {INetworkObjectDatabase, IPersonDatabase, IResourceDatabase} from "./types/database";
 import admin from "firebase-admin";
 import {PubSub} from "@google-cloud/pubsub";
-import {getNetworkObjectCellString} from "./cell";
 import express from "express";
 import {HarvestResourceController} from "persons-game-common/lib/resources";
-import {resourceClientToDatabase} from "./common";
+import {createCellLock, resourceClientToDatabase, resourceDatabaseToClient} from "./common";
 import {
     generateTerrainForLocation,
     getTerrainTilePosition, IGeneratedResources,
@@ -16,6 +15,7 @@ import {
     terrainTilesThatShouldBeLoaded,
     terrainTileToId
 } from "persons-game-common/lib/terrain";
+import {getNetworkObjectCellString} from "persons-game-common/lib/cell";
 
 /**
  * Update the terrain, loading and unloading trees and rocks around the player. It should generate an infinite terrain effect.
@@ -90,7 +90,7 @@ export const handleGenerateTerrainTile = async (terrainTile: ITerrainTilePositio
 };
 
 const harvestResource = async (resourceId: string) => {
-    await admin.firestore().runTransaction(async (transaction) => {
+    const cellString = await admin.firestore().runTransaction(async (transaction): Promise<string | null> => {
         // check to see if resource exists
         const resourceDocument = await transaction.get(admin.firestore().collection("resources").doc(resourceId));
         if (resourceDocument.exists) {
@@ -118,10 +118,22 @@ const harvestResource = async (resourceId: string) => {
 
                     transaction.set(admin.firestore().collection("objects").doc(spawnData.id), spawnData, {merge: true});
                     transaction.set(admin.firestore().collection("resources").doc(resourceId), resourceUpdate, {merge: true});
+                    createCellLock(resourceDatabaseToClient(resource), transaction);
+
+                    return getNetworkObjectCellString(resource);
                 }
             }
         }
+
+        return null;
     });
+
+    // restart npc tick for cell after player modification
+    if (cellString) {
+        const pubSubClient = new PubSub();
+        const data = Buffer.from(JSON.stringify({cellString}));
+        await pubSubClient.topic("npc").publish(data);
+    }
 };
 
 export const handleHarvestResource = (req: express.Request, res: express.Response, next: express.NextFunction) => {

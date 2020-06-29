@@ -12,11 +12,14 @@ import {
 } from "persons-game-common/lib/types/GameTypes";
 import {InventoryController, listOfRecipes} from "persons-game-common/lib/inventory";
 import {
+    createCellLock,
     networkObjectClientToDatabase,
     networkObjectDatabaseToClient,
     personClientToDatabase,
     personDatabaseToClient, stockpileClientToDatabase, stockpileDatabaseToClient
 } from "./common";
+import {PubSub} from "@google-cloud/pubsub";
+import {getNetworkObjectCellString} from "persons-game-common/lib/cell";
 
 /**
  * Pick an object up.
@@ -181,7 +184,7 @@ const withdrawObject = async ({
     stockpileId,
     amount
 }: {objectId: string, personId: string, stockpileId: string, amount: number}) => {
-    await admin.firestore().runTransaction(async (transaction) => {
+    const cellString = await admin.firestore().runTransaction(async (transaction): Promise<string | null> => {
         // check to see that both the person and object exists
         const objectDocument = await transaction.get(admin.firestore().collection("objects").doc(objectId));
         const personDocument = await transaction.get(admin.firestore().collection("persons").doc(personId));
@@ -238,8 +241,20 @@ const withdrawObject = async ({
             if (stackableSlot) {
                 transaction.set(admin.firestore().collection("objects").doc(stackableSlot.id), stackableSlot, {merge: true});
             }
+
+            createCellLock(stockpileDataClient, transaction);
+
+            return getNetworkObjectCellString(stockpileDataClient);
         }
+        return null;
     });
+
+    // restart npc tick for cell after player modification
+    if (cellString) {
+        const pubSubClient = new PubSub();
+        const data = Buffer.from(JSON.stringify({cellString}));
+        await pubSubClient.topic("npc").publish(data);
+    }
 };
 
 /**

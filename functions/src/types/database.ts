@@ -83,20 +83,6 @@ export interface INetworkObjectDatabase extends INetworkObjectBaseDatabase {
     state: INetworkObjectState<INetworkObject>[];
 }
 
-/**
- * The intermediate world cell type.
- */
-export interface INetworkObjectCellPosition {
-    /**
-     * X axis cell number.
-     */
-    x: number;
-    /**
-     * Y axis cell number.
-     */
-    y: number;
-}
-
 export interface IPersonsInventoryDatabase {
     rows: number;
     columns: number;
@@ -189,4 +175,12 @@ export interface IStockpileTileDatabase extends INetworkObjectBaseDatabase, IOwn
      * The index into the stockpile inventory. Used to render slices of the stockpile.
      */
     stockpileIndex: number;
+}
+
+/**
+ * A pause on all npc actions within a cell.
+ */
+export interface ICellLockDatabase {
+    cell: string;
+    pauseDate: admin.firestore.Timestamp;
 }

@@ -1,7 +1,8 @@
 import {
+    ICellLock,
     IFloor,
     IHouse,
-    INetworkObject,
+    INetworkObject, INetworkObjectBase,
     INpc,
     IObject,
     IPerson,
@@ -9,6 +10,7 @@ import {
     IWall
 } from "persons-game-common/lib/types/GameTypes";
 import {
+    ICellLockDatabase,
     IHouseDatabase, INetworkObjectBaseDatabase,
     INetworkObjectDatabase,
     INpcDatabase,
@@ -16,7 +18,8 @@ import {
     IResourceDatabase, IStockpileDatabase, IStockpileTileDatabase
 } from "./types/database";
 import admin from "firebase-admin";
-import {getNetworkObjectCellString, getRelevantNetworkObjectCells} from "./cell";
+import {getRelevantNetworkObjectCellIds} from "./cell";
+import {getNetworkObjectCellString} from "persons-game-common/lib/cell";
 
 export const networkObjectDatabaseToClient = (networkObjectDatabase: INetworkObjectDatabase): INetworkObject => ({
     ...networkObjectDatabase,
@@ -116,6 +119,10 @@ export const npcClientToDatabase = (npcClient: INpc): INpcDatabase => ({
     cell: getNetworkObjectCellString(npcClient),
     password: ""
 });
+export const cellLockDatabaseToClient = (cellLock: ICellLockDatabase): ICellLock => ({
+    ...cellLock,
+    pauseDate: cellLock.pauseDate.toDate().toISOString()
+});
 /**
  * The distance from the object to the current person.
  * @param currentPersonData The current person that the distance is relative to.
@@ -164,12 +171,12 @@ export const getSimpleCollection = async <T extends IObject & {
         // using cells array, perform a search in an array of cells
         // used for objects that can be in multiple cells like lots. Lots can be larger than cellSize.
         queryNotInInventory = admin.firestore().collection(collectionName)
-            .where("cells", "array-contains-any", getRelevantNetworkObjectCells(currentPersonData));
+            .where("cells", "array-contains-any", getRelevantNetworkObjectCellIds(currentPersonData));
     } else {
         // using cell field, perform a search for a cell field
         // used for objects that are in one cell at a time. The objects are smaller than cellSize.
         queryNotInInventory = admin.firestore().collection(collectionName)
-            .where("cell", "in", getRelevantNetworkObjectCells(currentPersonData));
+            .where("cell", "in", getRelevantNetworkObjectCellIds(currentPersonData));
     }
     if (networkObject) {
         queryNotInInventory = queryNotInInventory.where("isInInventory", "==", false);
@@ -214,4 +221,13 @@ export const getSimpleCollection = async <T extends IObject & {
     dataArrayToReturnAsJson.sort(sortNetworkObjectsByDistance(currentPersonData));
 
     return dataArrayToReturnAsJson;
+};
+export const createCellLock = (networkObjectBase: INetworkObjectBase, transaction: admin.firestore.Transaction) => {
+    // add a cell lock to pause all scripts within the cell
+    const cellLockId = getNetworkObjectCellString(networkObjectBase);
+    const cellLock: ICellLockDatabase = {
+        pauseDate: admin.firestore.Timestamp.now(),
+        cell: cellLockId
+    };
+    transaction.set(admin.firestore().collection("cellLocks").doc(cellLockId), cellLock, {merge: true});
 };

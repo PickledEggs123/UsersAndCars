@@ -1,6 +1,5 @@
-import {ILot, IObject} from "persons-game-common/lib/types/GameTypes";
-import {INetworkObjectCellPosition} from "./types/database";
-import {cellSize} from "./config";
+import {ILot, INetworkObjectCellPosition, IObject} from "persons-game-common/lib/types/GameTypes";
+import {getNetworkObjectWorldCellPosition, networkObjectCellPositionToCellString} from "persons-game-common/lib/cell";
 
 /**
  * Cells are invisible lines that divide the world space into squares. Each cell is used to quickly filter objects that
@@ -8,32 +7,6 @@ import {cellSize} from "./config";
  * clause.
  */
 
-/**
- * Get the cell tile position of a network object.
- * @param networkObject The object to compute position for.
- */
-const getNetworkObjectWorldCellPosition = (networkObject: IObject): INetworkObjectCellPosition => {
-    const x = Math.floor(networkObject.x / cellSize);
-    const y = Math.floor(networkObject.y / cellSize);
-    return {
-        x,
-        y
-    };
-};
-/**
- * Get the cell string of a cell position.
- * @param position The cell position to convert into a string.
- */
-const networkObjectCellPositionToCellString = (position: INetworkObjectCellPosition): string => {
-    return `cell:${position.x},${position.y}`;
-};
-/**
- * Get the cell string of a network object.
- * @param networkObject The network object to convert into a cell string.
- */
-export const getNetworkObjectCellString = (networkObject: IObject): string => {
-    return networkObjectCellPositionToCellString(getNetworkObjectWorldCellPosition(networkObject));
-};
 /**
  * Compute the cells string of the cells that the lot is in.
  * @param lot The lot to compute multiple cells for.
@@ -72,26 +45,26 @@ export const getLotCellsString = (lot: ILot): string[] => {
  * Get a list of relevant world cells to filter by.
  * @param networkObject The network object to filter by.
  */
-export const getRelevantNetworkObjectCells = (networkObject: IObject): string[] => {
+export const getRelevantNetworkObjectCells = (networkObject: IObject): INetworkObjectCellPosition[] => {
     // gt network object world cell position
     const {x, y} = getNetworkObjectWorldCellPosition(networkObject);
 
-    // which corner of the cell is the object nearest to
-    const left = networkObject.x <= x * cellSize;
-    const top = networkObject.y <= y * cellSize;
-
     // pick the current cell and the 3 other cells around the nearest corner, return 4 cells
-    return [{
-        x,
-        y
-    }, {
-        x: left ? x - 1 : x + 1,
-        y
-    }, {
-        x: left ? x - 1 : x + 1,
-        y: top ? y - 1 : y + 1
-    }, {
-        x,
-        y: top ? y - 1 : y + 1
-    }].map(networkObjectCellPositionToCellString);
+    const cellsToLoad: INetworkObjectCellPosition[] = [];
+    for (let i = -1; i <= 1; i++) {
+        for (let j = -1; j <= 1; j++) {
+            cellsToLoad.push({
+                x: x + i,
+                y: y + j
+            });
+        }
+    }
+    return cellsToLoad;
+};
+/**
+ * Get a list of relevant world cells to filter by.
+ * @param networkObject The network object to filter by.
+ */
+export const getRelevantNetworkObjectCellIds = (networkObject: IObject): string[] => {
+    return getRelevantNetworkObjectCells(networkObject).map(networkObjectCellPositionToCellString);
 };

@@ -29,7 +29,3 @@ export const defaultObjectHealthObject: IObjectHealth = {
     value: 1,
     rate: 0
 };
-/**
- * The size of each cell in the game world.
- */
-export const cellSize = 2000;

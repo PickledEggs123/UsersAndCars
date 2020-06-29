@@ -21,7 +21,7 @@ import {
     IApiPersonsVoiceOfferMessage,
     IApiPersonsVoiceOfferPost,
     IArea,
-    ICar,
+    ICar, ICellLock,
     ICraftingRecipe,
     IDrawable,
     IFloor,
@@ -30,7 +30,7 @@ import {
     IKeyDownHandler,
     ILot,
     INetworkObject,
-    INetworkObjectBase,
+    INetworkObjectBase, INetworkObjectCellPosition,
     INpc,
     INpcJob,
     INpcJobCrafting,
@@ -41,7 +41,7 @@ import {
     IResource,
     IRoad,
     IStockpile,
-    IStockpileTile,
+    IStockpileTile, ITerrainTilePosition,
     IVendorInventoryItem,
     IWall
 } from "persons-game-common/lib/types/GameTypes";
@@ -55,7 +55,17 @@ import {getCurrentTDayNightTime, TDayNightTimeHour} from "persons-game-common/li
 import {StockpileController} from "persons-game-common/lib/stockpile";
 import {applyInventoryState, applyPathToNpc} from "persons-game-common/lib/npc";
 import * as delaunay from "d3-delaunay";
-import {areaTileSize, areaTileToId, generateTerrainAreas, getAreaTilePosition} from "persons-game-common/lib/terrain";
+import {
+    areaTileSize,
+    areaTileToId,
+    generateTerrainAreas,
+    getAreaTilePosition,
+    terrainTileSize
+} from "persons-game-common/lib/terrain";
+import {
+    getNetworkObjectCellString,
+    networkObjectCellPositionToCellString
+} from "persons-game-common/lib/cell";
 
 /**
  * The input to the [[Persons]] component that changes how the game is rendered.
@@ -254,6 +264,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         nearbyObjects: [] as INetworkObject[],
         currentPersonId: null as string | null,
         currentNpcId: null as string | null,
+        loadedCells: [] as INetworkObjectCellPosition[],
+        loadedTerrainTiles: [] as ITerrainTilePosition[],
+        cellLocks: [] as ICellLock[],
         lastUpdate: new Date().toISOString(),
         fetchTime: new Date(),
         vendingInventory: [] as IVendorInventoryItem[],
@@ -965,6 +978,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 lots,
                 currentPersonId,
                 currentNpcId,
+                loadedCells,
+                loadedTerrainTiles,
+                cellLocks
             } = response.data;
 
             // handle voice metadata messages
@@ -1039,7 +1055,10 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 stockpiles,
                 stockpileTiles,
                 currentPersonId,
-                currentNpcId
+                currentNpcId,
+                loadedCells,
+                loadedTerrainTiles,
+                cellLocks
             });
         }
 
@@ -2273,9 +2292,9 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                             null;
                         let inventoryRender: JSX.Element[] | null = null;
                         if (inventoryObject) {
-                            inventoryRender = this.sortDrawablesInUiOrder(
-                                this.drawNetworkObject(inventoryObject, undefined, true)
-                            ).map(drawable => drawable.draw());
+                            inventoryRender = this.drawNetworkObject(inventoryObject, undefined, true)
+                                .sort(this.sortDrawablesInUiOrder)
+                                .map(drawable => drawable.draw());
                         }
 
                         return (
@@ -2323,8 +2342,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                         <rect x={0} y={0} width={60} height={60} fill="tan" opacity={0.3}/>
                                         <g transform="translate(30,60)">
                                             {
-                                                this.sortDrawablesInUiOrder(
-                                                    this.drawNetworkObject({
+                                                this.drawNetworkObject({
                                                     id: `recipe-${recipe.product}`,
                                                     x: 0,
                                                     y: 0,
@@ -2342,7 +2360,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                                     amount: 1,
                                                     exist: true,
                                                     state: []
-                                                })).map(drawable => drawable.draw())
+                                                }).sort(this.sortDrawablesInUiOrder)
+                                                    .map(drawable => drawable.draw())
                                             }
                                         </g>
                                     </g>
@@ -2559,7 +2578,16 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                         continue;
                                     }
                                     const area = this.state.areas[i];
-                                    const fill = this.getAreaFill(area);
+                                    const worldCellLoaded = this.state.loadedCells.some(cellPosition => {
+                                        return getNetworkObjectCellString({x, y}) === networkObjectCellPositionToCellString(cellPosition);
+                                    });
+                                    const terrainTileLoaded = this.state.loadedTerrainTiles.some(tilePosition => {
+                                        return tilePosition.tileX === Math.floor(x / terrainTileSize) &&
+                                            tilePosition.tileY === Math.floor(y / terrainTileSize);
+                                    });
+                                    const fill = worldCellLoaded && terrainTileLoaded ?
+                                        this.getAreaFill(area) :
+                                        "url(#loading)";
                                     const points = cellPolygon.map(([x, y]) => `${x},${y}`).join(" ");
                                     polygons.push(
                                         <polygon key={`terrain-tile-${x}-${y}-area-tile-${area.x}-${area.y}`} points={points} fill={fill} stroke={fill}/>
@@ -2613,7 +2641,10 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                 if (!foundStockpile) {
                                     return acc;
                                 }
-                                const stockpile = applyInventoryState(foundStockpile);
+
+                                const cellLock: ICellLock | null = this.state.cellLocks.find(c => c.cell === getNetworkObjectCellString(foundStockpile)) || null;
+                                const pauseDate: Date | null = cellLock ? new Date(Date.parse(cellLock.pauseDate)) : null;
+                                const stockpile = applyInventoryState(foundStockpile, pauseDate);
                                 const items = stockpile.inventory.slots.slice(
                                     stockpileIndex * StockpileController.NUMBER_OF_COLUMNS_PER_STOCKPILE_TILE * StockpileController.NUMBER_OF_ROWS_PER_STOCKPILE_TILE,
                                     (stockpileIndex + 1) * StockpileController.NUMBER_OF_COLUMNS_PER_STOCKPILE_TILE * StockpileController.NUMBER_OF_ROWS_PER_STOCKPILE_TILE
@@ -2626,7 +2657,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                             <rect x="0" y="0" width={200} height={200} fill="lightgrey" fillOpacity={0.3}/>
                                         </g>
                                     ),
-                                    ...this.sortDrawablesInUiOrder(items.reduce((acc: Array<IDrawable & {item: INetworkObject, itemX: number, itemY: number}>, item, index) => {
+                                    ...items.reduce((acc: Array<IDrawable & {item: INetworkObject, itemX: number, itemY: number}>, item, index) => {
                                         const numColumns = 5;
                                         const columnWidth = 40;
                                         const columnOffset = 20;
@@ -2643,7 +2674,8 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                                                 item
                                             }))
                                         ];
-                                    }, [])).map((drawable: any) => {
+                                    }, []).sort(this.sortDrawablesInUiOrder)
+                                        .map((drawable: any) => {
                                         return (
                                             <g key={`${drawable.item.id}-${drawable.type}`} z={drawable.type === EDrawableType.TAG ? 1 : 0} transform={`translate(${x + drawable.itemX},${y + drawable.itemY})`}>
                                                 {
@@ -2872,11 +2904,12 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     })
                 }
                 <div style={{display: 'grid', gridTemplateColumns: "repeat(3, 1fr)"}}>
-                    <span>Roads: {this.state.roads.length}</span>
+                    <span>Resources: {this.state.resources.length}</span>
                     <span>Objects: {this.state.objects.length}</span>
                     <span>NPCs: {this.state.npcs.length}</span>
                     <span>Persons: {this.state.persons.length}</span>
-                    <span>Lots: {this.state.lots.length}</span>
+                    <span>Stockpiles: {this.state.stockpiles.length}</span>
+                    <span>Houses: {this.state.houses.length}</span>
                 </div>
             </div>
         );

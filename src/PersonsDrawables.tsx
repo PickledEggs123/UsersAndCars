@@ -6,13 +6,13 @@ import {
     ERoadDirection,
     EWallDirection,
     EWallPattern,
-    ICar,
+    ICar, ICellLock,
     IDrawable,
     IFloor,
     IHouse,
     ILot,
     INetworkObject,
-    INetworkObjectBase,
+    INetworkObjectBase, INetworkObjectCellPosition,
     INpc,
     INpcPathPoint,
     IObject,
@@ -20,7 +20,7 @@ import {
     IResource,
     IRoad,
     IStockpile,
-    IStockpileTile,
+    IStockpileTile, ITerrainTilePosition,
     ITree,
     IVendorInventoryItem,
     IWall
@@ -28,6 +28,7 @@ import {
 import React from "react";
 import seedrandom from "seedrandom";
 import {applyPathToNpc, applyStateToNetworkObject, applyStateToResource} from "persons-game-common/lib/npc";
+import {getNetworkObjectCellString} from "persons-game-common/lib/cell";
 
 /**
  * Represent a leaf on a tree.
@@ -114,6 +115,18 @@ export interface IPersonsDrawablesState {
      * The id of the npc shown.
      */
     currentNpcId: string | null;
+    /**
+     * A list of loaded cell ids.
+     */
+    loadedCells: INetworkObjectCellPosition[];
+    /**
+     * A list of loaded terrain tiles.
+     */
+    loadedTerrainTiles: ITerrainTilePosition[];
+    /**
+     * A list of cell locks which will pause npc actions within a cell.
+     */
+    cellLocks: ICellLock[];
     /**
      * Previous copies of networked data. Used for interpolating the drawing of networked objects. The game updates every
      * 2 seconds. We don't want to draw a position change every 2 seconds. Instead we want a smooth animation between two
@@ -984,7 +997,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
                         return (
                             <g key={`tag-${networkObject.id}`} transform={inventory ? "" : `translate(${networkObject.x},${networkObject.y})`} filter={filter}>
                                 {
-                                    inventory && stockpile ? component.drawAmountTag(networkObject) : null
+                                    component.drawAmountTag(networkObject)
                                 }
                             </g>
                         )
@@ -1622,20 +1635,18 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         }
     };
 
-    sortDrawablesInUiOrder = (drawables: IDrawable[]): IDrawable[] => {
-        return drawables.sort((a, b) => {
-            // by default, sort by height difference
-            // sort by height differences
-            const heightDifference = a.y - b.y;
+    sortDrawablesInUiOrder = (a: IDrawable, b: IDrawable) => {
+        // by default, sort by height difference
+        // sort by height differences
+        const heightDifference = a.y - b.y;
 
-            if (a.type === EDrawableType.TAG && b.type !== EDrawableType.TAG) {
-                return 1;
-            } else if (a.type !== EDrawableType.TAG && b.type === EDrawableType.TAG) {
-                return -1;
-            } else {
-                return heightDifference;
-            }
-        });
+        if (a.type === EDrawableType.TAG && b.type !== EDrawableType.TAG) {
+            return 1;
+        } else if (a.type !== EDrawableType.TAG && b.type === EDrawableType.TAG) {
+            return -1;
+        } else {
+            return heightDifference;
+        }
     };
 
     /**
@@ -1660,7 +1671,11 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             })),
 
             // add all npcs
-            ...this.state.npcs.map(applyPathToNpc).filter(this.isNearWorldView(worldOffset)).map(npc => ({
+            ...this.state.npcs.map((npc) => {
+                const cellLock: ICellLock | null = this.state.cellLocks.find(cellLock => cellLock.cell === getNetworkObjectCellString(npc)) || null;
+                const pauseDate: Date | null = cellLock ? new Date(Date.parse(cellLock.pauseDate)) : null;
+                return applyPathToNpc(npc, pauseDate);
+            }).filter(this.isNearWorldView(worldOffset)).map(npc => ({
                 draw(this: IDrawable) {
                     return component.drawPerson(npc, undefined, true);
                 },
@@ -1669,7 +1684,11 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             })),
 
             // for each network object
-            ...this.state.objects.map(obj => applyStateToNetworkObject(obj)).filter(obj => obj.exist).filter(this.isNearWorldView(worldOffset)).reduce((arr: IDrawable[], networkObject: INetworkObject): IDrawable[] => {
+            ...this.state.objects.map(obj => {
+                const cellLock: ICellLock | null = this.state.cellLocks.find(cellLock => cellLock.cell === getNetworkObjectCellString(obj)) || null;
+                const pauseDate: Date | null = cellLock ? new Date(Date.parse(cellLock.pauseDate)) : null;
+                return applyStateToNetworkObject(obj, pauseDate);
+            }).filter(obj => obj.exist).filter(this.isNearWorldView(worldOffset)).reduce((arr: IDrawable[], networkObject: INetworkObject): IDrawable[] => {
                 const previousNetworkObject = component.state.previousNetworkObjects.objects.find(p => {
                     return p.id === networkObject.id && networkObject.grabbedByPersonId !== component.state.currentPersonId;
                 });
@@ -1680,7 +1699,11 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             }, []),
 
             // for each resource object
-            ...this.state.resources.map(resource => applyStateToResource(resource)).filter(this.isNearWorldView(worldOffset)).map(this.interpolateResource).reduce((arr: IDrawable[], resource: IResource): IDrawable[] => {
+            ...this.state.resources.map(resource => {
+                const cellLock: ICellLock | null = this.state.cellLocks.find(cellLock => cellLock.cell === getNetworkObjectCellString(resource)) || null;
+                const pauseDate: Date | null = cellLock ? new Date(Date.parse(cellLock.pauseDate)) : null;
+                return applyStateToResource(resource, pauseDate);
+            }).filter(this.isNearWorldView(worldOffset)).map(this.interpolateResource).reduce((arr: IDrawable[], resource: IResource): IDrawable[] => {
                 return [
                     ...arr,
                     ...this.drawResource(resource)
@@ -1722,7 +1745,7 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
         ];
 
         // sort drawable objects from top to bottom
-        return this.sortDrawablesInUiOrder(drawables);
+        return drawables.sort(this.sortDrawablesInUiOrder);
     };
 
     /**
@@ -1761,13 +1784,6 @@ export abstract class PersonsDrawables<P extends IPersonsDrawablesProps, S exten
             return Math.abs(object.x - offset.x) <= this.state.width * 2 && Math.abs(object.y - offset.y) <= this.state.height * 2;
         }
     };
-
-    /**
-     * Generate a random Person Id to control a specific person on the server.
-     */
-    randomPersonId() {
-        return new Array(10).fill(0).map(() => Number(Math.floor(Math.random() * 36)).toString(36)).join("");
-    }
 
     /**
      * Generate the SVG DEFs for car masks.

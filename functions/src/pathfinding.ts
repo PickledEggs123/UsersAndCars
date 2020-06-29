@@ -2,11 +2,12 @@ import {
     ENetworkObjectType,
     ENpcJobType,
     EOwnerType,
-    IApiPersonsNpcJobPost, INetworkObject,
+    IApiPersonsNpcJobPost, ICellLock, INetworkObject,
     INpc,
     INpcPathPoint
 } from "persons-game-common/lib/types/GameTypes";
 import {
+    ICellLockDatabase,
     IHouseDatabase,
     INetworkObjectDatabase,
     INpcCellTimeDatabase,
@@ -14,11 +15,10 @@ import {
     IResourceDatabase,
     IStockpileDatabase
 } from "./types/database";
-import {cellSize} from "./config";
 import * as admin from "firebase-admin";
-import {getNetworkObjectCellString} from "./cell";
 import {applyStateToNetworkObject, CellController} from "persons-game-common/lib/npc";
 import {
+    cellLockDatabaseToClient,
     houseDatabaseToClient,
     networkObjectClientToDatabase,
     networkObjectDatabaseToClient,
@@ -30,6 +30,7 @@ import {
     stockpileDatabaseToClient
 } from "./common";
 import * as express from "express";
+import {cellSize, getNetworkObjectCellString} from "persons-game-common/lib/cell";
 
 /**
  * Handle pathfinding AI for each NPC.
@@ -191,123 +192,142 @@ const findCellTimesInPath = (npc: INpcDatabase, path: INpcPathPoint[]): INpcCell
  * @param milliseconds The amount of time to animate.
  */
 export const simulateCell = async (cellString: string, milliseconds: number) => {
-    const houseQuery = await admin.firestore().collection("houses").where("cell", "==", cellString).get();
-    const objectQuery = await admin.firestore().collection("objects").where("cell", "==", cellString).get();
-    const resourceQuery = await admin.firestore().collection("resources").where("cell", "==", cellString).get();
-    const stockpileQuery = await admin.firestore().collection("stockpiles").where("cell", "==", cellString).get();
-    const npcTimeQuery = await admin.firestore().collection("npcTimes").where("cell", "==", cellString).get();
-    const expiredNpcTimeIds = npcTimeQuery.docs.filter(doc => {
-        const cellTime = doc.data() as INpcCellTimeDatabase;
-        return +new Date() > cellTime.endTime.toMillis();
-    }).map(doc => doc.id);
+    await admin.firestore().runTransaction(async (transaction) => {
+        const cellLockDocument = await transaction.get(admin.firestore().collection("cellLocks").doc(cellString));
+        const houseQuery = await transaction.get(admin.firestore().collection("houses").where("cell", "==", cellString));
+        const objectQuery = await transaction.get(admin.firestore().collection("objects").where("cell", "==", cellString));
+        const resourceQuery = await transaction.get(admin.firestore().collection("resources").where("cell", "==", cellString));
+        const stockpileQuery = await transaction.get(admin.firestore().collection("stockpiles").where("cell", "==", cellString));
+        const npcTimeQuery = await transaction.get(admin.firestore().collection("npcTimes").where("cell", "==", cellString));
+        const expiredNpcTimeIds = npcTimeQuery.docs.filter(doc => {
+            const cellTime = doc.data() as INpcCellTimeDatabase;
+            return +new Date() > cellTime.endTime.toMillis();
+        }).map(doc => doc.id);
 
-    const houses = houseQuery.docs.map(doc => houseDatabaseToClient(doc.data() as IHouseDatabase));
-    const allObjects = objectQuery.docs.map(doc => networkObjectDatabaseToClient(doc.data() as INetworkObjectDatabase));
-    const {objects, objectsThatNoLongerExist} = allObjects.reduce((acc: {
-        objects: INetworkObject[],
-        objectsThatNoLongerExist: INetworkObject[]
-    }, obj: INetworkObject) => {
-        if (applyStateToNetworkObject(obj).exist) {
-            return {
-                ...acc,
-                objects: [...acc.objects, obj]
-            };
-        } else {
-            return {
-                ...acc,
-                objectsThatNoLongerExist: [...acc.objectsThatNoLongerExist, obj]
-            };
+        const cellLock: ICellLock | null = cellLockDocument.exists ? cellLockDatabaseToClient(cellLockDocument.data() as ICellLockDatabase) : null;
+        const houses = houseQuery.docs.map(doc => houseDatabaseToClient(doc.data() as IHouseDatabase));
+        const allObjects = objectQuery.docs.map(doc => networkObjectDatabaseToClient(doc.data() as INetworkObjectDatabase));
+        const {objects, objectsThatNoLongerExist} = allObjects.reduce((acc: {
+            objects: INetworkObject[],
+            objectsThatNoLongerExist: INetworkObject[]
+        }, obj: INetworkObject) => {
+            if (applyStateToNetworkObject(obj).exist) {
+                return {
+                    ...acc,
+                    objects: [...acc.objects, obj]
+                };
+            } else {
+                return {
+                    ...acc,
+                    objectsThatNoLongerExist: [...acc.objectsThatNoLongerExist, obj]
+                };
+            }
+        }, {
+            objects: [],
+            objectsThatNoLongerExist: []
+        });
+        const resources = resourceQuery.docs.map(doc => {
+            return resourceDatabaseToClient(doc.data() as IResourceDatabase);
+        });
+        const stockpiles = stockpileQuery.docs.map(doc => {
+            return stockpileDatabaseToClient(doc.data() as IStockpileDatabase);
+        });
+
+        const npcs: INpc[] = [];
+        for (const house of houses) {
+            const npcId = house.npcId;
+            const doc = await admin.firestore().collection("npcs").doc(npcId).get();
+            if (doc.exists) {
+                npcs.push(npcDatabaseToClient(doc.data() as INpcDatabase));
+            } else {
+                const newNpc: INpc = {
+                    id: npcId,
+                    x: house.x,
+                    y: house.y,
+                    path: [],
+                    carId: null,
+                    craftingSeed: `npc-${npcId}`,
+                    craftingState: true,
+                    cash: 0,
+                    creditLimit: 0,
+                    pantColor: "tan",
+                    shirtColor: "green",
+                    schedule: [],
+                    lastUpdate: new Date().toISOString(),
+                    readyTime: new Date().toISOString(),
+                    inventory: {
+                        rows: 1,
+                        columns: 10,
+                        slots: []
+                    },
+                    health: {
+                        rate: 1,
+                        max: 10,
+                        value: 10
+                    },
+                    objectType: ENetworkObjectType.PERSON,
+                    inventoryState: [],
+                    job: {
+                        type: ENpcJobType.GATHER
+                    }
+                };
+                npcs.push(newNpc);
+            }
         }
-    }, {
-        objects: [],
-        objectsThatNoLongerExist: []
-    });
-    const resources = resourceQuery.docs.map(doc => {
-        return resourceDatabaseToClient(doc.data() as IResourceDatabase);
-    });
-    const stockpiles = stockpileQuery.docs.map(doc => {
-        return stockpileDatabaseToClient(doc.data() as IStockpileDatabase);
-    });
 
-    const npcs: INpc[] = [];
-    for (const house of houses) {
-        const npcId = house.npcId;
-        const doc = await admin.firestore().collection("npcs").doc(npcId).get();
-        if (doc.exists) {
-            npcs.push(npcDatabaseToClient(doc.data() as INpcDatabase));
-        } else {
-            const newNpc: INpc = {
-                id: npcId,
-                x: house.x,
-                y: house.y,
-                path: [],
-                carId: null,
-                craftingSeed: `npc-${npcId}`,
-                craftingState: true,
-                cash: 0,
-                creditLimit: 0,
-                pantColor: "tan",
-                shirtColor: "green",
-                schedule: [],
-                lastUpdate: new Date().toISOString(),
-                readyTime: new Date().toISOString(),
-                inventory: {
-                    rows: 1,
-                    columns: 10,
-                    slots: []
-                },
-                health: {
-                    rate: 1,
-                    max: 10,
-                    value: 10
-                },
-                objectType: ENetworkObjectType.PERSON,
-                inventoryState: [],
-                job: {
-                    type: ENpcJobType.GATHER
-                }
-            };
-            npcs.push(newNpc);
-        }
-    }
+        const controller = new CellController({
+            cellLock,
+            houses,
+            objects,
+            npcs,
+            resources,
+            stockpiles
+        });
 
-    const controller = new CellController({
-        houses,
-        objects,
-        npcs,
-        resources,
-        stockpiles
-    });
+        controller.run(milliseconds);
+        const finalState = controller.getState();
 
-    controller.run(milliseconds);
-    const finalState = controller.getState();
-
-    await Promise.all([
-        ...finalState.npcs.reduce((acc: Promise<any>[], npc: INpc): Promise<any>[] => {
+        finalState.npcs.forEach((npc: INpc) => {
             const npcDatabase: INpcDatabase = npcClientToDatabase(npc);
-            return [
-                admin.firestore().collection("npcs").doc(npc.id).set(npcDatabase, {merge: true}),
-                ...findCellTimesInPath(npcDatabase, npcDatabase.path).map(cellTime => {
-                    return admin.firestore().collection("npcTimes").add(cellTime);
-                })
-            ];
-        }, []),
-        ...finalState.objects.map(obj => {
-            return admin.firestore().collection("objects").doc(obj.id).set(networkObjectClientToDatabase(obj), {merge: true});
-        }),
-        ...finalState.resources.map(resource => {
-            return admin.firestore().collection("resources").doc(resource.id).set(resourceClientToDatabase(resource), {merge: true});
-        }),
-        ...finalState.stockpiles.map(stockpile => {
-            return admin.firestore().collection("stockpiles").doc(stockpile.id).set(stockpileClientToDatabase(stockpile), {merge: true});
-        }),
-        ...expiredNpcTimeIds.map(id => {
-            return admin.firestore().collection("npcTimes").doc(id).delete();
-        }),
-        ...objectsThatNoLongerExist.map(obj => {
-            return admin.firestore().collection("objects").doc(obj.id).delete();
-        })
-    ])
+            transaction.set(admin.firestore().collection("npcs").doc(npc.id), npcDatabase, {merge: true});
+
+            findCellTimesInPath(npcDatabase, npcDatabase.path).forEach(cellTime => {
+                transaction.create(admin.firestore().collection("npcTimes").doc(), cellTime);
+            });
+        });
+        finalState.objects.forEach(obj => {
+            transaction.set(
+                admin.firestore().collection("objects").doc(obj.id),
+                networkObjectClientToDatabase(obj),
+                {merge: true}
+            );
+        });
+        finalState.resources.forEach(resource => {
+            transaction.set(
+                admin.firestore().collection("resources").doc(resource.id),
+                resourceClientToDatabase(resource),
+                {merge: true}
+            );
+        });
+        finalState.stockpiles.forEach(stockpile => {
+            transaction.set(
+                admin.firestore().collection("stockpiles").doc(stockpile.id),
+                stockpileClientToDatabase(stockpile),
+                {merge: true}
+            );
+        });
+        expiredNpcTimeIds.forEach(id => {
+            transaction.delete(admin.firestore().collection("npcTimes").doc(id));
+        });
+        objectsThatNoLongerExist.forEach(obj => {
+            transaction.delete(admin.firestore().collection("objects").doc(obj.id));
+        });
+
+        // remove cell lock to resume npc action
+        if (cellLock) {
+            transaction.delete(admin.firestore().collection("cellLocks").doc(cellLock.cell));
+        }
+    });
 };
 
 export const handleSetNpcJob = (req: express.Request, res: express.Response, next: express.NextFunction) => {
