@@ -60,7 +60,7 @@ const pickUpObject = async ({objectId, personId}: {objectId: string, personId: s
             transaction.set(admin.firestore().collection("persons").doc(personId), newPersonData, {merge: true});
             // update or delete the picked up item. If there was a stackable slot, delete old item, else, update old item
             if (updatedItem) {
-                transaction.set(admin.firestore().collection("objects").doc(objectId), updatedItem, {merge: true});
+                transaction.set(admin.firestore().collection("objects").doc(updatedItem.id), updatedItem, {merge: true});
             } else {
                 transaction.delete(admin.firestore().collection("objects").doc(objectId));
             }
@@ -106,7 +106,7 @@ const dropObject = async ({objectId, personId}: {objectId: string, personId: str
 
             // update both the person and the object
             transaction.set(admin.firestore().collection("persons").doc(personId), newPersonData, {merge: true});
-            transaction.set(admin.firestore().collection("objects").doc(objectId), updatedItem, {merge: true});
+            transaction.set(admin.firestore().collection("objects").doc(updatedItem.id), updatedItem, {merge: true});
         }
     });
 };
@@ -233,7 +233,7 @@ const withdrawObject = async ({
             transaction.set(admin.firestore().collection("stockpiles").doc(stockpileId), newStockpileData, {merge: true});
             // update or delete the picked up item. If there was a stackable slot, delete old item, else, update old item
             if (updatedItem) {
-                transaction.set(admin.firestore().collection("objects").doc(objectId), updatedItem, {merge: true});
+                transaction.set(admin.firestore().collection("objects").doc(updatedItem.id), updatedItem, {merge: true});
             } else {
                 transaction.delete(admin.firestore().collection("objects").doc(objectId));
             }
@@ -317,7 +317,7 @@ const depositObject = async ({
             transaction.set(admin.firestore().collection("stockpiles").doc(stockpileId), newStockpileData, {merge: true});
             // update or delete the picked up item. If there was a stackable slot, delete old item, else, update old item
             if (updatedItem) {
-                transaction.set(admin.firestore().collection("objects").doc(objectId), updatedItem, {merge: true});
+                transaction.set(admin.firestore().collection("objects").doc(updatedItem.id), updatedItem, {merge: true});
             } else {
                 transaction.delete(admin.firestore().collection("objects").doc(objectId));
             }

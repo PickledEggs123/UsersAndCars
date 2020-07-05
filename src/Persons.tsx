@@ -47,7 +47,7 @@ import {
 } from "persons-game-common/lib/types/GameTypes";
 import {PersonsLogin} from "./PersonsLogin";
 import {IPersonsDrawablesProps, IPersonsDrawablesState, PersonsDrawables} from "./PersonsDrawables";
-import {applyAudioFilters, rtcPeerConnectionConfiguration, userMediaConfig} from "./config";
+import {applyAudioFilters, PUBLIC_API_URL, rtcPeerConnectionConfiguration, userMediaConfig} from "./config";
 import {HarvestResourceController} from "persons-game-common/lib/resources";
 import {getMaxStackSize, InventoryController, listOfRecipes} from "persons-game-common/lib/inventory";
 import {ConstructionController} from "persons-game-common/lib/construction";
@@ -485,7 +485,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 to: personId,
                 candidate
             };
-            axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/voice/candidate", data).catch((err) => {
+            axios.post(`${PUBLIC_API_URL}persons/voice/candidate`, data).catch((err) => {
                 console.log(err);
             });
             console.log("ICE Candidate", candidate);
@@ -523,7 +523,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                     to: personId,
                     description: peerConnection.localDescription
                 };
-                await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/voice/offer", data);
+                await axios.post(`${PUBLIC_API_URL}persons/voice/offer`, data);
             })().catch((err) => {
                 console.log(err);
             });
@@ -646,7 +646,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 to: from,
                 description: peerConnection.localDescription
             };
-            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/voice/answer", data);
+            await axios.post(`${PUBLIC_API_URL}persons/voice/answer`, data);
         })().catch((err) => {
             console.log(err);
         });
@@ -681,7 +681,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 ...inventoryItem,
                 personId
             };
-            axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/vend", data).then(() => {
+            axios.post(`${PUBLIC_API_URL}persons/vend`, data).then(() => {
                 this.setState({vendingInventory: []});
             }).catch((err) => console.log(err));
         }
@@ -756,7 +756,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      */
     updateGame = async (data: IApiPersonsPut) => {
         // person exist, update the database with the current copy of current person.
-        await axios.put("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/data", data);
+        await axios.put(`${PUBLIC_API_URL}persons/data`, data);
         // wait for [[state.lastUpdate]] to update after the network call.
         await new Promise((resolve) => {
             this.setState({
@@ -988,7 +988,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             offers.forEach(this.handleVoiceOfferMessage);
             answers.forEach(this.handleVoiceAnswerMessage);
 
-            // record the current fetch time of the data. Used for interplating the drawings of networked objects.
+            // record the current fetch time of the data. Used for interpolating the drawings of networked objects.
             const fetchTime = new Date();
 
             // modify server data with local data, pick most up to date version of the data
@@ -1724,7 +1724,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * Refresh all NPCs on the server.
      */
     refreshNpcs = async () => {
-        await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/npcs/refresh");
+        await axios.post(`${PUBLIC_API_URL}npcs/refresh`);
         alert("NPCs have been reset");
     };
 
@@ -1758,7 +1758,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 price: this.state.lotPrice,
                 personId: this.state.currentPersonId
             };
-            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/lots/buy", data);
+            await axios.post(`${PUBLIC_API_URL}lots/buy`, data);
         }
     };
 
@@ -1775,7 +1775,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
                 price: this.state.lotPrice,
                 personId: this.state.currentPersonId
             };
-            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/lots/sell", data);
+            await axios.post(`${PUBLIC_API_URL}lots/sell`, data);
         }
     };
 
@@ -1783,14 +1783,14 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
      * Accept buy offer.
      */
     acceptBuyOffer = (offer: IApiLotsBuyPost) => async () => {
-        await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/lots/buy/accept", offer)
+        await axios.post(`${PUBLIC_API_URL}lots/buy/accept`, offer)
     };
 
     /**
      * Accept sell offer.
      */
     acceptSellOffer = (offer: IApiLotsSellPost) => async () => {
-        await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/lots/sell/accept", offer)
+        await axios.post(`${PUBLIC_API_URL}lots/sell/accept`, offer)
     };
 
     /**
@@ -1840,7 +1840,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
         } = controller.spawn();
         const postData = controller.getPostData();
 
-        await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/resource/harvest", postData);
+        await axios.post(`${PUBLIC_API_URL}persons/resource/harvest`, postData);
 
         if (spawn) {
             // update objects array
@@ -1871,7 +1871,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             // make http request to pick up item
             const pickUpRequest = controller.pickUpItemRequest(currentPerson, networkObject);
             // begin picking up
-            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/object/pickup", pickUpRequest);
+            await axios.post(`${PUBLIC_API_URL}persons/object/pickup`, pickUpRequest);
 
             // update objects array
             const objects = this.state.objects.reduce((acc: INetworkObject[], obj: INetworkObject): INetworkObject[] => {
@@ -1942,7 +1942,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             // make http request to pick up item
             const withdrawRequest = personController.withdrawItemFromStockpileRequest(currentPerson, networkObject, stockpile, amount);
             // begin picking up
-            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/stockpile/withdraw", withdrawRequest);
+            await axios.post(`${PUBLIC_API_URL}persons/stockpile/withdraw`, withdrawRequest);
 
             // update objects array
             const objects = this.state.objects.reduce((acc: INetworkObject[], obj: INetworkObject): INetworkObject[] => {
@@ -2018,7 +2018,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             // make http request to drop item
             const dropRequest = controller.dropItemRequest(currentPerson, networkObject);
             // begin picking up
-            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/object/drop", dropRequest);
+            await axios.post(`${PUBLIC_API_URL}persons/object/drop`, dropRequest);
 
             // update the local copy to immediately show the item being dropped before the network update
             // this will occur before the official object drop
@@ -2105,7 +2105,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             } = controller.craftItem(recipe);
 
             const postData = controller.craftItemRequest(currentPerson, recipe);
-            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/object/craft", postData);
+            await axios.post(`${PUBLIC_API_URL}persons/object/craft`, postData);
 
             const objects = this.mergeInventoryTransactionIntoObjects({
                 updatedItems: updatedItem ? [updatedItem] : [],
@@ -2173,7 +2173,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             } = controller.constructStockpile({location});
 
             const postData = controller.getConstructionStockpileRequest(location);
-            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/construction/stockpile", postData);
+            await axios.post(`${PUBLIC_API_URL}persons/construction/stockpile`, postData);
 
             // update local state with the changes
             const stockpiles: IStockpile[] = [
@@ -2236,7 +2236,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             } = controller.constructBuilding({location});
 
             const postData = controller.getConstructionRequest(location);
-            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/construction", postData);
+            await axios.post(`${PUBLIC_API_URL}persons/construction`, postData);
 
             // update local state with the changes
             const houses = [
@@ -2405,7 +2405,7 @@ export class Persons extends PersonsDrawables<IPersonsProps, IPersonsState> {
             npcId: npc.id,
             job
         };
-        await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/npc/job", postData);
+        await axios.post(`${PUBLIC_API_URL}persons/npc/job`, postData);
     };
 
     getAreaFill = (area: IArea | null): string => {

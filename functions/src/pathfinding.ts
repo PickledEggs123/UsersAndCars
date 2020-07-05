@@ -211,7 +211,8 @@ export const simulateCell = async (cellString: string, milliseconds: number) => 
             objects: INetworkObject[],
             objectsThatNoLongerExist: INetworkObject[]
         }, obj: INetworkObject) => {
-            if (applyStateToNetworkObject(obj).exist) {
+            const currentState = applyStateToNetworkObject(obj);
+            if (currentState.exist || currentState.state.length > 0) {
                 return {
                     ...acc,
                     objects: [...acc.objects, obj]

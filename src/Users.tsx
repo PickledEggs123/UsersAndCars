@@ -1,6 +1,7 @@
 import React from 'react';
 import './App.scss';
 import axios from "axios";
+import {PUBLIC_API_URL} from "./config";
 
 interface IUsersProps {}
 
@@ -31,7 +32,7 @@ export class Users extends React.Component<IUsersProps, IUsersState> {
     }
 
     fetchUsers = async () => {
-        const response = await axios.get("https://us-central1-tyler-truong-demos.cloudfunctions.net/users");
+        const response = await axios.get(`${PUBLIC_API_URL}users`);
         this.setState({
             users: response.data
         });
@@ -64,7 +65,7 @@ export class Users extends React.Component<IUsersProps, IUsersState> {
                     lastName,
                     age
                 };
-                await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/users", data);
+                await axios.post(`${PUBLIC_API_URL}users`, data);
                 await this.fetchUsers();
                 this.setState({
                     firstName: "",

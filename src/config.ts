@@ -1,4 +1,10 @@
 /**
+ * Remote server url.
+ */
+export const PUBLIC_API_URL = "https://us-central1-tyler-truong-demos.cloudfunctions.net/";
+//export const PUBLIC_API_URL = "http://localhost:5001/tyler-truong-demos/us-central1/";
+
+/**
  * Global user media configuration. The app uses voice only so only audio with advanced audio features is enabled.
  */
 export const userMediaConfig: MediaStreamConstraints = {

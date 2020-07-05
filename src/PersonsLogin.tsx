@@ -1,6 +1,7 @@
 import * as React from "react";
 import axios from "axios";
 import {IApiPersonsLoginPost} from "persons-game-common/lib/types/GameTypes";
+import {PUBLIC_API_URL} from "./config";
 
 /**
  * The props for [[PersonsLogin]].
@@ -106,7 +107,7 @@ export class PersonsLogin extends React.Component<IPersonsLoginProps, IPersonsLo
                 id: this.state.username,
                 password: this.state.password
             };
-            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/persons/login", data);
+            await axios.post(`${PUBLIC_API_URL}persons/login`, data);
 
             // save credentials to local storage
             localStorage.setItem("username", this.state.username);

@@ -1,6 +1,7 @@
 import React from 'react';
 import './App.scss';
 import axios from "axios";
+import {PUBLIC_API_URL} from "./config";
 
 interface ICarsProps {}
 
@@ -31,7 +32,7 @@ export class Cars extends React.Component<ICarsProps, ICarsState> {
     }
 
     fetchCars = async () => {
-        const response = await axios.get("https://us-central1-tyler-truong-demos.cloudfunctions.net/cars");
+        const response = await axios.get(`${PUBLIC_API_URL}cars`);
         this.setState({
             cars: response.data
         });
@@ -59,7 +60,7 @@ export class Cars extends React.Component<ICarsProps, ICarsState> {
                 model,
                 vin
             };
-            await axios.post("https://us-central1-tyler-truong-demos.cloudfunctions.net/cars", data);
+            await axios.post(`${PUBLIC_API_URL}cars`, data);
             await this.fetchCars();
             this.setState({
                 make: "",
