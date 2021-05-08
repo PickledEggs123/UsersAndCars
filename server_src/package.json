@@ -21,7 +21,7 @@
       "mysql2": "^2.1.0",
       "reflect-metadata": "^0.1.10",
       "tsc": "^1.20150623.0",
-      "typeorm": "0.2.24",
+      "typeorm": "0.2.25",
       "mysql": "^2.14.1",
       "express": "^4.15.4",
       "body-parser": "^1.18.1"
